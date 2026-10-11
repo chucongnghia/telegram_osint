@@ -1,0 +1,261 @@
+{
+  "generated_at": "2026-10-01T01:15:46.360567+00:00",
+  "total": 5,
+  "posts": [
+    {
+      "message_id": "528",
+      "url": "https://t.me/durov/528",
+      "channel": "durov",
+      "channel_title": "Pavel Durov",
+      "text": "⛔️ The UK government wants to ban social media for children under 16.\n\nBut banning social media for kids only puts them in greater danger.\n\nThey will be pushed to use VPNs — and unlock far worse illegal content.\n\nWe’ve seen this before.\n\nWhen the Russian government banned Telegram, 95% of Russian teenagers kept using it. They just moved to VPNs. Same in Iran.\n\nParents already have the tools to restrict their kids’ digital habits: parental controls, screen-time limits — or no smartphone at all.\n\n🤦‍♂️ Instead, many parents give toddlers iPads just to keep them quiet.\n\nNo amount of government regulation will fix that.\n\nUnder the new law, all social media users in the UK will have to “prove” they’re over 16 — with an ID, face scan or bank card.\n\n🚨 Thousands in the UK are already arrested for political posts every year. \n\nIs this really about protecting children — or identifying more people to arrest?\n\nP. S. More about digital freedom in my speech — the source material for our $200,000 clipping contest.\n  \n    Please open Telegram to view this post\n    VIEW IN TELEGRAM",
+      "hashtags": [],
+      "posted_at": "2026-06-15T18:58:13+00:00",
+      "views": 18900000,
+      "author": "Pavel Durov",
+      "forwarded_from": null,
+      "has_media": false,
+      "media_types": [],
+      "media_count": 0,
+      "link_preview": "",
+      "source": "telegram",
+      "collected_at": "2026-10-01T01:15:45.354767+00:00",
+      "pipeline_status": {
+        "collected": true,
+        "downloaded": false,
+        "audio_extracted": false,
+        "transcribed": false,
+        "frames_extracted": false,
+        "ocr_done": false
+      },
+      "subscribers": 10600000,
+      "analysis": {
+        "scam_score": 11,
+        "level": "Normal",
+        "scam_category": null,
+        "scam_category_vi": null,
+        "signals": [
+          {
+            "label_vi": "Điều hướng sang kênh/nhóm khác",
+            "points": 10.8,
+            "matched": [
+              "telegram"
+            ]
+          }
+        ],
+        "entities": {
+          "urls": [],
+          "phones": [],
+          "bank_accounts": [],
+          "mentions": [],
+          "invite_links": []
+        },
+        "summary": "Không có nhóm rõ ràng | Tín hiệu chính: Điều hướng sang kênh/nhóm khác"
+      }
+    },
+    {
+      "message_id": "529",
+      "url": "https://t.me/durov/529",
+      "channel": "durov",
+      "channel_title": "Pavel Durov",
+      "text": "🚫 India’s IT ministry banned Telegram for one week because some users shared leaked exam questions.\n\nThis punishes 150 million ordinary Telegram users in India — not the insiders who leaked the exam materials.\n\nAnd the ban hasn't stopped anything. The leaks just moved to other apps.\n\n🛡 We’ve done a lot to help fix the problem — even though its source is not Telegram.\n\nOver the past few weeks, we removed hundreds of channels sharing leaked exam materials and related scams in India.\n\nWe’ve also been making the “edited” label more visible to prevent backdating scams.\n\n🏳️ Telegram is a force for good. Banning it — even temporarily — is a mistake.\n  \n    Please open Telegram to view this post\n    VIEW IN TELEGRAM",
+      "hashtags": [],
+      "posted_at": "2026-06-16T15:05:29+00:00",
+      "views": 9670000,
+      "author": "Pavel Durov",
+      "forwarded_from": null,
+      "has_media": false,
+      "media_types": [],
+      "media_count": 0,
+      "link_preview": "",
+      "source": "telegram",
+      "collected_at": "2026-10-01T01:15:45.354852+00:00",
+      "pipeline_status": {
+        "collected": true,
+        "downloaded": false,
+        "audio_extracted": false,
+        "transcribed": false,
+        "frames_extracted": false,
+        "ocr_done": false
+      },
+      "subscribers": 10600000,
+      "analysis": {
+        "scam_score": 14,
+        "level": "Normal",
+        "scam_category": null,
+        "scam_category_vi": null,
+        "signals": [
+          {
+            "label_vi": "Điều hướng sang kênh/nhóm khác",
+            "points": 14.4,
+            "matched": [
+              "telegram",
+              "ib"
+            ]
+          }
+        ],
+        "entities": {
+          "urls": [],
+          "phones": [],
+          "bank_accounts": [],
+          "mentions": [],
+          "invite_links": []
+        },
+        "summary": "Không có nhóm rõ ràng | Tín hiệu chính: Điều hướng sang kênh/nhóm khác"
+      }
+    },
+    {
+      "message_id": "531",
+      "url": "https://t.me/durov/531",
+      "channel": "durov",
+      "channel_title": "Pavel Durov",
+      "text": "🩵 Telegram now has a Rich Text Editor.\n\nIt supports tables, headings, inline media, lists, AI content, formulas, and more.\n\n😈 Messaging apps will never be the same!\n  \n    Please open Telegram to view this post\n    VIEW IN TELEGRAM",
+      "hashtags": [],
+      "posted_at": "2026-07-16T20:45:25+00:00",
+      "views": 5730000,
+      "author": "Pavel Durov",
+      "forwarded_from": null,
+      "has_media": true,
+      "media_types": [
+        "video"
+      ],
+      "media_count": 1,
+      "link_preview": "",
+      "source": "telegram",
+      "collected_at": "2026-10-01T01:15:45.354910+00:00",
+      "pipeline_status": {
+        "collected": true,
+        "downloaded": false,
+        "audio_extracted": false,
+        "transcribed": false,
+        "frames_extracted": false,
+        "ocr_done": false
+      },
+      "subscribers": 10600000,
+      "analysis": {
+        "scam_score": 11,
+        "level": "Normal",
+        "scam_category": null,
+        "scam_category_vi": null,
+        "signals": [
+          {
+            "label_vi": "Điều hướng sang kênh/nhóm khác",
+            "points": 10.8,
+            "matched": [
+              "telegram"
+            ]
+          }
+        ],
+        "entities": {
+          "urls": [],
+          "phones": [],
+          "bank_accounts": [],
+          "mentions": [],
+          "invite_links": []
+        },
+        "summary": "Không có nhóm rõ ràng | Tín hiệu chính: Điều hướng sang kênh/nhóm khác"
+      }
+    },
+    {
+      "message_id": "532",
+      "url": "https://t.me/durov/532",
+      "channel": "durov",
+      "channel_title": "Pavel Durov",
+      "text": "🎠 Telegram now supports carousels\n\nOne small step for messaging, one giant leap toward turning cat photos into keynote presentations. 😺\n  \n    Please open Telegram to view this post\n    VIEW IN TELEGRAM",
+      "hashtags": [],
+      "posted_at": "2026-07-19T21:45:01+00:00",
+      "views": 6400000,
+      "author": "Pavel Durov",
+      "forwarded_from": null,
+      "has_media": true,
+      "media_types": [
+        "video"
+      ],
+      "media_count": 1,
+      "link_preview": "",
+      "source": "telegram",
+      "collected_at": "2026-10-01T01:15:45.354957+00:00",
+      "pipeline_status": {
+        "collected": true,
+        "downloaded": false,
+        "audio_extracted": false,
+        "transcribed": false,
+        "frames_extracted": false,
+        "ocr_done": false
+      },
+      "subscribers": 10600000,
+      "analysis": {
+        "scam_score": 11,
+        "level": "Normal",
+        "scam_category": null,
+        "scam_category_vi": null,
+        "signals": [
+          {
+            "label_vi": "Điều hướng sang kênh/nhóm khác",
+            "points": 10.8,
+            "matched": [
+              "telegram"
+            ]
+          }
+        ],
+        "entities": {
+          "urls": [],
+          "phones": [],
+          "bank_accounts": [],
+          "mentions": [],
+          "invite_links": []
+        },
+        "summary": "Không có nhóm rõ ràng | Tín hiệu chính: Điều hướng sang kênh/nhóm khác"
+      }
+    },
+    {
+      "message_id": "533",
+      "url": "https://t.me/durov/533",
+      "channel": "durov",
+      "channel_title": "Pavel Durov",
+      "text": "🌍 This summer will see the largest rollout of a non-custodial crypto wallet in human history.\n\n⚡️Instant zero-fee crypto transactions for over a billion users are about to become reality.\n\n💎 We're bringing a native non-custodial Gram wallet to every Telegram app! 🏳️\n  \n    Please open Telegram to view this post\n    VIEW IN TELEGRAM",
+      "hashtags": [],
+      "posted_at": "2026-07-21T14:36:55+00:00",
+      "views": 6750000,
+      "author": "Pavel Durov",
+      "forwarded_from": null,
+      "has_media": false,
+      "media_types": [],
+      "media_count": 0,
+      "link_preview": "",
+      "source": "telegram",
+      "collected_at": "2026-10-01T01:15:45.355008+00:00",
+      "pipeline_status": {
+        "collected": true,
+        "downloaded": false,
+        "audio_extracted": false,
+        "transcribed": false,
+        "frames_extracted": false,
+        "ocr_done": false
+      },
+      "subscribers": 10600000,
+      "analysis": {
+        "scam_score": 11,
+        "level": "Normal",
+        "scam_category": null,
+        "scam_category_vi": null,
+        "signals": [
+          {
+            "label_vi": "Điều hướng sang kênh/nhóm khác",
+            "points": 10.8,
+            "matched": [
+              "telegram"
+            ]
+          }
+        ],
+        "entities": {
+          "urls": [],
+          "phones": [],
+          "bank_accounts": [],
+          "mentions": [],
+          "invite_links": []
+        },
+        "summary": "Không có nhóm rõ ràng | Tín hiệu chính: Điều hướng sang kênh/nhóm khác"
+      }
+    }
+  ]
+}

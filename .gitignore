@@ -1,0 +1,13 @@
+# Phiên đăng nhập Telegram (chứa auth key - KHÔNG commit)
+tg_session.session
+tg_session.session-journal
+tg_bot_session.session
+tg_session_*.session
+
+# Credential API / bot token (KHÔNG commit)
+tg_api.json
+
+# Media tải về
+media/
+
+__pycache__/

@@ -1,0 +1,1285 @@
+{
+  "generated_at": "2026-10-03T15:14:37.519560+00:00",
+  "total": 17,
+  "groups": [
+    {
+      "channel": "dautu.sieuloinhuan",
+      "channel_title": "Đầu tư tài chính - Lợi nhuận 30%/tháng",
+      "total_messages": 3,
+      "avg_score": 59.7,
+      "max_score": 71,
+      "flagged": 3,
+      "flagged_ratio": 1.0,
+      "levels": {
+        "High-risk": 2,
+        "Suspicious": 1
+      },
+      "categories": {
+        "Đầu tư / lợi nhuận cao": 3
+      },
+      "group_score": 81,
+      "group_level": "High-risk",
+      "verdict": "Có dấu hiệu lừa đảo — cần kiểm tra kỹ",
+      "reasons": [
+        "3/3 bài (100%) cần rà soát",
+        "loại hình nổi bật: Đầu tư / lợi nhuận cao (3 bài)",
+        "có bài đạt 71/100 (High-risk)",
+        "điểm trung bình 60/100"
+      ]
+    },
+    {
+      "channel": "vieclam.ctv.hoantien",
+      "channel_title": "Tuyển CTV chốt đơn - Hoàn tiền 100%",
+      "total_messages": 2,
+      "avg_score": 45.5,
+      "max_score": 47,
+      "flagged": 2,
+      "flagged_ratio": 1.0,
+      "levels": {
+        "Suspicious": 2
+      },
+      "categories": {
+        "Việc làm online giả": 2
+      },
+      "group_score": 69,
+      "group_level": "High-risk",
+      "verdict": "Có dấu hiệu lừa đảo — cần kiểm tra kỹ",
+      "reasons": [
+        "2/2 bài (100%) cần rà soát",
+        "loại hình nổi bật: Việc làm online giả (2 bài)",
+        "điểm trung bình 46/100"
+      ]
+    },
+    {
+      "channel": "vayvon.nhanh365",
+      "channel_title": "Hỗ trợ vay vốn online",
+      "total_messages": 2,
+      "avg_score": 40.5,
+      "max_score": 49,
+      "flagged": 2,
+      "flagged_ratio": 1.0,
+      "levels": {
+        "Suspicious": 2
+      },
+      "categories": {
+        "Cho vay trực tuyến": 2
+      },
+      "group_score": 67,
+      "group_level": "High-risk",
+      "verdict": "Có dấu hiệu lừa đảo — cần kiểm tra kỹ",
+      "reasons": [
+        "2/2 bài (100%) cần rà soát",
+        "loại hình nổi bật: Cho vay trực tuyến (2 bài)",
+        "điểm trung bình 40/100"
+      ]
+    },
+    {
+      "channel": "hotro.nganhang.vn",
+      "channel_title": "Hỗ trợ tài khoản ngân hàng",
+      "total_messages": 1,
+      "avg_score": 43.0,
+      "max_score": 43,
+      "flagged": 1,
+      "flagged_ratio": 1.0,
+      "levels": {
+        "Suspicious": 1
+      },
+      "categories": {
+        "Giả mạo tổ chức / cá nhân": 1
+      },
+      "group_score": 67,
+      "group_level": "High-risk",
+      "verdict": "Có dấu hiệu lừa đảo — cần kiểm tra kỹ",
+      "reasons": [
+        "1/1 bài (100%) cần rà soát",
+        "loại hình nổi bật: Giả mạo tổ chức / cá nhân (1 bài)",
+        "điểm trung bình 43/100"
+      ]
+    },
+    {
+      "channel": "quatang.trian2026",
+      "channel_title": "Sự kiện tri ân - Trúng thưởng",
+      "total_messages": 2,
+      "avg_score": 36.0,
+      "max_score": 44,
+      "flagged": 2,
+      "flagged_ratio": 1.0,
+      "levels": {
+        "Suspicious": 2
+      },
+      "categories": {
+        "Trúng thưởng / quà tặng": 2
+      },
+      "group_score": 63,
+      "group_level": "High-risk",
+      "verdict": "Có dấu hiệu lừa đảo — cần kiểm tra kỹ",
+      "reasons": [
+        "2/2 bài (100%) cần rà soát",
+        "loại hình nổi bật: Trúng thưởng / quà tặng (2 bài)",
+        "điểm trung bình 36/100"
+      ]
+    },
+    {
+      "channel": "tintuc.congnghe",
+      "channel_title": "Tin tức công nghệ",
+      "total_messages": 3,
+      "avg_score": 7.3,
+      "max_score": 11,
+      "flagged": 0,
+      "flagged_ratio": 0.0,
+      "levels": {
+        "Normal": 3
+      },
+      "categories": {},
+      "group_score": 6,
+      "group_level": "Normal",
+      "verdict": "Chưa thấy dấu hiệu bất thường",
+      "reasons": []
+    },
+    {
+      "channel": "hocpython.mienphi",
+      "channel_title": "Học lập trình Python miễn phí",
+      "total_messages": 2,
+      "avg_score": 0.0,
+      "max_score": 0,
+      "flagged": 0,
+      "flagged_ratio": 0.0,
+      "levels": {
+        "Normal": 2
+      },
+      "categories": {},
+      "group_score": 0,
+      "group_level": "Normal",
+      "verdict": "Chưa thấy dấu hiệu bất thường",
+      "reasons": []
+    },
+    {
+      "channel": "amthuc.mebap",
+      "channel_title": "Ẩm thực mỗi ngày",
+      "total_messages": 2,
+      "avg_score": 0.0,
+      "max_score": 0,
+      "flagged": 0,
+      "flagged_ratio": 0.0,
+      "levels": {
+        "Normal": 2
+      },
+      "categories": {},
+      "group_score": 0,
+      "group_level": "Normal",
+      "verdict": "Chưa thấy dấu hiệu bất thường",
+      "reasons": []
+    }
+  ],
+  "posts": [
+    {
+      "message_id": "1000",
+      "url": "https://t.me/dautu.sieuloinhuan/1000",
+      "channel": "dautu.sieuloinhuan",
+      "channel_title": "Đầu tư tài chính - Lợi nhuận 30%/tháng",
+      "subscribers": 48200,
+      "text": "cam kết lợi nhuận 30%/tháng, đầu tư chỉ từ 2 triệu, rút tiền trong ngày! anh em vào nhóm kín để nhận kèo: https://t.me/+abcdef123 #dautu #loinhuan",
+      "hashtags": [
+        "dautu",
+        "loinhuan"
+      ],
+      "posted_at": "2026-10-03T14:14:37.513336+00:00",
+      "views": 1446,
+      "author": "Đầu tư tài chính - Lợi nhuận 30%/tháng",
+      "forwarded_from": "kênh ẩn danh",
+      "has_media": true,
+      "media_types": [
+        "photo",
+        "photo"
+      ],
+      "media_count": 2,
+      "link_preview": "",
+      "source": "demo",
+      "collected_at": "2026-10-03T15:14:37.513336+00:00",
+      "_note": "DỮ LIỆU MẪU offline - không phải bài đăng thật",
+      "pipeline_status": {
+        "collected": true,
+        "downloaded": false,
+        "audio_extracted": false,
+        "transcribed": false,
+        "frames_extracted": false,
+        "ocr_done": false
+      },
+      "analysis": {
+        "scam_score": 71,
+        "level": "High-risk",
+        "scam_category": "Investment",
+        "scam_category_vi": "Đầu tư / lợi nhuận cao",
+        "signals": [
+          {
+            "label_vi": "Đầu tư / lợi nhuận cao",
+            "points": 22.0,
+            "matched": [
+              "đầu tư",
+              "lợi nhuận",
+              "cam kết lợi nhuận"
+            ]
+          },
+          {
+            "label_vi": "Điều hướng sang kênh/nhóm khác",
+            "points": 14.4,
+            "matched": [
+              "nhóm kín",
+              "vào nhóm"
+            ]
+          },
+          {
+            "label_vi": "Có đường link ngoài nền tảng",
+            "points": 12.0,
+            "matched": [
+              "https://t.me/+abcdef123"
+            ]
+          },
+          {
+            "label_vi": "Link mời vào nhóm/kênh riêng (t.me/+...)",
+            "points": 12.0,
+            "matched": [
+              "https://t.me/+abcdef123"
+            ]
+          },
+          {
+            "label_vi": "Bài đăng forward từ nguồn khác",
+            "points": 6.0,
+            "matched": [
+              "kênh ẩn danh"
+            ]
+          },
+          {
+            "label_vi": "Ảnh/video kèm nội dung tài chính",
+            "points": 5.0,
+            "matched": [
+              "media + nội dung tài chính"
+            ]
+          }
+        ],
+        "entities": {
+          "urls": [
+            "https://t.me/+abcdef123"
+          ],
+          "phones": [],
+          "bank_accounts": [],
+          "mentions": [],
+          "invite_links": [
+            "https://t.me/+abcdef123"
+          ]
+        },
+        "summary": "Nhóm nghi ngờ: Đầu tư / lợi nhuận cao | Tín hiệu chính: Đầu tư / lợi nhuận cao; Điều hướng sang kênh/nhóm khác; Có đường link ngoài nền tảng"
+      }
+    },
+    {
+      "message_id": "1001",
+      "url": "https://t.me/dautu.sieuloinhuan/1001",
+      "channel": "dautu.sieuloinhuan",
+      "channel_title": "Đầu tư tài chính - Lợi nhuận 30%/tháng",
+      "subscribers": 48200,
+      "text": "kết quả tuần này: 12 lệnh thắng liên tiếp, tài khoản x2 sau 7 ngày. nạp tối thiểu 5 triệu, hoa hồng giới thiệu 20%. inbox @admin_dautu_pro",
+      "hashtags": [],
+      "posted_at": "2026-10-03T11:14:37.513336+00:00",
+      "views": 3856,
+      "author": "Đầu tư tài chính - Lợi nhuận 30%/tháng",
+      "forwarded_from": null,
+      "has_media": true,
+      "media_types": [
+        "photo",
+        "photo",
+        "photo"
+      ],
+      "media_count": 3,
+      "link_preview": "",
+      "source": "demo",
+      "collected_at": "2026-10-03T15:14:37.513336+00:00",
+      "_note": "DỮ LIỆU MẪU offline - không phải bài đăng thật",
+      "pipeline_status": {
+        "collected": true,
+        "downloaded": false,
+        "audio_extracted": false,
+        "transcribed": false,
+        "frames_extracted": false,
+        "ocr_done": false
+      },
+      "analysis": {
+        "scam_score": 42,
+        "level": "Suspicious",
+        "scam_category": "Investment",
+        "scam_category_vi": "Đầu tư / lợi nhuận cao",
+        "signals": [
+          {
+            "label_vi": "Đầu tư / lợi nhuận cao",
+            "points": 17.6,
+            "matched": [
+              "đầu tư",
+              "lợi nhuận"
+            ]
+          },
+          {
+            "label_vi": "Điều hướng sang kênh/nhóm khác",
+            "points": 10.8,
+            "matched": [
+              "inbox"
+            ]
+          },
+          {
+            "label_vi": "Hứa hẹn hoa hồng",
+            "points": 8.4,
+            "matched": [
+              "hoa hồng"
+            ]
+          },
+          {
+            "label_vi": "Ảnh/video kèm nội dung tài chính",
+            "points": 5.0,
+            "matched": [
+              "media + nội dung tài chính"
+            ]
+          }
+        ],
+        "entities": {
+          "urls": [],
+          "phones": [],
+          "bank_accounts": [],
+          "mentions": [
+            "admin_dautu_pro"
+          ],
+          "invite_links": []
+        },
+        "summary": "Nhóm nghi ngờ: Đầu tư / lợi nhuận cao | Tín hiệu chính: Đầu tư / lợi nhuận cao; Điều hướng sang kênh/nhóm khác; Hứa hẹn hoa hồng"
+      }
+    },
+    {
+      "message_id": "1002",
+      "url": "https://t.me/dautu.sieuloinhuan/1002",
+      "channel": "dautu.sieuloinhuan",
+      "channel_title": "Đầu tư tài chính - Lợi nhuận 30%/tháng",
+      "subscribers": 48200,
+      "text": "chỉ còn 5 slot cuối cho gói vip tháng 11, cam kết hoàn vốn 100%. chuyển khoản stk 1234567890 (vietcombank) rồi báo admin để kích hoạt.",
+      "hashtags": [],
+      "posted_at": "2026-10-03T08:14:37.513336+00:00",
+      "views": 6266,
+      "author": "Đầu tư tài chính - Lợi nhuận 30%/tháng",
+      "forwarded_from": null,
+      "has_media": true,
+      "media_types": [
+        "photo"
+      ],
+      "media_count": 1,
+      "link_preview": "",
+      "source": "demo",
+      "collected_at": "2026-10-03T15:14:37.513336+00:00",
+      "_note": "DỮ LIỆU MẪU offline - không phải bài đăng thật",
+      "pipeline_status": {
+        "collected": true,
+        "downloaded": false,
+        "audio_extracted": false,
+        "transcribed": false,
+        "frames_extracted": false,
+        "ocr_done": false
+      },
+      "analysis": {
+        "scam_score": 66,
+        "level": "High-risk",
+        "scam_category": "Investment",
+        "scam_category_vi": "Đầu tư / lợi nhuận cao",
+        "signals": [
+          {
+            "label_vi": "Đầu tư / lợi nhuận cao",
+            "points": 22.0,
+            "matched": [
+              "đầu tư",
+              "lợi nhuận",
+              "cam kết hoàn vốn"
+            ]
+          },
+          {
+            "label_vi": "Yêu cầu chuyển tiền",
+            "points": 16.0,
+            "matched": [
+              "chuyển khoản",
+              "stk"
+            ]
+          },
+          {
+            "label_vi": "Số điện thoại / số tài khoản trong bài",
+            "points": 15.0,
+            "matched": [
+              "1234567890"
+            ]
+          },
+          {
+            "label_vi": "Thúc ép / khan hiếm giả tạo",
+            "points": 8.0,
+            "matched": [
+              "chỉ còn",
+              "slot cuối"
+            ]
+          },
+          {
+            "label_vi": "Ảnh/video kèm nội dung tài chính",
+            "points": 5.0,
+            "matched": [
+              "media + nội dung tài chính"
+            ]
+          }
+        ],
+        "entities": {
+          "urls": [],
+          "phones": [],
+          "bank_accounts": [
+            "1234567890"
+          ],
+          "mentions": [],
+          "invite_links": []
+        },
+        "summary": "Nhóm nghi ngờ: Đầu tư / lợi nhuận cao | Tín hiệu chính: Đầu tư / lợi nhuận cao; Yêu cầu chuyển tiền; Số điện thoại / số tài khoản trong bài"
+      }
+    },
+    {
+      "message_id": "1100",
+      "url": "https://t.me/vieclam.ctv.hoantien/1100",
+      "channel": "vieclam.ctv.hoantien",
+      "channel_title": "Tuyển CTV chốt đơn - Hoàn tiền 100%",
+      "subscribers": 96400,
+      "text": "tuyển cộng tác viên chốt đơn tại nhà, không cần kinh nghiệm, thu nhập 20 triệu/tháng. làm nhiệm vụ hoàn tiền 100% đơn hàng. đăng ký: https://t.me/vieclam_bot",
+      "hashtags": [],
+      "posted_at": "2026-10-02T14:14:37.513336+00:00",
+      "views": 2892,
+      "author": "Tuyển CTV chốt đơn - Hoàn tiền 100%",
+      "forwarded_from": "kênh ẩn danh",
+      "has_media": true,
+      "media_types": [
+        "photo"
+      ],
+      "media_count": 1,
+      "link_preview": "",
+      "source": "demo",
+      "collected_at": "2026-10-03T15:14:37.513336+00:00",
+      "_note": "DỮ LIỆU MẪU offline - không phải bài đăng thật",
+      "pipeline_status": {
+        "collected": true,
+        "downloaded": false,
+        "audio_extracted": false,
+        "transcribed": false,
+        "frames_extracted": false,
+        "ocr_done": false
+      },
+      "analysis": {
+        "scam_score": 47,
+        "level": "Suspicious",
+        "scam_category": "Job",
+        "scam_category_vi": "Việc làm online giả",
+        "signals": [
+          {
+            "label_vi": "Việc làm online giả",
+            "points": 18.0,
+            "matched": [
+              "tuyển cộng tác viên",
+              "ctv",
+              "chốt đơn",
+              "hoàn tiền",
+              "làm nhiệm vụ",
+              "không cần kinh nghiệm"
+            ]
+          },
+          {
+            "label_vi": "Có đường link ngoài nền tảng",
+            "points": 12.0,
+            "matched": [
+              "https://t.me/vieclam_bot"
+            ]
+          },
+          {
+            "label_vi": "Điều hướng sang kênh/nhóm khác",
+            "points": 10.8,
+            "matched": [
+              "bot"
+            ]
+          },
+          {
+            "label_vi": "Bài đăng forward từ nguồn khác",
+            "points": 6.0,
+            "matched": [
+              "kênh ẩn danh"
+            ]
+          }
+        ],
+        "entities": {
+          "urls": [
+            "https://t.me/vieclam_bot"
+          ],
+          "phones": [],
+          "bank_accounts": [],
+          "mentions": [],
+          "invite_links": []
+        },
+        "summary": "Nhóm nghi ngờ: Việc làm online giả | Tín hiệu chính: Việc làm online giả; Có đường link ngoài nền tảng; Điều hướng sang kênh/nhóm khác"
+      }
+    },
+    {
+      "message_id": "1101",
+      "url": "https://t.me/vieclam.ctv.hoantien/1101",
+      "channel": "vieclam.ctv.hoantien",
+      "channel_title": "Tuyển CTV chốt đơn - Hoàn tiền 100%",
+      "subscribers": 96400,
+      "text": "hướng dẫn làm nhiệm vụ: nạp 500k vào ví, chốt 3 đơn là rút được cả gốc lẫn lãi. liên hệ zalo 0987654321 để được hỗ trợ.",
+      "hashtags": [],
+      "posted_at": "2026-10-02T11:14:37.513336+00:00",
+      "views": 7712,
+      "author": "Tuyển CTV chốt đơn - Hoàn tiền 100%",
+      "forwarded_from": null,
+      "has_media": true,
+      "media_types": [
+        "photo"
+      ],
+      "media_count": 1,
+      "link_preview": "",
+      "source": "demo",
+      "collected_at": "2026-10-03T15:14:37.513336+00:00",
+      "_note": "DỮ LIỆU MẪU offline - không phải bài đăng thật",
+      "pipeline_status": {
+        "collected": true,
+        "downloaded": false,
+        "audio_extracted": false,
+        "transcribed": false,
+        "frames_extracted": false,
+        "ocr_done": false
+      },
+      "analysis": {
+        "scam_score": 44,
+        "level": "Suspicious",
+        "scam_category": "Job",
+        "scam_category_vi": "Việc làm online giả",
+        "signals": [
+          {
+            "label_vi": "Việc làm online giả",
+            "points": 18.0,
+            "matched": [
+              "ctv",
+              "chốt đơn",
+              "hoàn tiền",
+              "làm nhiệm vụ"
+            ]
+          },
+          {
+            "label_vi": "Số điện thoại / số tài khoản trong bài",
+            "points": 15.0,
+            "matched": [
+              "0987654321"
+            ]
+          },
+          {
+            "label_vi": "Điều hướng sang kênh/nhóm khác",
+            "points": 10.8,
+            "matched": [
+              "zalo"
+            ]
+          }
+        ],
+        "entities": {
+          "urls": [],
+          "phones": [
+            "0987654321"
+          ],
+          "bank_accounts": [],
+          "mentions": [],
+          "invite_links": []
+        },
+        "summary": "Nhóm nghi ngờ: Việc làm online giả | Tín hiệu chính: Việc làm online giả; Số điện thoại / số tài khoản trong bài; Điều hướng sang kênh/nhóm khác"
+      }
+    },
+    {
+      "message_id": "1200",
+      "url": "https://t.me/vayvon.nhanh365/1200",
+      "channel": "vayvon.nhanh365",
+      "channel_title": "Hỗ trợ vay vốn online",
+      "subscribers": 27300,
+      "text": "vay tiền online chỉ cần cccd, không thế chấp, giải ngân trong ngày, lãi suất 0% tháng đầu. đăng ký app vay: https://vay365.example.com/dangky",
+      "hashtags": [],
+      "posted_at": "2026-10-01T14:14:37.513336+00:00",
+      "views": 819,
+      "author": "Hỗ trợ vay vốn online",
+      "forwarded_from": null,
+      "has_media": true,
+      "media_types": [
+        "photo",
+        "photo"
+      ],
+      "media_count": 2,
+      "link_preview": "",
+      "source": "demo",
+      "collected_at": "2026-10-03T15:14:37.513336+00:00",
+      "_note": "DỮ LIỆU MẪU offline - không phải bài đăng thật",
+      "pipeline_status": {
+        "collected": true,
+        "downloaded": false,
+        "audio_extracted": false,
+        "transcribed": false,
+        "frames_extracted": false,
+        "ocr_done": false
+      },
+      "analysis": {
+        "scam_score": 32,
+        "level": "Suspicious",
+        "scam_category": "Loan",
+        "scam_category_vi": "Cho vay trực tuyến",
+        "signals": [
+          {
+            "label_vi": "Cho vay trực tuyến",
+            "points": 20.0,
+            "matched": [
+              "vay vốn",
+              "vay tiền online",
+              "không thế chấp",
+              "giải ngân trong ngày",
+              "chỉ cần cccd",
+              "app vay"
+            ]
+          },
+          {
+            "label_vi": "Có đường link ngoài nền tảng",
+            "points": 12.0,
+            "matched": [
+              "https://vay365.example.com/dangky"
+            ]
+          }
+        ],
+        "entities": {
+          "urls": [
+            "https://vay365.example.com/dangky"
+          ],
+          "phones": [],
+          "bank_accounts": [],
+          "mentions": [],
+          "invite_links": []
+        },
+        "summary": "Nhóm nghi ngờ: Cho vay trực tuyến | Tín hiệu chính: Cho vay trực tuyến; Có đường link ngoài nền tảng"
+      }
+    },
+    {
+      "message_id": "1201",
+      "url": "https://t.me/vayvon.nhanh365/1201",
+      "channel": "vayvon.nhanh365",
+      "channel_title": "Hỗ trợ vay vốn online",
+      "subscribers": 27300,
+      "text": "hỗ trợ nợ xấu, bùng nợ vẫn vay được. hồ sơ đơn giản, duyệt trong 5 phút. sđt 0912345678 (call/zalo).",
+      "hashtags": [],
+      "posted_at": "2026-10-01T11:14:37.513336+00:00",
+      "views": 2184,
+      "author": "Hỗ trợ vay vốn online",
+      "forwarded_from": null,
+      "has_media": true,
+      "media_types": [
+        "photo"
+      ],
+      "media_count": 1,
+      "link_preview": "",
+      "source": "demo",
+      "collected_at": "2026-10-03T15:14:37.513336+00:00",
+      "_note": "DỮ LIỆU MẪU offline - không phải bài đăng thật",
+      "pipeline_status": {
+        "collected": true,
+        "downloaded": false,
+        "audio_extracted": false,
+        "transcribed": false,
+        "frames_extracted": false,
+        "ocr_done": false
+      },
+      "analysis": {
+        "scam_score": 49,
+        "level": "Suspicious",
+        "scam_category": "Loan",
+        "scam_category_vi": "Cho vay trực tuyến",
+        "signals": [
+          {
+            "label_vi": "Cho vay trực tuyến",
+            "points": 20.0,
+            "matched": [
+              "vay vốn",
+              "bùng nợ",
+              "hỗ trợ nợ xấu"
+            ]
+          },
+          {
+            "label_vi": "Số điện thoại / số tài khoản trong bài",
+            "points": 15.0,
+            "matched": [
+              "0912345678"
+            ]
+          },
+          {
+            "label_vi": "Điều hướng sang kênh/nhóm khác",
+            "points": 14.4,
+            "matched": [
+              "zalo",
+              "sđt"
+            ]
+          }
+        ],
+        "entities": {
+          "urls": [],
+          "phones": [
+            "0912345678"
+          ],
+          "bank_accounts": [],
+          "mentions": [],
+          "invite_links": []
+        },
+        "summary": "Nhóm nghi ngờ: Cho vay trực tuyến | Tín hiệu chính: Cho vay trực tuyến; Số điện thoại / số tài khoản trong bài; Điều hướng sang kênh/nhóm khác"
+      }
+    },
+    {
+      "message_id": "1300",
+      "url": "https://t.me/quatang.trian2026/1300",
+      "channel": "quatang.trian2026",
+      "channel_title": "Sự kiện tri ân - Trúng thưởng",
+      "subscribers": 143000,
+      "text": "chúc mừng 100 khách hàng may mắn trúng thưởng iphone 16 pro max! chỉ cần chia sẻ bài viết và bình luận. nhận quà miễn phí, số lượng có hạn.",
+      "hashtags": [],
+      "posted_at": "2026-09-30T14:14:37.513336+00:00",
+      "views": 4290,
+      "author": "Sự kiện tri ân - Trúng thưởng",
+      "forwarded_from": "kênh ẩn danh",
+      "has_media": true,
+      "media_types": [
+        "photo",
+        "photo",
+        "photo"
+      ],
+      "media_count": 3,
+      "link_preview": "",
+      "source": "demo",
+      "collected_at": "2026-10-03T15:14:37.513336+00:00",
+      "_note": "DỮ LIỆU MẪU offline - không phải bài đăng thật",
+      "pipeline_status": {
+        "collected": true,
+        "downloaded": false,
+        "audio_extracted": false,
+        "transcribed": false,
+        "frames_extracted": false,
+        "ocr_done": false
+      },
+      "analysis": {
+        "scam_score": 28,
+        "level": "Suspicious",
+        "scam_category": "Giveaway",
+        "scam_category_vi": "Trúng thưởng / quà tặng",
+        "signals": [
+          {
+            "label_vi": "Trúng thưởng / quà tặng",
+            "points": 16.0,
+            "matched": [
+              "trúng thưởng",
+              "nhận quà",
+              "chỉ cần chia sẻ"
+            ]
+          },
+          {
+            "label_vi": "Thúc ép / khan hiếm giả tạo",
+            "points": 6.0,
+            "matched": [
+              "số lượng có hạn"
+            ]
+          },
+          {
+            "label_vi": "Bài đăng forward từ nguồn khác",
+            "points": 6.0,
+            "matched": [
+              "kênh ẩn danh"
+            ]
+          }
+        ],
+        "entities": {
+          "urls": [],
+          "phones": [],
+          "bank_accounts": [],
+          "mentions": [],
+          "invite_links": []
+        },
+        "summary": "Nhóm nghi ngờ: Trúng thưởng / quà tặng | Tín hiệu chính: Trúng thưởng / quà tặng; Thúc ép / khan hiếm giả tạo; Bài đăng forward từ nguồn khác"
+      }
+    },
+    {
+      "message_id": "1301",
+      "url": "https://t.me/quatang.trian2026/1301",
+      "channel": "quatang.trian2026",
+      "channel_title": "Sự kiện tri ân - Trúng thưởng",
+      "subscribers": 143000,
+      "text": "danh sách trúng thưởng đã có, ai có tên thì chuyển phí vận chuyển 150k để nhận quà. stk: 9876543210 - momo: 0987654321",
+      "hashtags": [],
+      "posted_at": "2026-09-30T11:14:37.513336+00:00",
+      "views": 11440,
+      "author": "Sự kiện tri ân - Trúng thưởng",
+      "forwarded_from": null,
+      "has_media": true,
+      "media_types": [
+        "photo"
+      ],
+      "media_count": 1,
+      "link_preview": "",
+      "source": "demo",
+      "collected_at": "2026-10-03T15:14:37.513336+00:00",
+      "_note": "DỮ LIỆU MẪU offline - không phải bài đăng thật",
+      "pipeline_status": {
+        "collected": true,
+        "downloaded": false,
+        "audio_extracted": false,
+        "transcribed": false,
+        "frames_extracted": false,
+        "ocr_done": false
+      },
+      "analysis": {
+        "scam_score": 44,
+        "level": "Suspicious",
+        "scam_category": "Giveaway",
+        "scam_category_vi": "Trúng thưởng / quà tặng",
+        "signals": [
+          {
+            "label_vi": "Yêu cầu chuyển tiền",
+            "points": 16.0,
+            "matched": [
+              "stk",
+              "momo"
+            ]
+          },
+          {
+            "label_vi": "Số điện thoại / số tài khoản trong bài",
+            "points": 15.0,
+            "matched": [
+              "0987654321",
+              "9876543210"
+            ]
+          },
+          {
+            "label_vi": "Trúng thưởng / quà tặng",
+            "points": 12.8,
+            "matched": [
+              "trúng thưởng",
+              "nhận quà"
+            ]
+          }
+        ],
+        "entities": {
+          "urls": [],
+          "phones": [
+            "0987654321"
+          ],
+          "bank_accounts": [
+            "9876543210"
+          ],
+          "mentions": [],
+          "invite_links": []
+        },
+        "summary": "Nhóm nghi ngờ: Trúng thưởng / quà tặng | Tín hiệu chính: Yêu cầu chuyển tiền; Số điện thoại / số tài khoản trong bài; Trúng thưởng / quà tặng"
+      }
+    },
+    {
+      "message_id": "1400",
+      "url": "https://t.me/hotro.nganhang.vn/1400",
+      "channel": "hotro.nganhang.vn",
+      "channel_title": "Hỗ trợ tài khoản ngân hàng",
+      "subscribers": 8900,
+      "text": "thông báo: tài khoản của bạn có giao dịch bất thường. vui lòng xác nhận số tài khoản và chuyển phí xác nhận 500.000đ để mở lại dịch vụ. hotline chính thức 0912345678.",
+      "hashtags": [],
+      "posted_at": "2026-09-29T14:14:37.513336+00:00",
+      "views": 267,
+      "author": "Hỗ trợ tài khoản ngân hàng",
+      "forwarded_from": null,
+      "has_media": true,
+      "media_types": [
+        "photo"
+      ],
+      "media_count": 1,
+      "link_preview": "",
+      "source": "demo",
+      "collected_at": "2026-10-03T15:14:37.513336+00:00",
+      "_note": "DỮ LIỆU MẪU offline - không phải bài đăng thật",
+      "pipeline_status": {
+        "collected": true,
+        "downloaded": false,
+        "audio_extracted": false,
+        "transcribed": false,
+        "frames_extracted": false,
+        "ocr_done": false
+      },
+      "analysis": {
+        "scam_score": 43,
+        "level": "Suspicious",
+        "scam_category": "Impersonation",
+        "scam_category_vi": "Giả mạo tổ chức / cá nhân",
+        "signals": [
+          {
+            "label_vi": "Yêu cầu chuyển tiền",
+            "points": 16.0,
+            "matched": [
+              "phí xác nhận",
+              "số tài khoản"
+            ]
+          },
+          {
+            "label_vi": "Số điện thoại / số tài khoản trong bài",
+            "points": 15.0,
+            "matched": [
+              "0912345678"
+            ]
+          },
+          {
+            "label_vi": "Giả mạo tổ chức / cá nhân",
+            "points": 12.0,
+            "matched": [
+              "hotline chính thức"
+            ]
+          }
+        ],
+        "entities": {
+          "urls": [],
+          "phones": [
+            "0912345678"
+          ],
+          "bank_accounts": [],
+          "mentions": [],
+          "invite_links": []
+        },
+        "summary": "Nhóm nghi ngờ: Giả mạo tổ chức / cá nhân | Tín hiệu chính: Yêu cầu chuyển tiền; Số điện thoại / số tài khoản trong bài; Giả mạo tổ chức / cá nhân"
+      }
+    },
+    {
+      "message_id": "1500",
+      "url": "https://t.me/tintuc.congnghe/1500",
+      "channel": "tintuc.congnghe",
+      "channel_title": "Tin tức công nghệ",
+      "subscribers": 245000,
+      "text": "telegram ra mắt tính năng mới cho phép tìm kiếm trong kênh và nhóm, cùng nhiều cải tiến về bảo mật.",
+      "hashtags": [],
+      "posted_at": "2026-09-28T14:14:37.513336+00:00",
+      "views": 7350,
+      "author": "Tin tức công nghệ",
+      "forwarded_from": null,
+      "has_media": true,
+      "media_types": [
+        "photo"
+      ],
+      "media_count": 1,
+      "link_preview": "",
+      "source": "demo",
+      "collected_at": "2026-10-03T15:14:37.513336+00:00",
+      "_note": "DỮ LIỆU MẪU offline - không phải bài đăng thật",
+      "pipeline_status": {
+        "collected": true,
+        "downloaded": false,
+        "audio_extracted": false,
+        "transcribed": false,
+        "frames_extracted": false,
+        "ocr_done": false
+      },
+      "analysis": {
+        "scam_score": 11,
+        "level": "Normal",
+        "scam_category": null,
+        "scam_category_vi": null,
+        "signals": [
+          {
+            "label_vi": "Điều hướng sang kênh/nhóm khác",
+            "points": 10.8,
+            "matched": [
+              "telegram"
+            ]
+          }
+        ],
+        "entities": {
+          "urls": [],
+          "phones": [],
+          "bank_accounts": [],
+          "mentions": [],
+          "invite_links": []
+        },
+        "summary": "Không có nhóm rõ ràng | Tín hiệu chính: Điều hướng sang kênh/nhóm khác"
+      }
+    },
+    {
+      "message_id": "1501",
+      "url": "https://t.me/tintuc.congnghe/1501",
+      "channel": "tintuc.congnghe",
+      "channel_title": "Tin tức công nghệ",
+      "subscribers": 245000,
+      "text": "tổng hợp các mẫu điện thoại tầm trung đáng mua trong tháng này.",
+      "hashtags": [],
+      "posted_at": "2026-09-28T11:14:37.513336+00:00",
+      "views": 19600,
+      "author": "Tin tức công nghệ",
+      "forwarded_from": null,
+      "has_media": true,
+      "media_types": [
+        "photo",
+        "photo"
+      ],
+      "media_count": 2,
+      "link_preview": "",
+      "source": "demo",
+      "collected_at": "2026-10-03T15:14:37.513336+00:00",
+      "_note": "DỮ LIỆU MẪU offline - không phải bài đăng thật",
+      "pipeline_status": {
+        "collected": true,
+        "downloaded": false,
+        "audio_extracted": false,
+        "transcribed": false,
+        "frames_extracted": false,
+        "ocr_done": false
+      },
+      "analysis": {
+        "scam_score": 0,
+        "level": "Normal",
+        "scam_category": null,
+        "scam_category_vi": null,
+        "signals": [],
+        "entities": {
+          "urls": [],
+          "phones": [],
+          "bank_accounts": [],
+          "mentions": [],
+          "invite_links": []
+        },
+        "summary": "Không phát hiện tín hiệu đáng ngờ."
+      }
+    },
+    {
+      "message_id": "1502",
+      "url": "https://t.me/tintuc.congnghe/1502",
+      "channel": "tintuc.congnghe",
+      "channel_title": "Tin tức công nghệ",
+      "subscribers": 245000,
+      "text": "cách bật xác thực hai lớp để bảo vệ tài khoản telegram của bạn.",
+      "hashtags": [],
+      "posted_at": "2026-09-28T08:14:37.513336+00:00",
+      "views": 31850,
+      "author": "Tin tức công nghệ",
+      "forwarded_from": null,
+      "has_media": true,
+      "media_types": [
+        "photo"
+      ],
+      "media_count": 1,
+      "link_preview": "",
+      "source": "demo",
+      "collected_at": "2026-10-03T15:14:37.513336+00:00",
+      "_note": "DỮ LIỆU MẪU offline - không phải bài đăng thật",
+      "pipeline_status": {
+        "collected": true,
+        "downloaded": false,
+        "audio_extracted": false,
+        "transcribed": false,
+        "frames_extracted": false,
+        "ocr_done": false
+      },
+      "analysis": {
+        "scam_score": 11,
+        "level": "Normal",
+        "scam_category": null,
+        "scam_category_vi": null,
+        "signals": [
+          {
+            "label_vi": "Điều hướng sang kênh/nhóm khác",
+            "points": 10.8,
+            "matched": [
+              "telegram"
+            ]
+          }
+        ],
+        "entities": {
+          "urls": [],
+          "phones": [],
+          "bank_accounts": [],
+          "mentions": [],
+          "invite_links": []
+        },
+        "summary": "Không có nhóm rõ ràng | Tín hiệu chính: Điều hướng sang kênh/nhóm khác"
+      }
+    },
+    {
+      "message_id": "1600",
+      "url": "https://t.me/hocpython.mienphi/1600",
+      "channel": "hocpython.mienphi",
+      "channel_title": "Học lập trình Python miễn phí",
+      "subscribers": 31200,
+      "text": "bài 1: biến và kiểu dữ liệu trong python. tài liệu tham khảo ở phần bình luận.",
+      "hashtags": [],
+      "posted_at": "2026-09-27T14:14:37.513336+00:00",
+      "views": 936,
+      "author": "Học lập trình Python miễn phí",
+      "forwarded_from": null,
+      "has_media": true,
+      "media_types": [
+        "photo",
+        "photo"
+      ],
+      "media_count": 2,
+      "link_preview": "",
+      "source": "demo",
+      "collected_at": "2026-10-03T15:14:37.513336+00:00",
+      "_note": "DỮ LIỆU MẪU offline - không phải bài đăng thật",
+      "pipeline_status": {
+        "collected": true,
+        "downloaded": false,
+        "audio_extracted": false,
+        "transcribed": false,
+        "frames_extracted": false,
+        "ocr_done": false
+      },
+      "analysis": {
+        "scam_score": 0,
+        "level": "Normal",
+        "scam_category": null,
+        "scam_category_vi": null,
+        "signals": [],
+        "entities": {
+          "urls": [],
+          "phones": [],
+          "bank_accounts": [],
+          "mentions": [],
+          "invite_links": []
+        },
+        "summary": "Không phát hiện tín hiệu đáng ngờ."
+      }
+    },
+    {
+      "message_id": "1601",
+      "url": "https://t.me/hocpython.mienphi/1601",
+      "channel": "hocpython.mienphi",
+      "channel_title": "Học lập trình Python miễn phí",
+      "subscribers": 31200,
+      "text": "bài 2: vòng lặp for/while, bài tập cuối bài có đáp án.",
+      "hashtags": [],
+      "posted_at": "2026-09-27T11:14:37.513336+00:00",
+      "views": 2496,
+      "author": "Học lập trình Python miễn phí",
+      "forwarded_from": null,
+      "has_media": true,
+      "media_types": [
+        "photo"
+      ],
+      "media_count": 1,
+      "link_preview": "",
+      "source": "demo",
+      "collected_at": "2026-10-03T15:14:37.513336+00:00",
+      "_note": "DỮ LIỆU MẪU offline - không phải bài đăng thật",
+      "pipeline_status": {
+        "collected": true,
+        "downloaded": false,
+        "audio_extracted": false,
+        "transcribed": false,
+        "frames_extracted": false,
+        "ocr_done": false
+      },
+      "analysis": {
+        "scam_score": 0,
+        "level": "Normal",
+        "scam_category": null,
+        "scam_category_vi": null,
+        "signals": [],
+        "entities": {
+          "urls": [],
+          "phones": [],
+          "bank_accounts": [],
+          "mentions": [],
+          "invite_links": []
+        },
+        "summary": "Không phát hiện tín hiệu đáng ngờ."
+      }
+    },
+    {
+      "message_id": "1700",
+      "url": "https://t.me/amthuc.mebap/1700",
+      "channel": "amthuc.mebap",
+      "channel_title": "Ẩm thực mỗi ngày",
+      "subscribers": 58700,
+      "text": "công thức phở bò nước dùng trong 8 tiếng, chi tiết từng bước.",
+      "hashtags": [],
+      "posted_at": "2026-09-26T14:14:37.513336+00:00",
+      "views": 1761,
+      "author": "Ẩm thực mỗi ngày",
+      "forwarded_from": null,
+      "has_media": true,
+      "media_types": [
+        "photo",
+        "photo",
+        "photo"
+      ],
+      "media_count": 3,
+      "link_preview": "",
+      "source": "demo",
+      "collected_at": "2026-10-03T15:14:37.513336+00:00",
+      "_note": "DỮ LIỆU MẪU offline - không phải bài đăng thật",
+      "pipeline_status": {
+        "collected": true,
+        "downloaded": false,
+        "audio_extracted": false,
+        "transcribed": false,
+        "frames_extracted": false,
+        "ocr_done": false
+      },
+      "analysis": {
+        "scam_score": 0,
+        "level": "Normal",
+        "scam_category": null,
+        "scam_category_vi": null,
+        "signals": [],
+        "entities": {
+          "urls": [],
+          "phones": [],
+          "bank_accounts": [],
+          "mentions": [],
+          "invite_links": []
+        },
+        "summary": "Không phát hiện tín hiệu đáng ngờ."
+      }
+    },
+    {
+      "message_id": "1701",
+      "url": "https://t.me/amthuc.mebap/1701",
+      "channel": "amthuc.mebap",
+      "channel_title": "Ẩm thực mỗi ngày",
+      "subscribers": 58700,
+      "text": "mẹo chọn thịt tươi ngon khi đi chợ.",
+      "hashtags": [],
+      "posted_at": "2026-09-26T11:14:37.513336+00:00",
+      "views": 4696,
+      "author": "Ẩm thực mỗi ngày",
+      "forwarded_from": null,
+      "has_media": true,
+      "media_types": [
+        "photo",
+        "photo"
+      ],
+      "media_count": 2,
+      "link_preview": "",
+      "source": "demo",
+      "collected_at": "2026-10-03T15:14:37.513336+00:00",
+      "_note": "DỮ LIỆU MẪU offline - không phải bài đăng thật",
+      "pipeline_status": {
+        "collected": true,
+        "downloaded": false,
+        "audio_extracted": false,
+        "transcribed": false,
+        "frames_extracted": false,
+        "ocr_done": false
+      },
+      "analysis": {
+        "scam_score": 0,
+        "level": "Normal",
+        "scam_category": null,
+        "scam_category_vi": null,
+        "signals": [],
+        "entities": {
+          "urls": [],
+          "phones": [],
+          "bank_accounts": [],
+          "mentions": [],
+          "invite_links": []
+        },
+        "summary": "Không phát hiện tín hiệu đáng ngờ."
+      }
+    }
+  ]
+}
