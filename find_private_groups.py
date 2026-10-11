@@ -173,7 +173,7 @@ async def scan_messages_for_invites(client, entity, limit: int, source: str,
             text = msg.message or ""
             # link preview / nút bấm inline cũng có thể chứa link mời
             try:
-                reply = getattr(msg, "reply_markup, None", None)
+                reply = getattr(msg, "reply_markup", None)
                 for row in (getattr(reply, "rows", []) or []):
                     for btn in row.buttons:
                         url = getattr(btn, "url", None)
@@ -260,8 +260,13 @@ async def join_invites(client, found: Found, max_join: int, delay: int) -> None:
         try:
             from telethon.tl.functions.messages import ImportChatInviteRequest
             from telethon.tl.functions.channels import JoinChannelRequest
-            if "/+" in link:
-                updates = await client(ImportChatInviteRequest(link.split("/+")[-1]))
+            # Link mời có 2 dạng: mới `t.me/+<hash>` và cũ `t.me/joinchat/<hash>`.
+            # Cả hai đều phải dùng ImportChatInviteRequest (JoinChannelRequest chỉ
+            # dùng được cho @username công khai), nếu không sẽ báo lỗi kiểu
+            # "Cannot find any entity corresponding to ...".
+            want_join = re.search(r"(?:\+|joinchat/)([\w-]{8,})", link)
+            if want_join:
+                updates = await client(ImportChatInviteRequest(want_join.group(1)))
                 chats = getattr(updates, "chats", []) or []
                 rec["joined"] = True
                 rec["title"] = getattr(chats[0], "title", None) if chats else None
@@ -384,8 +389,9 @@ async def run(args) -> int:
     client, err = await open_client(api_id, api_hash, sess)
     if err:
         await client.disconnect()
-        print("[!] Phiên chưa đăng nhập. Chạy --login ở demo_telegram_api.py trước.",
-              file=sys.stderr)
+        print("[!] Phiên chưa đăng nhập. Chạy trước:\n"
+              f"      python3 demo_telegram_api.py --login --session {args.session or 'tg_session'}\n"
+              "    (hoặc bỏ --session để dùng phiên mặc định tg_session.session)", file=sys.stderr)
         return 2
 
     found = Found()

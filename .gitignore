@@ -11,3 +11,11 @@ tg_api.json
 media/
 
 __pycache__/
+
+# Môi trường ảo (không commit)
+.venv-api/
+.venv/
+
+# Kết quả thu thập mặc định của bản web
+posts_web.json
+*.session-journal

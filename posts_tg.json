@@ -1,6 +1,7 @@
 {
-  "generated_at": "2026-10-03T15:14:37.519560+00:00",
+  "generated_at": "2026-10-11T16:26:53.320031+00:00",
   "total": 17,
+  "backend": "demo (offline)",
   "groups": [
     {
       "channel": "dautu.sieuloinhuan",
@@ -25,29 +26,6 @@
         "loại hình nổi bật: Đầu tư / lợi nhuận cao (3 bài)",
         "có bài đạt 71/100 (High-risk)",
         "điểm trung bình 60/100"
-      ]
-    },
-    {
-      "channel": "vieclam.ctv.hoantien",
-      "channel_title": "Tuyển CTV chốt đơn - Hoàn tiền 100%",
-      "total_messages": 2,
-      "avg_score": 45.5,
-      "max_score": 47,
-      "flagged": 2,
-      "flagged_ratio": 1.0,
-      "levels": {
-        "Suspicious": 2
-      },
-      "categories": {
-        "Việc làm online giả": 2
-      },
-      "group_score": 69,
-      "group_level": "High-risk",
-      "verdict": "Có dấu hiệu lừa đảo — cần kiểm tra kỹ",
-      "reasons": [
-        "2/2 bài (100%) cần rà soát",
-        "loại hình nổi bật: Việc làm online giả (2 bài)",
-        "điểm trung bình 46/100"
       ]
     },
     {
@@ -94,6 +72,29 @@
         "1/1 bài (100%) cần rà soát",
         "loại hình nổi bật: Giả mạo tổ chức / cá nhân (1 bài)",
         "điểm trung bình 43/100"
+      ]
+    },
+    {
+      "channel": "vieclam.ctv.hoantien",
+      "channel_title": "Tuyển CTV chốt đơn - Hoàn tiền 100%",
+      "total_messages": 2,
+      "avg_score": 40.0,
+      "max_score": 44,
+      "flagged": 2,
+      "flagged_ratio": 1.0,
+      "levels": {
+        "Suspicious": 2
+      },
+      "categories": {
+        "Việc làm online giả": 2
+      },
+      "group_score": 66,
+      "group_level": "High-risk",
+      "verdict": "Có dấu hiệu lừa đảo — cần kiểm tra kỹ",
+      "reasons": [
+        "2/2 bài (100%) cần rà soát",
+        "loại hình nổi bật: Việc làm online giả (2 bài)",
+        "điểm trung bình 40/100"
       ]
     },
     {
@@ -183,7 +184,7 @@
         "dautu",
         "loinhuan"
       ],
-      "posted_at": "2026-10-03T14:14:37.513336+00:00",
+      "posted_at": "2026-10-11T15:26:53.300796+00:00",
       "views": 1446,
       "author": "Đầu tư tài chính - Lợi nhuận 30%/tháng",
       "forwarded_from": "kênh ẩn danh",
@@ -195,7 +196,7 @@
       "media_count": 2,
       "link_preview": "",
       "source": "demo",
-      "collected_at": "2026-10-03T15:14:37.513336+00:00",
+      "collected_at": "2026-10-11T16:26:53.300796+00:00",
       "_note": "DỮ LIỆU MẪU offline - không phải bài đăng thật",
       "pipeline_status": {
         "collected": true,
@@ -279,7 +280,7 @@
       "subscribers": 48200,
       "text": "kết quả tuần này: 12 lệnh thắng liên tiếp, tài khoản x2 sau 7 ngày. nạp tối thiểu 5 triệu, hoa hồng giới thiệu 20%. inbox @admin_dautu_pro",
       "hashtags": [],
-      "posted_at": "2026-10-03T11:14:37.513336+00:00",
+      "posted_at": "2026-10-11T12:26:53.300796+00:00",
       "views": 3856,
       "author": "Đầu tư tài chính - Lợi nhuận 30%/tháng",
       "forwarded_from": null,
@@ -292,7 +293,7 @@
       "media_count": 3,
       "link_preview": "",
       "source": "demo",
-      "collected_at": "2026-10-03T15:14:37.513336+00:00",
+      "collected_at": "2026-10-11T16:26:53.300796+00:00",
       "_note": "DỮ LIỆU MẪU offline - không phải bài đăng thật",
       "pipeline_status": {
         "collected": true,
@@ -358,7 +359,7 @@
       "subscribers": 48200,
       "text": "chỉ còn 5 slot cuối cho gói vip tháng 11, cam kết hoàn vốn 100%. chuyển khoản stk 1234567890 (vietcombank) rồi báo admin để kích hoạt.",
       "hashtags": [],
-      "posted_at": "2026-10-03T08:14:37.513336+00:00",
+      "posted_at": "2026-10-11T09:26:53.300796+00:00",
       "views": 6266,
       "author": "Đầu tư tài chính - Lợi nhuận 30%/tháng",
       "forwarded_from": null,
@@ -369,7 +370,7 @@
       "media_count": 1,
       "link_preview": "",
       "source": "demo",
-      "collected_at": "2026-10-03T15:14:37.513336+00:00",
+      "collected_at": "2026-10-11T16:26:53.300796+00:00",
       "_note": "DỮ LIỆU MẪU offline - không phải bài đăng thật",
       "pipeline_status": {
         "collected": true,
@@ -445,7 +446,7 @@
       "subscribers": 96400,
       "text": "tuyển cộng tác viên chốt đơn tại nhà, không cần kinh nghiệm, thu nhập 20 triệu/tháng. làm nhiệm vụ hoàn tiền 100% đơn hàng. đăng ký: https://t.me/vieclam_bot",
       "hashtags": [],
-      "posted_at": "2026-10-02T14:14:37.513336+00:00",
+      "posted_at": "2026-10-10T15:26:53.300796+00:00",
       "views": 2892,
       "author": "Tuyển CTV chốt đơn - Hoàn tiền 100%",
       "forwarded_from": "kênh ẩn danh",
@@ -456,7 +457,7 @@
       "media_count": 1,
       "link_preview": "",
       "source": "demo",
-      "collected_at": "2026-10-03T15:14:37.513336+00:00",
+      "collected_at": "2026-10-11T16:26:53.300796+00:00",
       "_note": "DỮ LIỆU MẪU offline - không phải bài đăng thật",
       "pipeline_status": {
         "collected": true,
@@ -467,7 +468,7 @@
         "ocr_done": false
       },
       "analysis": {
-        "scam_score": 47,
+        "scam_score": 36,
         "level": "Suspicious",
         "scam_category": "Job",
         "scam_category_vi": "Việc làm online giả",
@@ -492,13 +493,6 @@
             ]
           },
           {
-            "label_vi": "Điều hướng sang kênh/nhóm khác",
-            "points": 10.8,
-            "matched": [
-              "bot"
-            ]
-          },
-          {
             "label_vi": "Bài đăng forward từ nguồn khác",
             "points": 6.0,
             "matched": [
@@ -515,7 +509,7 @@
           "mentions": [],
           "invite_links": []
         },
-        "summary": "Nhóm nghi ngờ: Việc làm online giả | Tín hiệu chính: Việc làm online giả; Có đường link ngoài nền tảng; Điều hướng sang kênh/nhóm khác"
+        "summary": "Nhóm nghi ngờ: Việc làm online giả | Tín hiệu chính: Việc làm online giả; Có đường link ngoài nền tảng; Bài đăng forward từ nguồn khác"
       }
     },
     {
@@ -526,7 +520,7 @@
       "subscribers": 96400,
       "text": "hướng dẫn làm nhiệm vụ: nạp 500k vào ví, chốt 3 đơn là rút được cả gốc lẫn lãi. liên hệ zalo 0987654321 để được hỗ trợ.",
       "hashtags": [],
-      "posted_at": "2026-10-02T11:14:37.513336+00:00",
+      "posted_at": "2026-10-10T12:26:53.300796+00:00",
       "views": 7712,
       "author": "Tuyển CTV chốt đơn - Hoàn tiền 100%",
       "forwarded_from": null,
@@ -537,7 +531,7 @@
       "media_count": 1,
       "link_preview": "",
       "source": "demo",
-      "collected_at": "2026-10-03T15:14:37.513336+00:00",
+      "collected_at": "2026-10-11T16:26:53.300796+00:00",
       "_note": "DỮ LIỆU MẪU offline - không phải bài đăng thật",
       "pipeline_status": {
         "collected": true,
@@ -598,7 +592,7 @@
       "subscribers": 27300,
       "text": "vay tiền online chỉ cần cccd, không thế chấp, giải ngân trong ngày, lãi suất 0% tháng đầu. đăng ký app vay: https://vay365.example.com/dangky",
       "hashtags": [],
-      "posted_at": "2026-10-01T14:14:37.513336+00:00",
+      "posted_at": "2026-10-09T15:26:53.300796+00:00",
       "views": 819,
       "author": "Hỗ trợ vay vốn online",
       "forwarded_from": null,
@@ -610,7 +604,7 @@
       "media_count": 2,
       "link_preview": "",
       "source": "demo",
-      "collected_at": "2026-10-03T15:14:37.513336+00:00",
+      "collected_at": "2026-10-11T16:26:53.300796+00:00",
       "_note": "DỮ LIỆU MẪU offline - không phải bài đăng thật",
       "pipeline_status": {
         "collected": true,
@@ -666,7 +660,7 @@
       "subscribers": 27300,
       "text": "hỗ trợ nợ xấu, bùng nợ vẫn vay được. hồ sơ đơn giản, duyệt trong 5 phút. sđt 0912345678 (call/zalo).",
       "hashtags": [],
-      "posted_at": "2026-10-01T11:14:37.513336+00:00",
+      "posted_at": "2026-10-09T12:26:53.300796+00:00",
       "views": 2184,
       "author": "Hỗ trợ vay vốn online",
       "forwarded_from": null,
@@ -677,7 +671,7 @@
       "media_count": 1,
       "link_preview": "",
       "source": "demo",
-      "collected_at": "2026-10-03T15:14:37.513336+00:00",
+      "collected_at": "2026-10-11T16:26:53.300796+00:00",
       "_note": "DỮ LIỆU MẪU offline - không phải bài đăng thật",
       "pipeline_status": {
         "collected": true,
@@ -738,7 +732,7 @@
       "subscribers": 143000,
       "text": "chúc mừng 100 khách hàng may mắn trúng thưởng iphone 16 pro max! chỉ cần chia sẻ bài viết và bình luận. nhận quà miễn phí, số lượng có hạn.",
       "hashtags": [],
-      "posted_at": "2026-09-30T14:14:37.513336+00:00",
+      "posted_at": "2026-10-08T15:26:53.300796+00:00",
       "views": 4290,
       "author": "Sự kiện tri ân - Trúng thưởng",
       "forwarded_from": "kênh ẩn danh",
@@ -751,7 +745,7 @@
       "media_count": 3,
       "link_preview": "",
       "source": "demo",
-      "collected_at": "2026-10-03T15:14:37.513336+00:00",
+      "collected_at": "2026-10-11T16:26:53.300796+00:00",
       "_note": "DỮ LIỆU MẪU offline - không phải bài đăng thật",
       "pipeline_status": {
         "collected": true,
@@ -809,7 +803,7 @@
       "subscribers": 143000,
       "text": "danh sách trúng thưởng đã có, ai có tên thì chuyển phí vận chuyển 150k để nhận quà. stk: 9876543210 - momo: 0987654321",
       "hashtags": [],
-      "posted_at": "2026-09-30T11:14:37.513336+00:00",
+      "posted_at": "2026-10-08T12:26:53.300796+00:00",
       "views": 11440,
       "author": "Sự kiện tri ân - Trúng thưởng",
       "forwarded_from": null,
@@ -820,7 +814,7 @@
       "media_count": 1,
       "link_preview": "",
       "source": "demo",
-      "collected_at": "2026-10-03T15:14:37.513336+00:00",
+      "collected_at": "2026-10-11T16:26:53.300796+00:00",
       "_note": "DỮ LIỆU MẪU offline - không phải bài đăng thật",
       "pipeline_status": {
         "collected": true,
@@ -883,7 +877,7 @@
       "subscribers": 8900,
       "text": "thông báo: tài khoản của bạn có giao dịch bất thường. vui lòng xác nhận số tài khoản và chuyển phí xác nhận 500.000đ để mở lại dịch vụ. hotline chính thức 0912345678.",
       "hashtags": [],
-      "posted_at": "2026-09-29T14:14:37.513336+00:00",
+      "posted_at": "2026-10-07T15:26:53.300796+00:00",
       "views": 267,
       "author": "Hỗ trợ tài khoản ngân hàng",
       "forwarded_from": null,
@@ -894,7 +888,7 @@
       "media_count": 1,
       "link_preview": "",
       "source": "demo",
-      "collected_at": "2026-10-03T15:14:37.513336+00:00",
+      "collected_at": "2026-10-11T16:26:53.300796+00:00",
       "_note": "DỮ LIỆU MẪU offline - không phải bài đăng thật",
       "pipeline_status": {
         "collected": true,
@@ -953,7 +947,7 @@
       "subscribers": 245000,
       "text": "telegram ra mắt tính năng mới cho phép tìm kiếm trong kênh và nhóm, cùng nhiều cải tiến về bảo mật.",
       "hashtags": [],
-      "posted_at": "2026-09-28T14:14:37.513336+00:00",
+      "posted_at": "2026-10-06T15:26:53.300796+00:00",
       "views": 7350,
       "author": "Tin tức công nghệ",
       "forwarded_from": null,
@@ -964,7 +958,7 @@
       "media_count": 1,
       "link_preview": "",
       "source": "demo",
-      "collected_at": "2026-10-03T15:14:37.513336+00:00",
+      "collected_at": "2026-10-11T16:26:53.300796+00:00",
       "_note": "DỮ LIỆU MẪU offline - không phải bài đăng thật",
       "pipeline_status": {
         "collected": true,
@@ -1006,7 +1000,7 @@
       "subscribers": 245000,
       "text": "tổng hợp các mẫu điện thoại tầm trung đáng mua trong tháng này.",
       "hashtags": [],
-      "posted_at": "2026-09-28T11:14:37.513336+00:00",
+      "posted_at": "2026-10-06T12:26:53.300796+00:00",
       "views": 19600,
       "author": "Tin tức công nghệ",
       "forwarded_from": null,
@@ -1018,7 +1012,7 @@
       "media_count": 2,
       "link_preview": "",
       "source": "demo",
-      "collected_at": "2026-10-03T15:14:37.513336+00:00",
+      "collected_at": "2026-10-11T16:26:53.300796+00:00",
       "_note": "DỮ LIỆU MẪU offline - không phải bài đăng thật",
       "pipeline_status": {
         "collected": true,
@@ -1052,7 +1046,7 @@
       "subscribers": 245000,
       "text": "cách bật xác thực hai lớp để bảo vệ tài khoản telegram của bạn.",
       "hashtags": [],
-      "posted_at": "2026-09-28T08:14:37.513336+00:00",
+      "posted_at": "2026-10-06T09:26:53.300796+00:00",
       "views": 31850,
       "author": "Tin tức công nghệ",
       "forwarded_from": null,
@@ -1063,7 +1057,7 @@
       "media_count": 1,
       "link_preview": "",
       "source": "demo",
-      "collected_at": "2026-10-03T15:14:37.513336+00:00",
+      "collected_at": "2026-10-11T16:26:53.300796+00:00",
       "_note": "DỮ LIỆU MẪU offline - không phải bài đăng thật",
       "pipeline_status": {
         "collected": true,
@@ -1105,7 +1099,7 @@
       "subscribers": 31200,
       "text": "bài 1: biến và kiểu dữ liệu trong python. tài liệu tham khảo ở phần bình luận.",
       "hashtags": [],
-      "posted_at": "2026-09-27T14:14:37.513336+00:00",
+      "posted_at": "2026-10-05T15:26:53.300796+00:00",
       "views": 936,
       "author": "Học lập trình Python miễn phí",
       "forwarded_from": null,
@@ -1117,7 +1111,7 @@
       "media_count": 2,
       "link_preview": "",
       "source": "demo",
-      "collected_at": "2026-10-03T15:14:37.513336+00:00",
+      "collected_at": "2026-10-11T16:26:53.300796+00:00",
       "_note": "DỮ LIỆU MẪU offline - không phải bài đăng thật",
       "pipeline_status": {
         "collected": true,
@@ -1151,7 +1145,7 @@
       "subscribers": 31200,
       "text": "bài 2: vòng lặp for/while, bài tập cuối bài có đáp án.",
       "hashtags": [],
-      "posted_at": "2026-09-27T11:14:37.513336+00:00",
+      "posted_at": "2026-10-05T12:26:53.300796+00:00",
       "views": 2496,
       "author": "Học lập trình Python miễn phí",
       "forwarded_from": null,
@@ -1162,7 +1156,7 @@
       "media_count": 1,
       "link_preview": "",
       "source": "demo",
-      "collected_at": "2026-10-03T15:14:37.513336+00:00",
+      "collected_at": "2026-10-11T16:26:53.300796+00:00",
       "_note": "DỮ LIỆU MẪU offline - không phải bài đăng thật",
       "pipeline_status": {
         "collected": true,
@@ -1196,7 +1190,7 @@
       "subscribers": 58700,
       "text": "công thức phở bò nước dùng trong 8 tiếng, chi tiết từng bước.",
       "hashtags": [],
-      "posted_at": "2026-09-26T14:14:37.513336+00:00",
+      "posted_at": "2026-10-04T15:26:53.300796+00:00",
       "views": 1761,
       "author": "Ẩm thực mỗi ngày",
       "forwarded_from": null,
@@ -1209,7 +1203,7 @@
       "media_count": 3,
       "link_preview": "",
       "source": "demo",
-      "collected_at": "2026-10-03T15:14:37.513336+00:00",
+      "collected_at": "2026-10-11T16:26:53.300796+00:00",
       "_note": "DỮ LIỆU MẪU offline - không phải bài đăng thật",
       "pipeline_status": {
         "collected": true,
@@ -1243,7 +1237,7 @@
       "subscribers": 58700,
       "text": "mẹo chọn thịt tươi ngon khi đi chợ.",
       "hashtags": [],
-      "posted_at": "2026-09-26T11:14:37.513336+00:00",
+      "posted_at": "2026-10-04T12:26:53.300796+00:00",
       "views": 4696,
       "author": "Ẩm thực mỗi ngày",
       "forwarded_from": null,
@@ -1255,7 +1249,7 @@
       "media_count": 2,
       "link_preview": "",
       "source": "demo",
-      "collected_at": "2026-10-03T15:14:37.513336+00:00",
+      "collected_at": "2026-10-11T16:26:53.300796+00:00",
       "_note": "DỮ LIỆU MẪU offline - không phải bài đăng thật",
       "pipeline_status": {
         "collected": true,

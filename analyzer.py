@@ -1,0 +1,670 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""analyzer.py — "nguồn chân lý" duy nhất cho bộ từ điển + chấm điểm lừa đảo.
+
+Module này gom phần phân tích đã từng bị **copy 2 lần** trong `demo_telegram.py`
+(bản web) và `demo_telegram_api.py` (bản API), để hai bản không lệch nhau nữa:
+
+    1. Từ điển  : SCAM_GROUPS (6 nhóm lừa đảo) + ACTION_SIGNALS (4 nhóm tín hiệu)
+    2. Ngưỡng   : THRESHOLD_SUSPICIOUS / THRESHOLD_HIGH_RISK (+ ngưỡng cho group)
+    3. Regex    : URL, SĐT, số tài khoản, hashtag, mention, link mời nhóm
+    4. Chuẩn hoá : normalize() (chữ thường) và no_accent() (bỏ dấu)
+    5. Chấm 1 bài: analyze(post, ocr_text="") -> điểm 0-100 + mức + nhóm + tín hiệu
+    6. Chấm group: group_summary(records, noun=...) -> điểm rủi ro cho cả nhóm/kênh
+    7. Trình bày : print_group_section() in mục [5] của báo cáo
+
+Điểm số chỉ là **TÍN HIỆU HỖ TRỢ RÀ SOÁT**, không phải kết luận.
+
+Lịch sử: bản gốc khớp từ khoá bằng phép `k in haystack` (khớp chuỗi con) nên báo
+động giả rất nặng — `ib` khớp trong "herm**ib**ooks"/"respons**ib**le",
+`công an` khớp trong "phân công anh ta", `stk` khớp trong một chuỗi base64 của
+Facebook. Từ bản này, từ khoá được khớp theo **ranh giới từ**
+(`(?<!\\w)kw(?!\\w)`) — xem `hits()`.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import unicodedata
+from collections import Counter
+from datetime import datetime, timedelta, timezone
+
+# ---------------------------------------------------------------------------
+# 1. Bộ từ điển
+# ---------------------------------------------------------------------------
+
+SCAM_GROUPS = {
+    "Investment": ("Đầu tư / lợi nhuận cao", 22, [
+        "đầu tư", "lợi nhuận", "sinh lời", "cam kết lợi nhuận", "làm giàu",
+        "kiếm tiền online", "thu nhập thụ động", "sàn đầu tư", "forex",
+        "tiền ảo", "usdt", "gấp 3 lần", "gấp 5 lần", "x2 tài khoản",
+        "kèo thơm", "bao lời", "cam kết hoàn vốn", "phiên tín hiệu",
+    ]),
+    "Job": ("Việc làm online giả", 18, [
+        "việc làm online", "việc nhẹ lương cao", "tuyển cộng tác viên", "ctv",
+        "làm tại nhà", "chốt đơn", "hoàn tiền", "làm nhiệm vụ",
+        "không cần kinh nghiệm", "thu nhập 20 triệu", "tuyển gấp", "đa cấp",
+        "tuyển đại lý", "cộng tác viên chốt đơn",
+    ]),
+    "Loan": ("Cho vay trực tuyến", 20, [
+        "cho vay", "vay vốn", "vay nhanh", "vay tiền online", "không thế chấp",
+        "giải ngân trong ngày", "chỉ cần cccd", "app vay", "lãi suất 0%",
+        "vay tín chấp", "tín dụng đen", "bùng nợ", "hỗ trợ nợ xấu",
+    ]),
+    "Giveaway": ("Trúng thưởng / quà tặng", 16, [
+        "trúng thưởng", "nhận quà", "quà tặng miễn phí", "tri ân khách hàng",
+        "minigame", "quay số", "nhận thưởng", "phần thưởng", "airdrop",
+        "chỉ cần bình luận", "chỉ cần chia sẻ", "like và share", "tặng code",
+    ]),
+    "Impersonation": ("Giả mạo tổ chức / cá nhân", 20, [
+        "giả mạo", "chính chủ", "hotline chính thức", "công an", "tòa án",
+        "cơ quan thuế", "cán bộ thuế", "nhân viên thuế",
+        "shipper", "nhân viên ngân hàng", "chuyên gia tài chính",
+        "mentor", "fanpage chính thức", "tổng đài", "admin chính thức",
+    ]),
+    "Shopping": ("Mua sắm / bán hàng đáng ngờ", 14, [
+        "sale sốc", "giảm giá 90%", "thanh lý", "xả kho", "cọc trước",
+        "chuyển khoản trước", "không ship cod", "sỉ giá gốc",
+    ]),
+}
+
+ACTION_SIGNALS = {
+    "money_transfer": ("Yêu cầu chuyển tiền", 20, [
+        "chuyển khoản", "cọc trước", "nạp tiền", "nộp phí", "phí xác nhận",
+        "stk", "số tài khoản", "momo", "zalopay", "ví điện tử", "nạp usdt",
+    ]),
+    "commission": ("Hứa hẹn hoa hồng", 14, [
+        "hoa hồng", "chiết khấu cao", "thưởng nóng", "giới thiệu người", "ref",
+    ]),
+    "offplatform": ("Điều hướng sang kênh/nhóm khác", 18, [
+        "link bio", "telegram", "zalo", "whatsapp", "inbox", "ib",
+        "link đăng ký", "truy cập link", "tải app", "nhóm kín", "sđt",
+        "số điện thoại", "join nhóm", "vào nhóm", "add tele",
+    ]),
+    "urgency": ("Thúc ép / khan hiếm giả tạo", 10, [
+        "duy nhất hôm nay", "chỉ còn", "nhanh tay", "số lượng có hạn",
+        "cơ hội cuối", "đừng bỏ lỡ", "trong 24h", "slot cuối",
+    ]),
+}
+
+# ---------------------------------------------------------------------------
+# 2. Ngưỡng + quy ước
+# ---------------------------------------------------------------------------
+
+THRESHOLD_SUSPICIOUS, THRESHOLD_HIGH_RISK = 25, 60
+
+#: Điểm rủi ro ở mức group dùng lại đúng hai ngưỡng trên.
+GROUP_THRESHOLD_SUSPICIOUS, GROUP_THRESHOLD_HIGH_RISK = THRESHOLD_SUSPICIOUS, THRESHOLD_HIGH_RISK
+
+#: Danh từ dùng trong câu "lý do": bản web gọi là "bài", bản API gọi là "tin".
+NOUN_WEB, NOUN_API = "bài", "tin"
+
+#: Tỷ lệ bài bị gắn cờ tối thiểu để thêm lý do "N/M ... cần rà soát".
+#: Suy ra từ dữ liệu lịch sử: posts_tg.json có tỷ lệ 1.0 → CÓ lý do này;
+#: nhom1.json có tỷ lệ 0.008 → KHÔNG có. Mọi ngưỡng trong khoảng (0.008, 1.0]
+#: đều khớp dữ liệu cũ; chọn 0.5 (nửa số bài trở lên) cho dễ hiểu.
+REASON_DENSITY_MIN = 0.5
+
+#: Bật khớp từ khoá theo ranh giới từ (xem `hits()`). Đặt False để quay lại
+#: hành vi cũ (khớp chuỗi con) khi cần so sánh.
+MATCH_WORD_BOUNDARY = True
+
+RE_URL = re.compile(r"(https?://[^\s<>\"]+|www\.[^\s<>\"]+|[a-z0-9\-]+\.(?:com|net|vn|org|io|xyz|top|info|site|online|me|app|pro)(?:/[^\s<>\"]*)?)", re.I)
+RE_PHONE = re.compile(r"(?<!\d)(?:\+84|0)(?:3|5|7|8|9)\d{8}(?!\d)")
+RE_BANK_ACCOUNT = re.compile(r"(?<![\d\w.,-])\d{9,16}(?![\d\w.,-])")
+RE_HASHTAG = re.compile(r"#([\w\u00C0-\u1EF9]{2,})", re.U)
+RE_MENTION = re.compile(r"@([A-Za-z][\w]{3,31})", re.U)
+RE_TG_INVITE = re.compile(r"(?:https?://)?t\.me/(?:\+[\w-]+|joinchat/[\w-]+)", re.I)
+
+#: Link ngoài nền tảng trong nội dung forward/nguồn — dùng để nhận biết nguồn gốc.
+RE_FORWARD_SOURCE = re.compile(r"(?:https?://)?t\.me/(?!\+|joinchat/)([A-Za-z0-9_]{4,})")
+
+# ---------------------------------------------------------------------------
+# 3. Chuẩn hoá văn bản
+# ---------------------------------------------------------------------------
+
+
+def normalize(text: str) -> str:
+    """Chữ thường, gộp khoảng trắng, bỏ ký tự vô hình."""
+    text = unicodedata.normalize("NFC", str(text or ""))
+    text = text.replace("\u200b", " ").replace("\ufeff", "")
+    return re.sub(r"\s+", " ", re.sub(r"[\r\n\t]+", " ", text)).strip().lower()
+
+
+def no_accent(text: str) -> str:
+    """Bỏ dấu tiếng Việt: 'đầu tư' -> 'dau tu' (để bắt nội dung viết không dấu)."""
+    t = unicodedata.normalize("NFD", text)
+    t = "".join(c for c in t if unicodedata.category(c) != "Mn")
+    return unicodedata.normalize("NFC", t.replace("đ", "d").replace("Đ", "D"))
+
+
+# ---------------------------------------------------------------------------
+# 4. Khớp từ khoá (theo ranh giới từ)
+# ---------------------------------------------------------------------------
+
+_KW_RE_CACHE: dict[str, re.Pattern] = {}
+
+
+def kw_regex(keyword: str) -> re.Pattern:
+    """Regex khớp `keyword` như một **từ trọn vẹn**, có cache."""
+    rx = _KW_RE_CACHE.get(keyword)
+    if rx is None:
+        rx = re.compile(r"(?<!\w)" + re.escape(keyword) + r"(?!\w)")
+        _KW_RE_CACHE[keyword] = rx
+    return rx
+
+
+def hits(keywords, haystack: str, plain: str) -> list[str]:
+    """Các từ khoá xuất hiện trong `haystack` (có dấu) hoặc `plain` (không dấu).
+
+    Mặc định khớp theo **ranh giới từ** để tránh báo động giả kiểu
+    `ib` ∈ "hermibooks" hay `công an` ∈ "phân công anh ta".
+    """
+    found = []
+    for k in keywords:
+        if MATCH_WORD_BOUNDARY:
+            if kw_regex(k).search(haystack) or kw_regex(no_accent(k)).search(plain):
+                found.append(k)
+        elif k in haystack or no_accent(k) in plain:
+            found.append(k)
+    return found
+
+
+# ---------------------------------------------------------------------------
+# 5. Trích xuất thực thể
+# ---------------------------------------------------------------------------
+
+
+def extract_entities(text: str) -> dict:
+    urls = []
+    for u in RE_URL.findall(text or ""):
+        u = u.rstrip(".,;)")
+        if u.lower() not in [x.lower() for x in urls]:
+            urls.append(u)
+    phones = list(dict.fromkeys(RE_PHONE.findall(text or "")))
+    accounts = [a for a in dict.fromkeys(RE_BANK_ACCOUNT.findall(text or "")) if a not in phones]
+    return {
+        "urls": urls[:6],
+        "phones": phones[:5],
+        "bank_accounts": accounts[:5],
+        "mentions": list(dict.fromkeys(RE_MENTION.findall(text or "")))[:6],
+        "invite_links": list(dict.fromkeys(RE_TG_INVITE.findall(text or "")))[:5],
+    }
+
+
+# ---------------------------------------------------------------------------
+# 6. Chấm điểm một bài đăng
+# ---------------------------------------------------------------------------
+
+
+def analyze(post: dict, ocr_text: str = "") -> dict:
+    """Chấm điểm nghi ngờ 0-100. `ocr_text`: chữ đọc được từ ảnh (nếu bật --ocr)."""
+    text = post.get("text") or ""
+    haystack = normalize(" ".join([text, ocr_text or "",
+                                   post.get("channel_title") or "", post.get("channel") or ""]))
+    plain = no_accent(haystack)
+
+    score, signals, group_scores = 0.0, [], {}
+
+    for label, (name_vi, weight, keywords) in SCAM_GROUPS.items():
+        found = hits(keywords, haystack, plain)
+        if found:
+            pts = weight * min(1.0, 0.6 + 0.2 * (len(found) - 1))
+            group_scores[label] = pts
+            signals.append((name_vi, pts, found[:6]))
+
+    if group_scores:
+        ranked = sorted(group_scores.items(), key=lambda kv: -kv[1])
+        score += ranked[0][1] + sum(p * 0.5 for _, p in ranked[1:3])
+
+    for name_vi, weight, keywords in ACTION_SIGNALS.values():
+        found = hits(keywords, haystack, plain)
+        if found:
+            pts = weight * min(1.0, 0.6 + 0.2 * (len(found) - 1))
+            score += pts
+            signals.append((name_vi, pts, found[:6]))
+
+    ent = extract_entities(text)
+    if post.get("link_preview"):
+        ent["urls"] = list(dict.fromkeys(ent["urls"] + [post["link_preview"]]))
+    if ocr_text:
+        ocr_ent = extract_entities(ocr_text)
+        for key in ("urls", "phones", "bank_accounts", "invite_links"):
+            ent[key] = list(dict.fromkeys(ent[key] + ocr_ent[key]))
+    if ent["urls"]:
+        score += 12
+        signals.append(("Có đường link ngoài nền tảng", 12.0, ent["urls"]))
+    if ent["phones"] or ent["bank_accounts"]:
+        score += 15
+        signals.append(("Số điện thoại / số tài khoản trong bài", 15.0,
+                        (ent["phones"] + ent["bank_accounts"])[:4]))
+    if ent["invite_links"]:
+        score += 12
+        signals.append(("Link mời vào nhóm/kênh riêng (t.me/+...)", 12.0, ent["invite_links"]))
+    if post.get("forwarded_from"):
+        score += 6
+        signals.append(("Bài đăng forward từ nguồn khác", 6.0, [post["forwarded_from"]]))
+    if post.get("has_media") and hits(["kết quả", "lệnh", "lợi nhuận", "biến động"],
+                                      haystack, plain):
+        score += 5
+        signals.append(("Ảnh/video kèm nội dung tài chính", 5.0, ["media + nội dung tài chính"]))
+    if ocr_text:
+        score += 5
+        signals.append(("Có chữ đọc được từ ảnh (OCR)", 5.0, [ocr_text[:80]]))
+
+    score = int(round(min(100.0, score)))
+    level = level_of(score)
+    category = None
+    if group_scores and level != "Normal":
+        category = max(group_scores.items(), key=lambda kv: kv[1])[0]
+
+    top = sorted(signals, key=lambda s: -s[1])[:3]
+    summary = ("Nhóm nghi ngờ: " + SCAM_GROUPS[category][0] if category
+               else "Không có nhóm rõ ràng")
+    if top:
+        summary += " | Tín hiệu chính: " + "; ".join(n for n, _, _ in top)
+    else:
+        summary = "Không phát hiện tín hiệu đáng ngờ."
+
+    return {
+        "scam_score": score, "level": level,
+        "scam_category": category,
+        "scam_category_vi": SCAM_GROUPS[category][0] if category else None,
+        "signals": [{"label_vi": n, "points": round(p, 1), "matched": m} for n, p, m in
+                    sorted(signals, key=lambda s: -s[1])],
+        "entities": ent, "summary": summary,
+    }
+
+
+# ---------------------------------------------------------------------------
+# 7. Mức rủi ro + lời kết
+# ---------------------------------------------------------------------------
+
+
+def level_of(score: float) -> str:
+    """0-24 Normal, 25-59 Suspicious, 60-100 High-risk."""
+    return ("High-risk" if score >= THRESHOLD_HIGH_RISK
+            else "Suspicious" if score >= THRESHOLD_SUSPICIOUS else "Normal")
+
+
+def verdict_of(level: str) -> str:
+    """Câu kết luận tiếng Việt cho một mức rủi ro."""
+    return {
+        "High-risk": "Có dấu hiệu lừa đảo — cần kiểm tra kỹ",
+        "Suspicious": "Nghi ngờ",
+    }.get(level, "Chưa thấy dấu hiệu bất thường")
+
+
+def icon_of(level: str) -> str:
+    return {"High-risk": "🔴", "Suspicious": "🟠"}.get(level, "🟢")
+
+
+def _pct(ratio: float) -> str:
+    """0.008 -> '0.8', 1.0 -> '100' (bỏ số 0 thừa)."""
+    s = f"{ratio * 100:.1f}"
+    return s.rstrip("0").rstrip(".") if "." in s else s
+
+
+# ---------------------------------------------------------------------------
+# 8. Chấm điểm rủi ro theo GROUP/KÊNH
+# ---------------------------------------------------------------------------
+#
+# Công thức (0-100), đã dò ngược và kiểm chứng trên 9 nhóm trong
+# posts_tg.json + nhom1.json (ra đúng 81/69/67/67/63/6/0/0 và 9):
+#
+#     group_score = min(100, round( 0.6 * avg_score
+#                                 + 25  * flagged_ratio
+#                                 + 10  * (số bài của loại hình nổi bật / tổng số bài)
+#                                 + 15  * (max_score / 100) ))
+#
+# * `round()` của Python (làm tròn chẵn) chứ không phải cắt thành int:
+#   nhóm vayvon.nhanh365 có 0.6*40.5 + 25 + 10 + 15*0.49 = 66.65 -> 67.
+# * Mẫu số của "độ tập trung loại hình" là **tổng số bài**, không phải số bài bị
+#   gắn cờ: nhóm aiquochientrang (1000 bài, 8 bài gắn cờ, 3 bài Investment) cho
+#   0.6*4.9 + 25*0.008 + 10*3/1000 + 15*0.36 = 8.57 -> 9 ✔ (nếu chia cho 8 thì ra 12 ✘).
+
+GROUP_WEIGHT_AVG = 0.6
+GROUP_WEIGHT_DENSITY = 25.0
+GROUP_WEIGHT_CONCENTRATION = 10.0
+GROUP_WEIGHT_PEAK = 15.0
+
+
+def _group_key(record: dict) -> str:
+    return str(record.get("channel") or record.get("channel_title") or "?")
+
+
+def group_summary(records: list[dict], noun: str = NOUN_WEB) -> list[dict]:
+    """Tính điểm rủi ro cho từng group/kênh có trong `records`.
+
+    Trả danh sách đã sắp xếp giảm dần theo `group_score`; mỗi phần tử có các khóa
+    `channel, channel_title, total_messages, avg_score, max_score, flagged,
+    flagged_ratio, levels, categories, repeat_top_text (nếu có), group_score,
+    group_level, verdict, reasons`.
+    """
+    buckets: dict[str, list[dict]] = {}
+    for rec in records:
+        buckets.setdefault(_group_key(rec), []).append(rec)
+
+    out: list[dict] = []
+    for channel, items in buckets.items():
+        scores = [int((r.get("analysis") or {}).get("scam_score", 0)) for r in items]
+        total = len(items)
+        flagged_posts = [r for r in items if (r.get("analysis") or {}).get("level") != "Normal"]
+        flagged = len(flagged_posts)
+        ratio = flagged / total if total else 0.0
+        avg = round(sum(scores) / total, 1) if total else 0.0
+        peak = max(scores) if scores else 0
+
+        levels = Counter((r.get("analysis") or {}).get("level", "Normal") for r in items)
+        categories = Counter((r.get("analysis") or {}).get("scam_category_vi")
+                             for r in flagged_posts
+                             if (r.get("analysis") or {}).get("scam_category_vi"))
+        top_cat = categories.most_common(1)[0] if categories else None
+
+        group_score = int(round(min(100.0,
+                                    GROUP_WEIGHT_AVG * avg
+                                    + GROUP_WEIGHT_DENSITY * ratio
+                                    + GROUP_WEIGHT_CONCENTRATION * ((top_cat[1] / total) if top_cat else 0)
+                                    + GROUP_WEIGHT_PEAK * (peak / 100.0))))
+        group_level = level_of(group_score)
+
+        # --- lý do ---------------------------------------------------------
+        reasons: list[str] = []
+        if flagged and ratio >= REASON_DENSITY_MIN:
+            reasons.append(f"{flagged}/{total} {noun} ({_pct(ratio)}%) cần rà soát")
+        if top_cat:
+            reasons.append(f"loại hình nổi bật: {top_cat[0]} ({top_cat[1]} {noun})")
+        if peak >= THRESHOLD_HIGH_RISK:
+            reasons.append(f"có {noun} đạt {peak}/100 (High-risk)")
+        if group_level != "Normal":
+            # Làm tròn về số nguyên cho câu lý do (đúng như dữ liệu lịch sử:
+            # 59.7 -> 60, 40.5 -> 40, 45.5 -> 46).
+            reasons.append(f"điểm trung bình {round(avg)}/100")
+
+        record = {
+            "channel": channel,
+            "channel_title": items[0].get("channel_title") or channel,
+            "total_messages": total,
+            "avg_score": avg,
+            "max_score": peak,
+            "flagged": flagged,
+            "flagged_ratio": round(ratio, 3),
+            "levels": dict(levels),
+            "categories": dict(categories),
+        }
+        # `repeat_top_text`: số nội dung khác nhau bị **spam lặp từ 3 lần trở lên**.
+        # Ngữ nghĩa này dò ra từ mẫu lịch sử duy nhất còn lưu (nhom1.json:
+        # giá trị 2, trong khi nhóm có 3 nội dung lặp >= 2 lần và 1 nội dung lặp 4 lần).
+        repeat = sum(1 for text, n in Counter(r.get("text") or "" for r in items).items()
+                     if text and n >= 3)
+        if repeat:
+            record["repeat_top_text"] = repeat
+        record.update({
+            "group_score": group_score,
+            "group_level": group_level,
+            "verdict": verdict_of(group_level),
+            "reasons": reasons,
+        })
+        out.append(record)
+
+    out.sort(key=lambda g: -g["group_score"])
+    return out
+
+
+#: Tên gọi khác cho dễ đọc ở nơi khác trong code.
+groups_payload = group_summary
+
+
+def group_risk_for_channel(records: list[dict], channel: str, noun: str = NOUN_WEB) -> dict | None:
+    """Điểm rủi ro của **một** kênh/nhóm (None nếu không có bài nào)."""
+    for g in group_summary(records, noun=noun):
+        if g["channel"] == channel:
+            return g
+    return None
+
+
+# ---------------------------------------------------------------------------
+# 9. Trình bày mục [5] của báo cáo
+# ---------------------------------------------------------------------------
+
+
+def group_lines(group: dict, noun: str = NOUN_WEB, width: int = 100) -> list[str]:
+    """Các dòng mô tả một group (đã xuống dòng, thụt lề) cho mục [5]."""
+    head = (f"    {icon_of(group['group_level'])} [ {group['group_score']:>3}/100 | "
+            f"{group['group_level']} ] {group['channel_title']} (@{group['channel']})")
+    stats = [f"{group['verdict']} — {group['total_messages']} {noun}",
+             f"điểm TB {group['avg_score']:g}",
+             f"cao nhất {group['max_score']}"]
+    if group["flagged"]:
+        stats.append(f"{group['flagged']} {noun} cần rà soát ({_pct(group['flagged_ratio'])}%)")
+    lines = [head, _wrap("        " + ", ".join(stats), width, 8)]
+
+    reasons = []
+    for r in group["reasons"]:
+        # Bản in màn hình dùng "ở mức cần rà soát" (file JSON ghi ngắn hơn).
+        reasons.append(r.replace(" cần rà soát", " ở mức cần rà soát", 1)
+                       if r.endswith("cần rà soát") else r)
+    if reasons:
+        lines.append(_wrap("        Lý do: " + "; ".join(reasons), width, 15))
+    return lines
+
+
+def _wrap(text: str, width: int, indent: int) -> str:
+    """Ngắt dòng đơn giản, các dòng sau thụt lề `indent` khoảng trắng."""
+    lead = text[:len(text) - len(text.lstrip())]
+    words, lines, cur = text.split(), [], ""
+    for w in words:
+        if cur and len(cur) + 1 + len(w) > width:
+            lines.append(cur)
+            cur = " " * indent + w
+        else:
+            cur = (cur + " " + w) if cur else lead + w
+    if cur:
+        lines.append(cur)
+    return "\n".join(lines)
+
+
+def print_group_section(groups: list[dict], noun: str = NOUN_WEB,
+                        title: str = "[5] ĐIỂM RỦI RO THEO GROUP/KÊNH",
+                        width: int = 100, limit: int = 10) -> None:
+    """In mục [5]: điểm rủi ro của từng group/kênh (nặng nhất trước)."""
+    print(f"\n{title}")
+    if not groups:
+        print("    (không có dữ liệu)")
+        return
+    for g in groups[:limit]:
+        for line in group_lines(g, noun=noun, width=width):
+            print(line)
+    if len(groups) > limit:
+        print(f"    ... và {len(groups) - limit} group khác (xem khóa `groups` trong file JSON)")
+
+
+# ---------------------------------------------------------------------------
+# 8. Trình bày báo cáo + ghi JSON (dùng chung cho cả hai backend)
+# ---------------------------------------------------------------------------
+
+def _public(record: dict) -> dict:
+    """Bỏ tham chiếu nội bộ (message của Telethon) nhưng GIỮ `_note` của dữ liệu mẫu."""
+    return {k: v for k, v in record.items() if k != "_msg_ref"}
+
+
+def print_report(records: list[dict], sources: list[str] | None = None,
+                 title: str = "BÁO CÁO THU THẬP TELEGRAM", noun: str = NOUN_WEB,
+                 width: int = 74) -> None:
+    """In báo cáo [1]–[5]: tổng quan, nhóm lừa đảo, top kênh, top bài, điểm theo group."""
+    total = len(records)
+    levels = Counter((r.get("analysis") or {}).get("level", "Normal") for r in records)
+    cats = Counter((r.get("analysis") or {}).get("scam_category_vi") for r in records
+                   if (r.get("analysis") or {}).get("scam_category_vi"))
+    channels = Counter(r["channel"] for r in records)
+    groups = group_summary(records, noun=noun)
+    line = "=" * width
+
+    print("\n" + line)
+    print(title.center(width))
+    if sources:
+        print(("Nguồn: " + ", ".join(sources))[:width].center(width))
+    print(line)
+    print(f"\n[1] TỔNG QUAN: {total} bài đăng")
+    for lv in ("Normal", "Suspicious", "High-risk"):
+        print(f"    {lv:<12}: {levels.get(lv, 0)}")
+    if total:
+        flagged = sum(levels.get(l, 0) for l in ("Suspicious", "High-risk"))
+        print(f"    Cần rà soát : {flagged / total * 100:.1f}%")
+
+    print("\n[2] NHÓM LỪA ĐẢO (mức 2):")
+    for name, n in (cats.most_common() or [("(không có)", 0)]):
+        print(f"    {name:<34} {n:>3}  {'█' * n}")
+
+    print("\n[3] TOP KÊNH:")
+    for ch, n in channels.most_common(8):
+        print(f"    {('@' + ch):<30} {n:>3}  {'█' * n}")
+
+    print("\n[4] TOP BÀI ĐĂNG NGHI NGỜ CAO NHẤT:")
+    for r in sorted(records, key=lambda x: -((x.get("analysis") or {}).get("scam_score", 0)))[:5]:
+        a = r.get("analysis") or {}
+        extra = " | OCR" if r.get("ocr_text") else ""
+        print(f"    [{a.get('scam_score', 0):>3}/100 | {a.get('level', '?'):<10}] @{r.get('channel', '?')} "
+              f"({a.get('scam_category_vi') or 'không rõ nhóm'}){extra}")
+        if r.get("url"):
+            print(f"        {r['url']}")
+        print(f"        {(a.get('summary') or '')[:160]}")
+
+    print_group_section(groups, noun=noun)
+    print("\nLưu ý: điểm số là TÍN HIỆU HỖ TRỢ RÀ SOÁT, không phải kết luận.")
+    print(line)
+
+
+def print_history(records: list[dict], sources: list[str] | None = None,
+                  noun: str = NOUN_WEB) -> None:
+    """In từng tin nhắn đã thu thập: id, thời gian, lượt xem, media, nội dung."""
+    if sources:
+        print("\n[i] Nguồn: " + ", ".join(sources))
+    print(f"[i] Tổng: {len(records)} {noun} nhắn")
+    print("-" * 78)
+    for i, r in enumerate(records, 1):
+        when = (r.get("posted_at") or "")[:19].replace("T", " ")
+        media = ""
+        if r.get("media_count"):
+            kinds = list(dict.fromkeys(r.get("media_types") or []))
+            label = ",".join(kinds) or "media"
+            media = f" [{r['media_count']} {label}]" if r["media_count"] > 1 else f" [{label}]"
+        extra = f" fwd={r['forwards']}" if r.get("forwards") else ""
+        print(f"{i:>4}. {r.get('channel', '?')}/{r.get('message_id', '?')}  {when}  "
+              f"views={r.get('views', 0)}{extra}{media}")
+        if r.get("url"):
+            print(f"      {r['url']}")
+        text = (r.get("text") or "").strip()
+        print(f"      {text[:400]}{' ...' if len(text) > 400 else ''}" if text
+              else "      (không có nội dung chữ)")
+    print("-" * 78)
+
+
+def write_json(path: str, records: list[dict], backend: str, noun: str = NOUN_WEB) -> list[dict]:
+    """Ghi {generated_at, total, backend, groups, posts} ra JSON.
+
+    `groups` chính là mục [5] ĐIỂM RỦI RO THEO GROUP/KÊNH (xem group_summary).
+    """
+    out = [_public(r) for r in records]
+    payload = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "total": len(out),
+        "backend": backend,
+        "groups": group_summary(out, noun=noun),
+        "posts": out,
+    }
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh, ensure_ascii=False, indent=2)
+    print(f"[i] Đã lưu {len(out)} bài đăng vào {path}")
+    return out
+
+
+# ---------------------------------------------------------------------------
+# 9. Dữ liệu mẫu offline cho --demo (không cần mạng, không cần tài khoản)
+# ---------------------------------------------------------------------------
+# Cấu trúc: (username, tên hiển thị, số người đăng ký, [tin nhắn]).
+# Mỗi tin: (nội dung, số media, có forward?, lượt xem).
+# 5 kênh đầu là kênh lừa đảo, 3 kênh cuối là kênh sạch (để kiểm chứng công cụ
+# không báo động giả).
+# dialect="web" (bản t.me/s) KHÔNG có `forwards`/`replies`; dialect="api" thì có.
+
+DEMO_ITEMS = [
+    ("dautu.sieuloinhuan", "Đầu tư tài chính - Lợi nhuận 30%/tháng", 48200, [
+        ("Cam kết lợi nhuận 30%/tháng, đầu tư chỉ từ 2 triệu, rút tiền trong ngày! "
+         "Anh em vào nhóm kín để nhận kèo: https://t.me/+AbCdEf123 #dautu #loinhuan", 2, True, 1446),
+        ("Kết quả tuần này: 12 lệnh thắng liên tiếp, tài khoản x2 sau 7 ngày. "
+         "Nạp tối thiểu 5 triệu, hoa hồng giới thiệu 20%. Inbox @admin_dautu_pro", 3, False, 3856),
+        ("Chỉ còn 5 slot cuối cho gói VIP tháng 11, cam kết hoàn vốn 100%. "
+         "Chuyển khoản STK 1234567890 (Vietcombank) rồi báo admin để kích hoạt.", 1, False, 6266),
+    ]),
+    ("vieclam.ctv.hoantien", "Tuyển CTV chốt đơn - Hoàn tiền 100%", 96400, [
+        ("Tuyển cộng tác viên chốt đơn tại nhà, không cần kinh nghiệm, thu nhập 20 triệu/tháng. "
+         "Làm nhiệm vụ hoàn tiền 100% đơn hàng. Đăng ký: https://t.me/vieclam_bot", 1, True, 2892),
+        ("Hướng dẫn làm nhiệm vụ: nạp 500k vào ví, chốt 3 đơn là rút được cả gốc lẫn lãi. "
+         "Liên hệ zalo 0987654321 để được hỗ trợ.", 1, False, 7712),
+    ]),
+    ("vayvon.nhanh365", "Hỗ trợ vay vốn online", 27300, [
+        ("Vay tiền online chỉ cần CCCD, không thế chấp, giải ngân trong ngày, lãi suất 0% tháng đầu. "
+         "Đăng ký app vay: https://vay365.example.com/dangky", 2, False, 819),
+        ("Hỗ trợ nợ xấu, bùng nợ vẫn vay được. Hồ sơ đơn giản, duyệt trong 5 phút. "
+         "SĐT 0912345678 (call/zalo).", 1, False, 2184),
+    ]),
+    ("quatang.trian2026", "Sự kiện tri ân - Trúng thưởng", 143000, [
+        ("Chúc mừng 100 khách hàng may mắn trúng thưởng iPhone 16 Pro Max! "
+         "Chỉ cần chia sẻ bài viết và bình luận. Nhận quà miễn phí, số lượng có hạn.", 3, True, 4290),
+        ("Danh sách trúng thưởng đã có, ai có tên thì chuyển phí vận chuyển 150k "
+         "để nhận quà. STK: 9876543210 - Momo: 0987654321", 1, False, 11440),
+    ]),
+    ("hotro.nganhang.vn", "Hỗ trợ tài khoản ngân hàng", 8900, [
+        ("Thông báo: tài khoản của bạn có giao dịch bất thường. Vui lòng xác nhận "
+         "số tài khoản và chuyển phí xác nhận 500.000đ để mở lại dịch vụ. "
+         "Hotline chính thức 0912345678.", 1, False, 267),
+    ]),
+    ("tintuc.congnghe", "Tin tức công nghệ", 245000, [
+        ("Telegram ra mắt tính năng mới cho phép tìm kiếm trong kênh và nhóm, "
+         "cùng nhiều cải tiến về bảo mật.", 1, False, 7350),
+        ("Tổng hợp các mẫu điện thoại tầm trung đáng mua trong tháng này.", 2, False, 19600),
+        ("Cách bật xác thực hai lớp để bảo vệ tài khoản Telegram của bạn.", 1, False, 31850),
+    ]),
+    ("hocpython.mienphi", "Học lập trình Python miễn phí", 31200, [
+        ("Bài 1: Biến và kiểu dữ liệu trong Python. Tài liệu tham khảo ở phần bình luận.", 2, False, 936),
+        ("Bài 2: Vòng lặp for/while, bài tập cuối bài có đáp án.", 1, False, 2496),
+    ]),
+    ("amthuc.mebap", "Ẩm thực mỗi ngày", 58700, [
+        ("Công thức phở bò nước dùng trong 8 tiếng, chi tiết từng bước.", 3, False, 1761),
+        ("Mẹo chọn thịt tươi ngon khi đi chợ.", 2, False, 4696),
+    ]),
+]
+
+
+def demo_posts(limit: int, dialect: str = "web") -> list[dict]:
+    """Sinh `limit` bài mẫu offline (mặc định theo dạng của bản web t.me/s)."""
+    now = datetime.now(timezone.utc)
+    out: list[dict] = []
+    for ci, (channel, title, subs, messages) in enumerate(DEMO_ITEMS):
+        for mi, (text, media_count, forwarded, views) in enumerate(messages):
+            if len(out) >= limit:
+                return out
+            posted = now - timedelta(days=ci, hours=mi * 3 + 1)
+            text = normalize(text)
+            rec = {
+                "message_id": str(1000 + ci * 100 + mi),
+                "url": f"https://t.me/{channel}/{1000 + ci * 100 + mi}",
+                "channel": channel, "channel_title": title, "subscribers": subs,
+                "text": text,
+                "hashtags": list(dict.fromkeys(h.lower() for h in RE_HASHTAG.findall(text))),
+                "posted_at": posted.isoformat(), "views": views, "author": title,
+                "forwarded_from": ("kênh ẩn danh" if forwarded else None),
+                "has_media": media_count > 0, "media_types": ["photo"] * media_count,
+                "media_count": media_count, "link_preview": "",
+                "source": "demo", "collected_at": now.isoformat(),
+                "_note": "DỮ LIỆU MẪU offline - không phải bài đăng thật",
+                "pipeline_status": {"collected": True, "downloaded": False, "audio_extracted": False,
+                                    "transcribed": False, "frames_extracted": False, "ocr_done": False},
+            }
+            if dialect == "api":
+                rec["forwards"] = views // 20
+                rec["replies"] = views // 40
+            out.append(rec)
+    return out
