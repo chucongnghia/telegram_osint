@@ -543,6 +543,70 @@ class TestSplitTools(unittest.TestCase):
                 res = self._run(script, ["--help"])
                 self.assertEqual(res.returncode, 0)
 
+    def test_default_source_requires_keyword(self):
+        """Không chọn nguồn + không có từ khoá -> báo lỗi rõ ràng (không tự bịa nguồn)."""
+        res = self._run("keyword_usernames.py", [])
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("Cần ít nhất một từ khoá", res.stderr)
+
+    def test_compact_output_shows_name_and_kind(self):
+        """Chế độ gọn: `@username  —  Tên  (Loại, quy mô)`, đúng kiểu người dùng yêu cầu."""
+        rows = [{"username": "hathanh", "name": "Thanh Hà", "kind": "user", "max_score": 0,
+                 "level": "Normal", "posts": 1, "searches": 1, "keywords": ["hathanh"]},
+                {"username": "hathanhtrading", "name": "Hà Thành Trading", "kind": "channel",
+                 "scale": "213 người đăng ký", "max_score": 0, "level": "Normal",
+                 "posts": 1, "searches": 1}]
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            analyzer.print_username_section(rows, ["hathanh"], compact=True)
+        out = buf.getvalue()
+        self.assertIn("@hathanh  —  Thanh Hà  (Người dùng)", out)
+        self.assertIn("@hathanhtrading  —  Hà Thành Trading  (Kênh, 213 người đăng ký)", out)
+
+    def test_prefix_match_sorted_before_alphabet(self):
+        """Cùng 0 điểm: username khớp ngay đầu từ khoá phải đứng trước (không theo alphabet)."""
+        rows = analyzer.related_usernames([], ["hathanh"], extra_usernames=[
+            {"username": "NoloveShopbot", "keywords": ["hathanh"]},
+            {"username": "thanhnguyen3989", "keywords": ["hathanh"]},
+            {"username": "hathanh7", "keywords": ["hathanh"]},
+            {"username": "hathanh", "keywords": ["hathanh"]}])
+        self.assertEqual([r["username"] for r in rows],
+                         ["hathanh", "hathanh7", "NoloveShopbot", "thanhnguyen3989"])
+
+    def test_search_chats_reads_users_too(self):
+        """`contacts.Search` trả người dùng trong `.users` — trước đây bị bỏ sót."""
+        import asyncio
+        from types import SimpleNamespace
+        import demo_telegram_api as api
+        if getattr(api, "functions", None) is None:     # system Python không có Telethon
+            self.skipTest("chưa cài Telethon")
+
+        class FakeClient:
+            def __call__(self, request):
+                async def go():
+                    return SimpleNamespace(
+                        chats=[SimpleNamespace(username="hathanhtrading",
+                                               title="Hà Thành Trading", broadcast=True,
+                                               participants_count=213),
+                               SimpleNamespace(username="hathanhcrypto",
+                                               title="Hà Thành Trading ( Chat )",
+                                               broadcast=False, participants_count=114)],
+                        users=[SimpleNamespace(username="hathanh", first_name="Thanh",
+                                               last_name="Hà", bot=False),
+                               SimpleNamespace(username="hathanhgrbot", first_name="QuanLy",
+                                               last_name="", bot=True)])
+                return go()
+
+        rows = asyncio.run(api.search_chats(FakeClient(), "hathanh", limit=20))
+        got = {r["username"]: r for r in rows}
+        self.assertEqual(len(rows), 4)
+        self.assertEqual(got["hathanh"]["name"], "Thanh Hà")
+        self.assertEqual(got["hathanh"]["kind"], "user")
+        self.assertEqual(got["hathanhgrbot"]["kind"], "bot")
+        self.assertEqual(got["hathanhtrading"]["kind"], "channel")
+        self.assertEqual(got["hathanhtrading"]["scale"], "213 người đăng ký")
+        self.assertEqual(got["hathanhcrypto"]["kind"], "group")
+
     def test_username_info_requires_input(self):
         res = self._run("username_info.py", [])
         self.assertEqual(res.returncode, 1)

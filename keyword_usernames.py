@@ -18,6 +18,17 @@ Nguồn dữ liệu (chọn một hoặc nhiều, có thể trộn):
     --api                 dùng Telegram API (Telethon): tìm chat theo từ khoá + đọc được
                           cả group kín mà tài khoản đã tham gia
 
+Cách dùng ngắn nhất — quên hết cờ đi, chỉ cần từ khoá; script tự tìm trên Telegram:
+
+    .venv-api/bin/python keyword_usernames.py --keyword "hathanh"
+
+        @hathanh123   Hà Thanh
+        @hathanhp     thanh Meshchain.Ai
+        ...
+
+    (không chọn nguồn nào -> tự dùng Telegram API. Nếu chưa có Telethon/phiên đăng nhập
+     thì dùng --demo để xem thử định dạng kết quả.)
+
 Ví dụ
 -----
     # offline, minh hoạ nhanh
@@ -101,6 +112,8 @@ async def _collect_api(args, channels: list[str], keywords: list[str]) -> tuple[
     """Thu thập qua Telegram API. Trả `(records, extra_usernames, exit_code)`."""
     api = _import_api()
     if api is None:
+        print("[i] Gợi ý: thêm --demo (hoặc --json FILE) để dùng bản không cần API.",
+              file=sys.stderr)
         return [], [], 111
 
     creds = argparse.Namespace(api_id=args.api_id, api_hash=args.api_hash)
@@ -156,6 +169,17 @@ def run(args) -> int:
         import demo_telegram as web
         channels += web.read_seed_file(args.seed_file)
 
+    # Không chọn nguồn nào -> mặc định tìm thẳng trên Telegram (API): đây là cách duy
+    # nhất tìm được username "hơi giống" một cái tên, vì trang công khai t.me chỉ tra
+    # được khi biết ĐÚNG username.
+    if not (args.demo or args.json or channels or args.api):
+        if not keywords:
+            print("[!] Cần ít nhất một từ khoá: --keyword TUKHOA", file=sys.stderr)
+            return 1
+        print("[i] Không chọn nguồn dữ liệu → tìm trực tiếp trên Telegram bằng API "
+              "(contacts.Search; cần Telethon + phiên đã đăng nhập).")
+        args.api = True
+
     records: list[dict] = []
     extra: list[dict] = []
     sources: list[str] = []
@@ -200,8 +224,10 @@ def run(args) -> int:
     print(f"Username thấy : {len(payload['usernames'])}"
           + (f"  →  hiện {len(rows)} dòng" if len(rows) != len(payload["usernames"]) else ""))
     noun = NOUN_API if args.record_noun == "tin" else NOUN_WEB
+    # Chỉ có kết quả tìm kiếm (không có bài nào) -> in gọn mỗi username một dòng.
+    compact = args.compact or (not args.full and not records)
     print_username_section(rows, keywords, payload["invite_links"], noun=noun,
-                           limit=args.top or len(rows) or 1)
+                           limit=args.top or len(rows) or 1, compact=compact)
 
     if args.out:
         write_json(args.out, records, backend="usernames-by-keyword", noun=noun,
@@ -233,7 +259,8 @@ def main() -> int:
     p.add_argument("--seed-file", metavar="FILE", help="file danh sách kênh")
     p.add_argument("--json", metavar="FILE", help="tra trong JSON đã lưu")
     p.add_argument("--api", action="store_true",
-                   help="dùng Telegram API (Telethon): tìm chat theo từ khoá, đọc group kín")
+                   help="dùng Telegram API (Telethon): tìm chat theo từ khoá, đọc group kín "
+                        "(mặc định tự bật khi không chọn nguồn dữ liệu nào khác)")
     p.add_argument("--session", default="", metavar="TEN",
                    help="tên phiên API (mặc định tg_session; ví dụ tk-phu)")
     p.add_argument("--api-id", help="api_id (mặc định: TG_API_ID hoặc tg_api.json)")
@@ -251,6 +278,10 @@ def main() -> int:
                    help="chỉ tìm trong nội dung bài, bỏ tên/mã kênh (đỡ khớp oan cả kênh)")
     p.add_argument("--record-noun", choices=["bài", "tin"], default="bài",
                    help="cách gọi đơn vị bài đăng trong câu thống kê (mặc định 'bài')")
+    p.add_argument("--compact", action="store_true",
+                   help="mỗi username in một dòng gọn: @username — Tên (Loại)")
+    p.add_argument("--full", action="store_true",
+                   help="in đầy đủ chi tiết từng username (mặc định khi có dữ liệu bài)")
     p.add_argument("--out", metavar="FILE", help="ghi kết quả ra JSON")
     return run(p.parse_args())
 

@@ -497,11 +497,28 @@ async def search_chats(client, keyword: str, limit: int = 20) -> list[dict]:
         print(f"    ! Tìm chat theo từ khoá thất bại: {type(exc).__name__}: {exc}")
         return []
     out: list[dict] = []
-    for chat in found.chats:
-        username = getattr(chat, "username", None)
-        if username:
-            out.append({"username": username, "keywords": [keyword],
-                        "title": getattr(chat, "title", "")})
+    seen: set[str] = set()
+
+    def add(username, name: str, kind: str, count=None, unit: str = "") -> None:
+        """Thêm một kết quả; `kind` dùng lại mã của `analyzer.PROFILE_KIND_VI`."""
+        username = str(username).strip() if username else None
+        if not username or username.lower() in seen:
+            return
+        seen.add(username.lower())
+        out.append({"username": username, "keywords": [keyword], "title": name or "",
+                    "name": name or "", "kind": kind,
+                    "scale": f"{count} {unit}" if count else ""})
+
+    for chat in found.chats:                    # kênh / nhóm
+        add(getattr(chat, "username", None), getattr(chat, "title", "") or "",
+            "channel" if getattr(chat, "broadcast", False) else "group",
+            getattr(chat, "participants_count", None),
+            "người đăng ký" if getattr(chat, "broadcast", False) else "thành viên")
+    for user in found.users:                    # người dùng / bot (contacts.Search trả ở đây)
+        name = " ".join(x for x in (getattr(user, "first_name", None),
+                                    getattr(user, "last_name", None)) if x)
+        add(getattr(user, "username", None), name,
+            "bot" if getattr(user, "bot", False) else "user")
     print(f"    tìm chat theo '{keyword}': {len(out)} username")
     return out
 

@@ -14,7 +14,7 @@ chung một bộ chấm điểm.
 | [`demo_telegram.py`](demo_telegram.py) | Backend **web**: đọc trang công khai `https://t.me/s/<kênh>` (và `https://t.me/<username>` cho `--user`). **Chỉ thư viện chuẩn** — không cần cài gì, không cần API key, không cần đăng nhập. |
 | [`demo_telegram_api.py`](demo_telegram_api.py) | Backend **Telegram API (Telethon)**: group kín, tìm kiếm toàn cục, tra cứu username/ID, tìm chat theo từ khoá, tải media, OCR, chế độ bot, `--watch`. |
 | [`find_private_groups.py`](find_private_groups.py) | Tìm & đọc **group kín** qua link mời, chia 3 bước `--discover` / `--join` / `--crawl`. |
-| [`tests/test_regression.py`](tests/test_regression.py) | Test hồi quy (39 test, không cần mạng/Telethon). |
+| [`tests/test_regression.py`](tests/test_regression.py) | Test hồi quy (43 test, không cần mạng/Telethon). |
 | [`GIAI_THICH_CODE.md`](GIAI_THICH_CODE.md) | Giải thích chi tiết từng phần của code + công thức + các lỗi đã sửa. |
 | [`posts_tg.json`](posts_tg.json) | Kết quả `--demo` của bản web (17 bài mẫu, có `groups`). |
 | [`posts_api.json`](posts_api.json) | Kết quả bản API (100 bài, `backend: telethon`). |
@@ -135,6 +135,30 @@ Hai file dưới đây làm đúng **một việc**, gọn hơn `demo_telegram.p
 
 ### Chức năng 1 — `keyword_usernames.py`: keyword → danh sách username
 
+Cách dùng ngắn nhất: **chỉ cần từ khoá**, script tự tìm trên Telegram rồi in danh sách gọn
+`@username — Tên (Loại)`:
+
+```bash
+.venv-api/bin/python keyword_usernames.py --keyword "hathanh"
+```
+```
+    1. @hathanh  —  Thanh Hà  (Người dùng)
+    2. @hathanh7  —  Thanh Phong  (Người dùng)
+    3. @hathanh_0808  —  ☘️ 𝓣𝓱𝓪𝓷𝓱 𝓗à  (Kênh, 606 người đăng ký)
+    4. @hathanhcrypto  —  Hà Thành Trading ( Chat )  (Nhóm, 114 thành viên)
+    5. @hathanhgrbot  —  QuanLyNhanVien  (Bot)
+    6. @hathanhtrading  —  Hà Thành Trading  (Kênh, 213 người đăng ký)
+    ...
+```
+
+Không chọn nguồn nào ⇒ tự bật `--api` (`contacts.Search`, cần Telethon + phiên đã đăng nhập,
+tức chạy bằng `.venv-api/bin/python`). Muốn xem định dạng kết quả mà không cần mạng thì
+thêm `--demo`. Cách này tìm được cả **người dùng** lẫn kênh/nhóm/bot, và xếp username khớp
+ngay đầu từ khoá lên trước; đây là cách duy nhất tìm được tài khoản khi **chưa biết đúng**
+username (trang `t.me` chỉ tra được khi biết chính xác).
+
+Các nguồn dữ liệu khác:
+
 ```bash
 python3 keyword_usernames.py --keyword "đầu tư" --keyword "hoàn tiền" --demo
 python3 keyword_usernames.py --keyword "telegram" --channel durov --limit 25
@@ -153,6 +177,7 @@ username được gặp vì `@nhắc` / `link t.me` / `nguồn forward` / `bài 
 | `--text-only` | chỉ khớp từ khoá trong **nội dung bài**, bỏ tên/mã kênh (mặc định có tính tên kênh, nên từ khoá trùng tên kênh sẽ khớp mọi bài) |
 | `--loose` | khớp **chuỗi con** thay vì ranh giới từ (`ib` khớp cả "herm**ib**ooks") — rộng nhưng nhiễu |
 | `--record-noun bài\|tin` | cách gọi đơn vị trong câu thống kê, để in lại dữ liệu cũ dùng chữ "tin" |
+| `--compact` / `--full` | in gọn mỗi username một dòng, hoặc in đầy đủ chi tiết (mặc định: gọn khi chỉ có kết quả tìm kiếm, đầy đủ khi có bài để chấm điểm) |
 
 ### Chức năng 2 — `username_info.py`: username → thông tin tài khoản
 
@@ -197,8 +222,9 @@ số bài cần rà soát, mức rủi ro). `--from-json` đọc danh sách user
 | `--keyword "chiến sự"` (bản API) | tìm được 7 username chat liên quan, ví dụ `@aiquochientrang`, `@bantronchiensu`, `@tintucchiensu247` |
 | `--channel aiquochientrang --keyword "chiến sự"` | 5 bài lấy về + 7 username; `@aiquochientrang` gộp 3 vai trò (link t.me, bài đăng trong kênh, kết quả tìm chat) |
 | `keyword_usernames.py --keyword "chiến sự" --json nhom1.json` | 1000 bài → `@aiquochientrang`; thêm `--text-only` → 0 username (không bài nào nhắc t.me) |
+| `.venv-api/bin/python keyword_usernames.py --keyword "hathanh"` | 10 username kèm tên/loại: `@hathanh` Thanh Hà, `@hathanhtrading` Hà Thành Trading (Kênh, 213 người đăng ký), `@hathanhgrbot` (Bot)… |
 | `username_info.py durov @BotFather pythonchat vitalikbuterin` | Kênh ✔ / Bot / Nhóm 107 / Người dùng — phân loại đúng |
-| `python3 -m unittest discover -s tests` | **39 test PASS** (cả system Python lẫn `.venv-api/bin/python`) |
+| `python3 -m unittest discover -s tests` | **43 test PASS** (cả system Python lẫn `.venv-api/bin/python`) |
 
 ## Chạy test
 

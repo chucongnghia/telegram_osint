@@ -811,8 +811,13 @@ def related_usernames(records: list[dict], keywords=None, include_channels: bool
             add(_username_of(rec.get("channel")), "channel", rec, kw_list)
 
     for item in (extra_usernames or []):
-        add(_username_of(item.get("username")), "search", None,
-            item.get("keywords") or kws)
+        username = _username_of(item.get("username"))
+        add(username, "search", None, item.get("keywords") or kws)
+        if username:                    # kết quả tìm chat có sẵn tên/loại/quy mô -> in kèm
+            row = row_of(username)
+            for key in ("name", "kind", "scale"):
+                if item.get(key) and not row.get(key):
+                    row[key] = item[key]
 
     out: list[dict] = []
     for row in rows.values():
@@ -822,7 +827,24 @@ def related_usernames(records: list[dict], keywords=None, include_channels: bool
         if row["posts"] == 0:
             row["posts"] = row["searches"]
         out.append(row)
-    out.sort(key=lambda r: (-r["max_score"], -r["posts"], r["username"].lower()))
+
+    def rank(row: dict) -> tuple:
+        """Điểm cao trước; cùng điểm thì tên khớp NGAY ĐẦU từ khoá lên trước.
+
+        Nhờ vậy `--keyword "hathanh"` xếp `@hathanh`, `@hathanh7`... trước
+        `@NoloveShopbot`, thay vì thuần theo alphabet.
+        """
+        user = row["username"].lower()
+        plain = no_accent(user)
+        prefix = 1
+        for kw in row.get("keywords") or []:
+            kw = (kw or "").lower().strip()
+            if kw and (user.startswith(kw) or plain.startswith(no_accent(kw))):
+                prefix = 0
+                break
+        return (-row["max_score"], prefix, -row["posts"], user)
+
+    out.sort(key=rank)
     return out
 
 
@@ -851,10 +873,29 @@ def related_invite_links(records: list[dict], keywords=None,
     return out
 
 
+def _entry_label(row: dict) -> str:
+    """Hậu tố '— Tên (Loại, quy mô)' cho một dòng username, rỗng nếu không biết."""
+    name = (row.get("name") or "").strip()
+    kind = PROFILE_KIND_VI.get(row.get("kind") or "", "")
+    scale = (row.get("scale") or "").strip()
+    if not (name or kind or scale):
+        return ""
+    inside = ", ".join(x for x in (kind, scale) if x)
+    if name and inside:
+        return f"  —  {name}  ({inside})"
+    if name:
+        return f"  —  {name}"
+    return f"  ({inside})"
+
+
 def print_username_section(rows: list[dict], keywords=None, invites=None, noun: str = NOUN_WEB,
-                           width: int = 100, limit: int = 50,
+                           width: int = 100, limit: int = 50, compact: bool = False,
                            title: str = "[6] USERNAME LIÊN QUAN TỚI TỪ KHOÁ") -> None:
-    """In mục [6]: danh sách username có thể liên quan tới từ khoá đã nhập."""
+    """In mục [6]: danh sách username có thể liên quan tới từ khoá đã nhập.
+
+    `compact=True` in mỗi username một dòng gọn `@username — Tên (Loại)`; dùng khi
+    chỉ có kết quả tìm kiếm nên không có bài nào để chấm điểm.
+    """
     line = "-" * width
     print(f"\n{title}")
     if keywords:
@@ -864,8 +905,13 @@ def print_username_section(rows: list[dict], keywords=None, invites=None, noun: 
     for i, row in enumerate(rows[:limit], 1):
         icon = icon_of(row.get("level", "Normal"))
         score = row.get("max_score", 0)
+        label = _entry_label(row)
+        if compact:
+            grade = f"  [ {score}/100 {row.get('level', '?')} ]" if score else ""
+            print(f"  {i:>3}. @{row['username']}{label}{grade}")
+            continue
         print(f"  {i:>3}. {icon} [ {score:>3}/100 | {row.get('level', '?'):<10} ] "
-              f"@{row['username']}")
+              f"@{row['username']}{label}")
         print(f"       {row.get('profile', '')}")
         bits = []
         for key, label in (("mentions", "@nhắc"), ("links", "link t.me"), ("forwards", "nguồn forward"),
