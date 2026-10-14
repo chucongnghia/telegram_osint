@@ -986,6 +986,12 @@ def make_profile(username: str, kind: str = "unknown", **fields) -> dict:
         "title": "", "about": "", "subscribers": None, "members": None,
         "monthly_users": None, "account_id": None, "verified": None,
         "is_bot": None, "source": "", "fetched_at": datetime.now(timezone.utc).isoformat(),
+        # --- chi tiết thêm (điền được tuỳ backend) ---
+        "phone": "", "photo_url": "", "photo_path": "", "has_photo": None,
+        "last_seen": "", "created_at": "", "lang_code": "", "usernames": [],
+        "premium": None, "scam": None, "fake": None, "restricted": None,
+        "mutual_contact": None, "is_contact": None, "bot_commands": [],
+        "common_groups": [], "common_chats_count": None,
     }
     profile.update({k: v for k, v in fields.items() if v not in (None, "")})
     return profile
@@ -1009,8 +1015,45 @@ def profile_scale(profile: dict) -> str:
     return ""
 
 
+def _phone_line(profile: dict) -> str:
+    """Câu về số điện thoại: Telegram chỉ trả khi là danh bạ hoặc họ để công khai."""
+    if profile.get("phone"):
+        return f"{profile['phone']}  (danh bạ/công khai — không phải lúc nào cũng thấy)"
+    if profile.get("source") == "telethon":
+        return "(không có — Telegram chỉ hiện khi là danh bạ, hoặc họ để công khai)"
+    return "(cần --api: bản web không thấy được số điện thoại)"
+
+
+def _photo_line(profile: dict) -> str:
+    if profile.get("photo_path"):
+        return f"đã lưu: {profile['photo_path']}"
+    if profile.get("has_photo"):
+        return "có ảnh đại diện (thêm --photo-dir DIR để tải về)"
+    if profile.get("photo_url"):
+        return profile["photo_url"]
+    if profile.get("has_photo") is False:
+        return "(không có ảnh đại diện)"
+    return ""
+
+
+def _flags_line(profile: dict) -> str:
+    bits = []
+    for key, label in (("is_bot", "bot"), ("premium", "Premium"), ("scam", "bị gắn cờ lừa đảo"),
+                       ("fake", "bị gắn cờ giả mạo"), ("restricted", "bị hạn chế"),
+                       ("mutual_contact", "liên hệ hai chiều"), ("is_contact", "trong danh bạ")):
+        if profile.get(key):
+            bits.append(label)
+    return ", ".join(bits)
+
+
+def _other_usernames(profile: dict) -> str:
+    names = [u for u in (profile.get("usernames") or []) if u and u != profile.get("username")]
+    return ", ".join("@" + u for u in names)
+
+
 def print_profile(profile: dict, records: list[dict] | None = None, noun: str = NOUN_WEB,
-                  width: int = 100, title: str = "[0] THÔNG TIN TÀI KHOẢN TRA CỨU") -> None:
+                  width: int = 100, title: str = "[0] THÔNG TIN TÀI KHOẢN TRA CỨU",
+                  common_limit: int = 20) -> None:
     """In thông tin một username vừa tra, kèm thống kê điểm nếu có bài đã thu thập."""
     line = "-" * width
     who = "@" + profile.get("username", "?")
@@ -1027,12 +1070,36 @@ def print_profile(profile: dict, records: list[dict] | None = None, noun: str = 
         ("Giới thiệu", profile.get("about")),
         ("Quy mô", profile_scale(profile)),
         ("ID", profile.get("account_id")),
+        ("Số điện thoại", _phone_line(profile)),
+        ("Ảnh đại diện", _photo_line(profile)),
+        ("Hoạt động", profile.get("last_seen")),
+        ("Ngày tạo", profile.get("created_at")),
+        ("Username khác", _other_usernames(profile)),
+        ("Cờ tài khoản", _flags_line(profile)),
+        ("Ngôn ngữ", profile.get("lang_code")),
         ("Nguồn", profile.get("source")),
         ("Liên kết", profile.get("profile_url")),
     ]
     for label, value in rows:
         if value not in (None, ""):
-            print(f"    {label:<12}: {value}")
+            print(f"    {label:<14}: {value}")
+    commands = profile.get("bot_commands") or []
+    if commands:
+        print(f"    {'Lệnh bot':<14}: " + ", ".join(
+            f"/{c.get('command')}" for c in commands[:12] if c.get("command")))
+    groups = profile.get("common_groups") or []
+    total_groups = profile.get("common_chats_count")
+    if groups or total_groups:
+        head = f"{total_groups if total_groups is not None else len(groups)} nhóm/kênh dùng chung"
+        print(f"    {'Nhóm chung':<14}: {head}")
+        for g in groups[:common_limit]:
+            name = g.get("title") or ("@" + (g.get("username") or "")) or str(g.get("id"))
+            bits = [PROFILE_KIND_VI.get(g.get("kind") or "", "")]
+            if g.get("members"):
+                bits.append(f"{_format_count(g['members'])} thành viên")
+            detail = ", ".join(b for b in bits if b)
+            handle = f"  @{g['username']}" if g.get("username") else ""
+            print(f"        - {name}  ({detail}){handle}")
     stats = None
     if records:
         stats = group_risk_for_channel(records, profile.get("username", ""), noun=noun)

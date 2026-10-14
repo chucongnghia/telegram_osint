@@ -230,41 +230,54 @@ Mục đích: "nhập keyword rồi liệt kê username có thể liên quan".
 - `username_payload()` / `print_username_payload()` (:939, :951): gói
   `{"keywords", "usernames", "invite_links"}` để cả hai backend vừa in mục `[6]` vừa ghi JSON.
 
-### 2.12. `--user` → tra cứu một username (:968-1043)
+### 2.12. `--user` → tra cứu một username (:968-1080)
 
 Chuẩn hoá kết quả tra cứu của hai backend về **cùng một cấu trúc**:
 
 - `PROFILE_KIND_VI` (:968): `channel/group/bot/user/unknown` → Kênh/Nhóm/Bot/Người dùng/Không rõ.
 - `make_profile(username, kind, **fields)` (:977): tự thêm `profile_url`, `kind_vi`,
-  `fetched_at`; các khóa còn lại: `exists, title, about, subscribers, members,
-  monthly_users, account_id, verified, is_bot, source`.
-- `_format_count()` (:994) `1000` → `"1 000"`; `profile_scale()` (:1001) → "N người đăng ký" /
+  `fetched_at`; các khóa cơ bản: `exists, title, about, subscribers, members,
+  monthly_users, account_id, verified, is_bot, source`; các khóa **chi tiết** (mặc định rỗng,
+  chỉ có dữ liệu khi backend lấy được): `phone, photo_url, photo_path, has_photo, last_seen,
+  created_at, lang_code, usernames, premium, scam, fake, restricted, mutual_contact,
+  is_contact, bot_commands, common_groups, common_chats_count`.
+- `_format_count()` (:1000) `1000` → `"1 000"`; `profile_scale()` (:1007) → "N người đăng ký" /
   "N thành viên" / "N người dùng/tháng" (chỉ hiện khi có số).
-- `print_profile()` (:1012): in khối `[0]`; nếu truyền `records` thì in thêm thống kê qua
-  `group_risk_for_channel()`; `exists=False` → in "KHÔNG tra được (không tồn tại, riêng tư,
-  hoặc không có bản xem trước)".
+- Bốn helper in chi tiết: `_phone_line()` (:1018) — có số thì in số kèm chú thích "danh bạ/công
+  khai"; nguồn `telethon` mà rỗng thì "(không có — Telegram chỉ hiện khi là danh bạ…)"; nguồn web
+  thì "(cần --api…)"; `_photo_line()` (:1027) — ưu tiên `photo_path`, rồi "có ảnh đại diện (thêm
+  --photo-dir DIR để tải về)", rồi `photo_url`; `_flags_line()` (:1039) — bot/Premium/bị gắn cờ
+  lừa đảo/giả mạo/bị hạn chế/liên hệ hai chiều/trong danh bạ; `_other_usernames()` (:1049).
+- `print_profile(..., common_limit=20)` (:1054): in khối `[0]`; nếu truyền `records` thì in thêm
+  thống kê qua `group_risk_for_channel()`; in thêm các dòng Số điện thoại / Ảnh đại diện / Hoạt
+  động / Ngày tạo / Username khác / Cờ tài khoản / Ngôn ngữ, khối `Lệnh bot` (tối đa 12 lệnh) và
+  khối `Nhóm chung` (`N nhóm/kênh dùng chung`, mỗi dòng `- Tên  (Loại, X thành viên)  @username`);
+  `exists=False` → in "KHÔNG tra được (không tồn tại, riêng tư, hoặc không có bản xem trước)".
 
 ## 3. `demo_telegram.py` — backend web (chỉ stdlib)
 
 | Hàm | Dòng | Việc |
 |---|---|---|
-| `fetch(url)` | :58 | tải HTML (`User-Agent` Chrome, timeout 25s), báo lỗi rõ cho HTTPError/URLError/timeout |
-| `channel_name(raw)` | :80 | chuẩn hoá `durov`, `@durov`, `t.me/durov`, `https://t.me/s/durov`; **từ chối** link mời `+`/`joinchat` kèm gợi ý dùng bản API |
-| `_text_of(fragment)` | :110 | bỏ thẻ HTML, `<br>` → xuống dòng, giải mã entity |
-| `parse_count(text)` | :122 | `"10.4M"` → `10400000` (hỗ trợ K/M/B) |
-| `parse_channel_info(page, fallback)` | :137 | tên, username, mô tả, số người đăng ký |
-| `media_types_of(block)` | :239 | nhận `photo`/`video`/`document`… trong một bài |
-| `parse_messages(page, info)` | :250 | tách từng `<div class="tgme_widget_message" data-post="kênh/id">` thành record |
-| `scrape_channel(name, limit, progress)` | :306 | phân trang `?before=<data-before cuối>`, chống trùng theo `kênh/id`, dừng khi hết trang hoặc đủ `limit` |
-| `_clean_text(raw)` | :164 | bỏ thẻ HTML nhưng **giữ nguyên chữ hoa/thường** (khác `_text_of` — dùng cho tên/mô tả tài khoản) |
-| `parse_profile(page, username)` | :169 | phân loại trang `t.me/<username>`: `subscribers`→Kênh, `members`→Nhóm, `monthly users`/`Start Bot`→Bot, `You can contact @x`→Người dùng, rỗng+mất khối info→`exists=False` |
-| `lookup_user(username)` | :233 | chuẩn hoá qua `channel_name()` rồi `fetch` + `parse_profile` |
-| `read_seed_file(path)` | :361 | đọc danh sách kênh, bỏ dòng trống và dòng `#` |
-| `main()` | :372 | argparse + gọi 2 hàm trên + `write_json`/`print_report` |
+| `fetch(url)` | :59 | tải HTML (`User-Agent` Chrome, timeout 25s), báo lỗi rõ cho HTTPError/URLError/timeout |
+| `fetch_bytes(url)` | :77 | tải nội dung nhị phân (dùng cho ảnh đại diện) |
+| `save_photo(username, photo_url, photo_dir)` | :91 | ghi `<photo_dir>/<username>.jpg`; trả `""` nếu thiếu URL/thư mục |
+| `channel_name(raw)` | :106 | chuẩn hoá `durov`, `@durov`, `t.me/durov`, `https://t.me/s/durov`; **từ chối** link mời `+`/`joinchat` kèm gợi ý dùng bản API |
+| `_text_of(fragment)` | :136 | bỏ thẻ HTML, `<br>` → xuống dòng, giải mã entity |
+| `parse_count(text)` | :148 | `"10.4M"` → `10400000` (hỗ trợ K/M/B) |
+| `parse_channel_info(page, fallback)` | :163 | tên, username, mô tả, số người đăng ký |
+| `_clean_text(raw)` | :190 | bỏ thẻ HTML nhưng **giữ nguyên chữ hoa/thường** (khác `_text_of` — dùng cho tên/mô tả tài khoản) |
+| `parse_profile(page, username)` | :195 | phân loại trang `t.me/<username>`: `subscribers`→Kênh, `members`→Nhóm, `monthly users`/`Start Bot`→Bot, `You can contact @x`→Người dùng, rỗng+mất khối info→`exists=False`; lấy thêm **ảnh đại diện** từ `tgme_page_photo_image`/`og:image` (`photo_url`, `has_photo`) |
+| `lookup_user(username, photo_dir='', save=True)` | :265 | chuẩn hoá qua `channel_name()` rồi `fetch` + `parse_profile`; nếu có `photo_dir` thì tải ảnh về |
+| `media_types_of(block)` | :280 | nhận `photo`/`video`/`document`… trong một bài |
+| `parse_messages(page, info)` | :291 | tách từng `<div class="tgme_widget_message" data-post="kênh/id">` thành record |
+| `scrape_channel(name, limit, progress)` | :347 | phân trang `?before=<data-before cuối>`, chống trùng theo `kênh/id`, dừng khi hết trang hoặc đủ `limit` |
+| `read_seed_file(path)` | :402 | đọc danh sách kênh, bỏ dòng trống và dòng `#` |
+| `main()` | :413 | argparse + gọi 2 hàm trên + `write_json`/`print_report` |
 
 CLI: `--demo`, `--channel` (lặp được), `--seed-file`, `--keyword` (lặp được), `--user`
 (lặp được), `--limit` (**số bài mỗi kênh**, mặc định 20), `--out` (mặc định
-`posts_web.json`), `--no-report`, `--report <json>`. Kênh/nhóm tra bằng `--user` mà tồn tại
+`posts_web.json`), `--no-report`, `--report <json>`, `--photo-dir DIR` (mặc định
+`profile_photos`), `--no-photo`. Kênh/nhóm tra bằng `--user` mà tồn tại
 thì được lấy luôn bài gần đây; kết quả tra cứu lưu ở khóa `profiles`.
 Bản web **không** có `forwards`/`replies`; có `views`, `link_preview`, `has_media`,
 `media_types`, `subscribers`. Kênh riêng tư/tắt preview → báo
@@ -309,16 +322,29 @@ fwd_name = (getattr(fwd, "from_name", None) or getattr(chat, "title", None)
             or getattr(chat, "username", None) or "nguồn ẩn")
 ```
 
-### 4.3. Thu thập (:358-524)
+### 4.3. Thu thập (:358-618)
 
 `fetch_history()` đọc lịch sử kênh/nhóm, `search_global()` tìm toàn cục, `download_media()`
 tải file.
-- `lookup_entity(client, target, limit)` (:388): `get_entity()` + `GetFullUserRequest` /
+- `lookup_entity(client, target, limit=0, photo_dir='', common_limit=20, save_photo=True)`
+  (:434): `get_entity()` + `GetFullUserRequest` /
   `GetFullChannelRequest` / `GetFullChatRequest` → `make_profile()`; `get_entity()` có thể trả
   về đối tượng **"min" chỉ có id**, nên username được lấy thêm từ full info hoặc từ chính
   tham số người dùng nhập (nếu là username hợp lệ). Kênh/nhóm thì lấy tiếp tin gần đây qua
   `fetch_history(..., prefer_username=...)` để nhãn kênh/link trong báo cáo không bị thành ID.
-- `search_chats(client, keyword, limit)` (:492): `contacts.SearchRequest` → **cả `.chats` lẫn `.users`**
+  Phần **chi tiết hồ sơ** (yêu cầu m01206) lấy thêm: `phone` (từ `entity.phone` **trước**, vì
+  `GetFullUserRequest(me).full_user.phone` rỗng — rồi mới tới `full_user.phone`),
+  `common_chats_count`, `bot_commands` (từ `full_user.bot_info.commands`), `usernames` (gồm cả
+  username phụ), `created_at` (`entity.date`), cờ `premium/scam/fake/restricted/mutual_contact/
+  contact`, `lang_code`, và `last_seen` diễn giải từ `UserStatus*`. Ba helper tách riêng để test
+  offline: `_usernames_of()` (:388), `_chat_row()` (:401), `_status_line()` (:415).
+  `common_limit > 0` thì gọi `functions.messages.GetCommonChatsRequest(user_id=..., max_id=0,
+  limit=...)` → danh sách **nhóm/kênh dùng chung**; `photo_dir` khác rỗng thì tải ảnh đại diện
+  qua `client.download_profile_photo(entity, file=<photo_dir>/<username>.jpg)` (ảnh chỉ tải khi
+  `getattr(entity, 'photo', None)` có dữ liệu). **Lỗi đã sửa:** `target` kiểu số (id) làm
+  `target.lstrip()` ném `AttributeError: 'int' object has no attribute 'lstrip'` → nay dùng
+  `str(target or "").lstrip("@")`.
+- `search_chats(client, keyword, limit)` (:585): `contacts.SearchRequest` → **cả `.chats` lẫn `.users`**
   (bản đầu chỉ đọc `.chats` nên bỏ sót toàn bộ người dùng — đúng chỗ có `@hathanh`), mỗi dòng trả
   `{"username", "keywords", "title", "name", "kind", "scale"}` với `kind` theo mã của
   `PROFILE_KIND_VI` (kênh/nhóm/người dùng/bot) và `scale` kiểu "213 người đăng ký"; các dòng này
@@ -328,9 +354,9 @@ có thể `KeyError`; dòng đó đã bỏ, việc sắp xếp chuyển về `ru
 `report()` nay là wrapper gọi `print_report(..., noun=NOUN_API, title="BÁO CÁO THU THẬP
 TELEGRAM QUA API (Telethon)")`, chịu được JSON thiếu `analysis`/`groups`.
 
-### 4.4. Chế độ bot và `--watch` (:584-965)
+### 4.4. Chế độ bot và `--watch` (:677-1080)
 
-- `bot_mode(args)` (:584): dùng phiên bot khi có token (`--bot-token` / `TG_BOT_TOKEN` /
+- `bot_mode(args)` (:677): dùng phiên bot khi có token (`--bot-token` / `TG_BOT_TOKEN` /
   khóa `bot_token` đã lưu) — **trừ khi** có `--login` hoặc `--session <tên>` không bắt đầu
   bằng `tg_bot` (khi đó người dùng muốn phiên tài khoản).
 - `run_setup_bot()`: kiểm tra token, cảnh báo giới hạn của bot (chỉ thấy tin **mới**,
@@ -341,15 +367,16 @@ TELEGRAM QUA API (Telethon)")`, chịu được JSON thiếu `analysis`/`groups`
   `[score/100 | level] @kênh/id  category`. `--cycles N` dừng sau N tin (ngắt client);
   `--watch-once` chờ tối đa `--interval` giây rồi thoát. Kết thúc ghi JSON backend
   `"telethon-bot"`/`"telethon-watch"` và in báo cáo.
-- `run_async()` (:757): chọn `run_watch` / bot / tài khoản người dùng; in rõ loại phiên
+- `run_async()` (:850): chọn `run_watch` / bot / tài khoản người dùng; in rõ loại phiên
   (`BOT`/`TÀI KHOẢN NGƯỜI DÙNG`); `--login`/`--login-bot` chỉ xác nhận phiên rồi thoát;
   chống trùng theo `kênh/message_id`; **sắp xếp sau khi chấm điểm**; xử lý `--user` (mục
-  `[0]`) và `--keyword` (mục `[6]`, kèm tìm chat), ghi tất cả vào JSON qua `write_json(...,
-  extra=...)`.
-- `main()` (:887): argparse với `--demo`, `--login`, `--api-id`, `--api-hash`, `--channel`,
+  `[0]`, truyền `photo_dir`/`common_limit` xuống `lookup_entity`) và `--keyword` (mục `[6]`,
+  kèm tìm chat), ghi tất cả vào JSON qua `write_json(..., extra=...)`.
+- `main()` (:983): argparse với `--demo`, `--login`, `--api-id`, `--api-hash`, `--channel`,
   `--search`, `--media-dir`, `--ocr`, `--limit 30`, `--out posts_api.json`, `--no-report`,
   `--report`, `--login-bot`, `--setup-bot`, `--bot-token`, `--session`, `--watch`,
-  `--watch-once`, `--interval 60`, `--cycles 0`, `--user`, `--keyword`. Không chọn nguồn nào
+  `--watch-once`, `--interval 60`, `--cycles 0`, `--user`, `--keyword`, `--photo-dir`,
+  `--no-photo`, `--common-limit 20`. Không chọn nguồn nào
   (kể cả `--keyword`) → chạy `--demo`; `--keyword` vẫn chạy offline được với `--demo`.
 
 ## 5. `keyword_usernames.py` + `username_info.py` — hai công cụ tách riêng
@@ -360,7 +387,7 @@ toàn bộ lõi ở `analyzer.py`:
 | File | Việc | Hàm chính |
 |---|---|---|
 | `keyword_usernames.py` | keyword → danh sách username liên quan | `records_from_json()` :68, `records_from_web()` :80, `_collect_api()` :111, `filter_rows()` :153, `run()` :159 |
-| `username_info.py` | username → thông tin tài khoản | `usernames_from_json()` :40, `lookup_web()` :58, `_lookup_api()` :78, `run()` :123 |
+| `username_info.py` | username → thông tin tài khoản | `usernames_from_json()` :48, `lookup_web()` :65, `_lookup_api()` :86, `run()` :135, `main()` :194 |
 
 - Nguồn dữ liệu của chức năng 1 trộn được: `--demo`, `--channel` (qua `demo_telegram`),
   `--seed-file`, `--json` (`records_from_json()` **chấm lại** bằng `analyze()` hiện tại),
@@ -368,8 +395,12 @@ toàn bộ lõi ở `analyzer.py`:
   `import demo_telegram_api` (nạp muộn trong `_import_api()`), nên mặc định vẫn thuần stdlib.
 - `--min-score` / `--top` lọc bằng `filter_rows()`; `--out` ghi JSON qua `write_json(..., extra=...)`
   với các khóa `keywords`/`usernames`/`invite_links`.
-- Chức năng 2: bản web dùng `demo_telegram.lookup_user()` + `scrape_channel()` (kênh, nếu
-  `--limit > 0`); bản `--api` dùng `demo_telegram_api.lookup_entity()` để có thêm ID/verified.
+- Chức năng 2: bản web dùng `demo_telegram.lookup_user(name, photo_dir=..., save=...)` +
+  `scrape_channel()` (kênh, nếu `--limit > 0`); bản `--api` dùng
+  `demo_telegram_api.lookup_entity(..., photo_dir=..., common_limit=...)` để có thêm ID/verified,
+  số điện thoại, trạng thái, nhóm chung. Cờ riêng của công cụ này: `--photo-dir DIR` (mặc định
+  `profile_photos`), `--no-photo` (đặt `args.photo_dir = ""` ở đầu `run()` nên cả hai nhánh đều
+  không tải ảnh), `--common-limit N`.
   `--from-json` đọc thẳng file do chức năng 1 xuất ra (`usernames_from_json()`), nên hai công
   cụ nối được thành một pipeline: tìm username → tra từng username.
 
@@ -424,7 +455,7 @@ Thông báo khi chưa đăng nhập in đúng lệnh cần chạy
 
 ## 7. `tests/test_regression.py`
 
-43 test, **không cần mạng/Telethon**, chạy `python3 -m unittest discover -s tests -v`:
+49 test, **không cần mạng/Telethon**, chạy `python3 -m unittest discover -s tests -v`:
 
 - `TestScoring`: `normalize`/`no_accent`; ngưỡng 25/60; 5 mẫu **báo động giả** nổi tiếng
   (`hermibooks`, `fbclid`, "phân công anh ta", "người nộp thuế", "mức thuế") chỉ được có
@@ -453,6 +484,13 @@ Thông báo khi chưa đăng nhập in đúng lệnh cần chạy
   `@hathanh  —  Thanh Hà  (Người dùng)`; `rank()` xếp khớp-đầu-từ-khoá trước alphabet; và
   `search_chats()` với client giả đọc **cả `.chats` lẫn `.users`** (ca này `skipTest` nếu máy
   không có Telethon, nên bộ test vẫn chạy được offline ở máy khác).
+- `TestProfileDetails` (7 ca, yêu cầu m01206): `parse_profile` lấy `photo_url`/`has_photo` và
+  **không** gán ảnh cho trang không tồn tại; `save_photo()` ghi đúng byte tải được (thay
+  `web.fetch_bytes` bằng lambda, không cần mạng); ba biến thể của `_phone_line()` (có số / rỗng ở
+  bản API / bản web "cần --api"); `print_profile()` in đủ dòng số điện thoại, ảnh đại diện, hoạt
+  động, ngày tạo, username khác, cờ Premium, lệnh bot, và khối `Nhóm chung` (`3 758 thành viên`,
+  `@aiquochientrang`); `_photo_line()`/`_flags_line()`; các helper thô của bản API không cần kết
+  nối (`_status_line()` với lớp giả `UserStatusOffline`, `_usernames_of()`, `_chat_row()`).
 
 ## 8. Các file JSON
 
@@ -520,7 +558,10 @@ khoá **cũ** (khớp chuỗi con, còn `"thuế"` trần), nên **chấm lại 
 | `username_info.py durov pythonchat --api --limit 3` | id 1006503122 / 1247302826, verified, group kín tra được |
 | `username_info.py --from-json usernames.json` | đọc thẳng danh sách do chức năng 1 xuất ra |
 | `.venv-api/bin/python keyword_usernames.py --keyword "hathanh"` | không cần cờ nguồn → tự dùng API, 10 username kèm tên/loại, `@hathanh` Thanh Hà đứng đầu |
-| Test hồi quy | **43/43 PASS** ở `.venv-api/bin/python` (system python3: 42 PASS + 1 skip vì thiếu Telethon) |
+| `username_info.py durov pythonchat --photo-dir /tmp/pp` (web) | tải ảnh thật `durov.jpg` (10 425 byte) và `pythonchat.jpg` (15 472 byte), đều là JPEG hợp lệ (`FFD8…FFD9`); dòng "Số điện thoại: (cần --api…)" |
+| `.venv-api/bin/python username_info.py BotFather sizedevchill hathanh --api --photo-dir /tmp/pp` | BotFather: **12 lệnh bot** + ảnh 99 537 byte; `@sizedevchill`: `84981726384`, "truy cập lần cuối 10/10/2026 12:39 UTC", "trong danh bạ"; `@hathanh`: "truy cập lần cuối 13/03/2026 14:07 UTC", không ảnh |
+| `.venv-api/bin/python username_info.py <id> --api` (một thành viên Sảnh Chat GNCT) | `Nhóm chung: 1 nhóm/kênh dùng chung — Sảnh Chat GNCT … (Nhóm, 3 758 thành viên) @aiquochientrang` |
+| Test hồi quy | **49/49 PASS** ở `.venv-api/bin/python` (system python3: 48 PASS + 1 skip vì thiếu Telethon) |
 | Ghi đè `api.py` trùng lặp | đã xoá `demo_telegram_api_FIXED.py` |
 
 ## 11. Muốn thêm từ khoá / đổi trọng số thì sửa ở đâu
@@ -533,7 +574,11 @@ khoá **cũ** (khớp chuỗi con, còn `"thuế"` trần), nên **chấm lại 
 
 Muốn thêm **cách nhận diện username mới** (ví dụ tra cả `t.me/c/...`): sửa `RE_USERNAME` (:695)
 rồi bổ sung ca trong `TestUsernameFeatures`. Muốn thêm **dấu hiệu phân loại trang tài khoản**:
-sửa `parse_profile()` (`demo_telegram.py:169`) — nhớ kiểm tra bằng HTML thật vì Telegram đổi giao diện theo thời gian.
+sửa `parse_profile()` (`demo_telegram.py:195`) — nhớ kiểm tra bằng HTML thật vì Telegram đổi giao diện theo thời gian.
+Muốn thêm **chi tiết hồ sơ** (ví dụ story, quà tặng, doanh nghiệp): thêm khóa vào `make_profile()`
+(`analyzer.py:977`), điền ở `lookup_entity()` (`demo_telegram_api.py:434`) và/hoặc
+`parse_profile()` (`demo_telegram.py:195`) tuỳ backend, rồi in trong `print_profile()`
+(`analyzer.py:1054`) — nhớ cập nhật cả `TestProfileDetails`.
 
 Quy tắc rút ra từ chính project này: **đừng dùng từ khoá ngắn/trần** (`ib`, `stk`, `bot`,
 `thuế`) — chúng khớp vào giữa từ tiếng Anh, chuỗi base64 hoặc từ ghép tiếng Việt. Hãy dùng

@@ -14,7 +14,7 @@ chung một bộ chấm điểm.
 | [`demo_telegram.py`](demo_telegram.py) | Backend **web**: đọc trang công khai `https://t.me/s/<kênh>` (và `https://t.me/<username>` cho `--user`). **Chỉ thư viện chuẩn** — không cần cài gì, không cần API key, không cần đăng nhập. |
 | [`demo_telegram_api.py`](demo_telegram_api.py) | Backend **Telegram API (Telethon)**: group kín, tìm kiếm toàn cục, tra cứu username/ID, tìm chat theo từ khoá, tải media, OCR, chế độ bot, `--watch`. |
 | [`find_private_groups.py`](find_private_groups.py) | Tìm & đọc **group kín** qua link mời, chia 3 bước `--discover` / `--join` / `--crawl`. |
-| [`tests/test_regression.py`](tests/test_regression.py) | Test hồi quy (43 test, không cần mạng/Telethon). |
+| [`tests/test_regression.py`](tests/test_regression.py) | Test hồi quy (49 test, không cần mạng/Telethon). |
 | [`GIAI_THICH_CODE.md`](GIAI_THICH_CODE.md) | Giải thích chi tiết từng phần của code + công thức + các lỗi đã sửa. |
 | [`posts_tg.json`](posts_tg.json) | Kết quả `--demo` của bản web (17 bài mẫu, có `groups`). |
 | [`posts_api.json`](posts_api.json) | Kết quả bản API (100 bài, `backend: telethon`). |
@@ -95,12 +95,21 @@ python3 demo_telegram_api.py --user durov --user @tennhom # bản API: thêm ID/
   (không tồn tại, riêng tư, hoặc không có bản xem trước).
 - Bản **API** dùng `get_entity()` nên tra được cả **ID**, `verified`, `is_bot`,
   `participants_count`, và group kín mà tài khoản đã tham gia.
+- **Chi tiết hơn ở bản API** (`--api`): **số điện thoại** (chỉ hiện khi đối tượng là danh bạ
+  hoặc họ để công khai), **trạng thái hoạt động** ("đang online", "truy cập lần cuối …"),
+  **ngày tạo** kênh/nhóm, **các username khác**, **cờ tài khoản** (Premium / bị gắn cờ lừa đảo
+  / giả mạo / bị hạn chế / liên hệ hai chiều), **lệnh bot**, và **nhóm/kênh dùng chung**
+  (`GetCommonChats`) — ví dụ `HIỀN TRANG` dùng chung nhóm *Sảnh Chat GNCT* (3 758 thành viên).
+- **Ảnh đại diện** được tải về `profile_photos/<username>.jpg` (bản web lấy từ `og:image`,
+  bản API qua `download_profile_photo`). Đổi thư mục bằng `--photo-dir DIR`, tắt bằng
+  `--no-photo`. Giới hạn danh sách nhóm chung bằng `--common-limit N`.
 - Nếu đối tượng là **kênh/nhóm**, script còn lấy luôn bài gần đây và in thống kê
   (số bài, điểm TB, cao nhất, mức rủi ro) — tức mục `[0] THÔNG TIN TÀI KHOẢN TRA CỨU`.
 - Kết quả được lưu vào khóa `profiles` trong file JSON, `--report` đọc lại và in tiếp.
 
 > Chỉ cần đúng việc "username → thông tin"? Dùng bản gọn
-> [`username_info.py`](username_info.py) (nhận nhiều username, `--api`, `--from-json`).
+> [`username_info.py`](username_info.py) (nhận nhiều username, `--api`, `--from-json`,
+> `--photo-dir`, `--no-photo`, `--common-limit`).
 
 ## Nhập keyword → liệt kê username liên quan: `--keyword`
 
@@ -185,14 +194,19 @@ username được gặp vì `@nhắc` / `link t.me` / `nguồn forward` / `bài 
 python3 username_info.py durov
 python3 username_info.py durov @BotFather pythonchat vitalikbuterin
 python3 username_info.py durov --limit 25 --out profile.json     # kèm thống kê bài đăng
-.venv-api/bin/python username_info.py durov pythonchat --api     # thêm ID/verified
+.venv-api/bin/python username_info.py durov pythonchat --api     # thêm ID/điện thoại/nhóm chung
+.venv-api/bin/python username_info.py hathanh --api --photo-dir anh  # tải ảnh đại diện
 python3 username_info.py --from-json usernames.json              # nối tiếp chức năng 1
 ```
 
-In loại tài khoản (Kênh / Nhóm / Bot / Người dùng), tên hiển thị, giới thiệu, quy mô,
-`--api` thì thêm **ID, verified, is_bot** và tra được **group kín** đã tham gia… Nếu tài
-khoản là kênh/nhóm, `--limit N` lấy thêm N bài gần đây để in thống kê (điểm TB, cao nhất,
-số bài cần rà soát, mức rủi ro). `--from-json` đọc danh sách username do chức năng 1 xuất ra.
+In loại tài khoản (Kênh / Nhóm / Bot / Người dùng), tên hiển thị, giới thiệu, quy mô, và
+**ảnh đại diện** tải về `profile_photos/<username>.jpg` (`--photo-dir DIR`, tắt bằng
+`--no-photo`). `--api` thì thêm **ID, verified, is_bot**, **số điện thoại** (chỉ khi là danh
+bạ/công khai), **trạng thái hoạt động**, **ngày tạo**, **username khác**, **cờ tài khoản**
+(Premium/lừa đảo/giả mạo/bị hạn chế), **lệnh bot**, **nhóm/kênh dùng chung** (`--common-limit N`)
+và tra được **group kín** đã tham gia. Nếu tài khoản là kênh/nhóm, `--limit N` lấy thêm N bài
+gần đây để in thống kê (điểm TB, cao nhất, số bài cần rà soát, mức rủi ro). `--from-json` đọc
+danh sách username do chức năng 1 xuất ra.
 
 ## Chấm điểm
 
@@ -223,8 +237,11 @@ số bài cần rà soát, mức rủi ro). `--from-json` đọc danh sách user
 | `--channel aiquochientrang --keyword "chiến sự"` | 5 bài lấy về + 7 username; `@aiquochientrang` gộp 3 vai trò (link t.me, bài đăng trong kênh, kết quả tìm chat) |
 | `keyword_usernames.py --keyword "chiến sự" --json nhom1.json` | 1000 bài → `@aiquochientrang`; thêm `--text-only` → 0 username (không bài nào nhắc t.me) |
 | `.venv-api/bin/python keyword_usernames.py --keyword "hathanh"` | 10 username kèm tên/loại: `@hathanh` Thanh Hà, `@hathanhtrading` Hà Thành Trading (Kênh, 213 người đăng ký), `@hathanhgrbot` (Bot)… |
+| `username_info.py durov pythonchat` (web) | tải được ảnh thật (`durov.jpg` 10 425 byte, `pythonchat.jpg` 15 472 byte) + dòng "Số điện thoại: (cần --api…)" |
+| `.venv-api/bin/python username_info.py BotFather sizedevchill hathanh --api` | BotFather: 12 lệnh bot; self: `Số điện thoại: 84981726384`, "truy cập lần cuối 10/10/2026 12:39 UTC"; `@hathanh`: "truy cập lần cuối 13/03/2026 14:07 UTC" |
+| `username_info.py <id> --api` (thành viên Sảnh Chat GNCT) | khối **Nhóm chung**: "1 nhóm/kênh dùng chung — Sảnh Chat GNCT … (Nhóm, 3 758 thành viên) @aiquochientrang" |
+| `python3 -m unittest discover -s tests` | **49 test PASS** (cả system Python lẫn `.venv-api/bin/python`) |
 | `username_info.py durov @BotFather pythonchat vitalikbuterin` | Kênh ✔ / Bot / Nhóm 107 / Người dùng — phân loại đúng |
-| `python3 -m unittest discover -s tests` | **43 test PASS** (cả system Python lẫn `.venv-api/bin/python`) |
 
 ## Chạy test
 
@@ -235,8 +252,10 @@ python3 -m unittest discover -s tests -v      # không cần mạng, không cầ
 Test khoá lại: điểm 17 bài demo khớp `posts_tg.json`; công thức group tái tạo đúng 8 nhóm
 demo + nhóm thật 1000 bài; các báo động giả nổi tiếng không còn; tin tức thật chỉ còn
 1/1000 bài bị gắn cờ; bộ đọc HTML tách đúng bài/views/media/link preview; phân loại trang
-`t.me/<username>` (kênh/nhóm/bot/người dùng/không tồn tại); `--keyword` → `usernames` +
-`invite_links` và `--report` đọc lại được.
+`t.me/<username>` (kênh/nhóm/bot/người dùng/không tồn tại); chi tiết hồ sơ (`photo_url`,
+`save_photo`, dòng số điện thoại/ảnh/nhóm chung/lệnh bot, helper `_status_line` /
+`_usernames_of` / `_chat_row`); `--keyword` → `usernames` + `invite_links` và `--report`
+đọc lại được.
 
 ## Hai cách thu thập (chọn 1 hoặc dùng cả hai)
 
@@ -254,7 +273,8 @@ demo + nhóm thật 1000 bài; các báo động giả nổi tiếng không còn
 | Lượt xem | ✅ | ✅ |
 | Forward / reply | ❌ (trang web không có) | ✅ |
 | Chế độ bot (không cần SĐT) / `--watch` | ❌ | ✅ |
-| Tra cứu `--user` (kênh/nhóm/bot/người dùng) | ✅ (trang `t.me/<username>`) | ✅ (thêm ID, verified, group kín) |
+| Tra cứu `--user` (kênh/nhóm/bot/người dùng) | ✅ (trang `t.me/<username>`) | ✅ (thêm ID, verified, số điện thoại, trạng thái, nhóm chung, group kín) |
+| Ảnh đại diện | ✅ (`og:image` → `--photo-dir`) | ✅ (`download_profile_photo`) |
 | `--keyword` → liệt kê username liên quan | ✅ (quét bài đã lấy) | ✅ + tìm chat theo từ khoá |
 
 ### Ba cách đăng nhập của bản API

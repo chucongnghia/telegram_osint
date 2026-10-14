@@ -613,5 +613,99 @@ class TestSplitTools(unittest.TestCase):
         self.assertIn("Chưa nhập username nào", res.stderr)
 
 
+class TestProfileDetails(unittest.TestCase):
+    """Chi tiết hồ sơ: số điện thoại, ảnh đại diện, nhóm chung, trạng thái, lệnh bot."""
+
+    PAGE_WITH_PHOTO = """
+    <meta property="og:title" content="Pavel Durov">
+    <meta property="og:description" content="Founder of Telegram.">
+    <meta property="og:image" content="https://cdn4.telesco.pe/file/abc.jpg">
+    <div class="tgme_page_title"><span dir="auto">Pavel Durov</span></div>
+    <div class="tgme_page_extra">10 397 040 subscribers</div>
+    """
+
+    def _profile(self, **kw):
+        return analyzer.make_profile("durov", "channel", source="telethon", **kw)
+
+    def test_parse_profile_photo_url(self):
+        prof = web.parse_profile(self.PAGE_WITH_PHOTO, "durov")
+        self.assertEqual(prof["photo_url"], "https://cdn4.telesco.pe/file/abc.jpg")
+        self.assertTrue(prof["has_photo"])
+        # Trang không tồn tại thì không gán ảnh (dù og:image có thể có mặt).
+        missing = web.parse_profile(TestUsernameFeatures.MISSING_PAGE, "khong_ton_tai_xyz_999")
+        self.assertEqual(missing.get("photo_url", ""), "")
+        self.assertFalse(missing.get("has_photo", False))
+
+    def test_save_photo_writes_bytes(self):
+        """`save_photo` ghi đúng byte tải được (không cần mạng)."""
+        original = web.fetch_bytes
+        web.fetch_bytes = lambda url: b"\xff\xd8\xff\xe0fake-jpeg"
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                path = web.save_photo("durov", "https://cdn4.telesco.pe/file/x.jpg", tmp)
+                self.assertTrue(path.endswith("durov.jpg"))
+                with open(path, "rb") as fh:
+                    self.assertEqual(fh.read(), b"\xff\xd8\xff\xe0fake-jpeg")
+                self.assertEqual(web.save_photo("durov", "", tmp), "")
+        finally:
+            web.fetch_bytes = original
+
+    def test_phone_line_variants(self):
+        self.assertIn("danh bạ", analyzer._phone_line(self._profile(phone="84981726384")))
+        self.assertIn("không có", analyzer._phone_line(self._profile()))
+        self.assertIn("cần --api", analyzer._phone_line(
+            analyzer.make_profile("durov", "channel", source=web.BACKEND)))
+
+    def test_print_profile_details(self):
+        prof = self._profile(
+            phone="84981726384", has_photo=True, photo_path="profile_photos/durov.jpg",
+            last_seen="đang online", created_at="2015-10-28", premium=True,
+            usernames=["durov", "durov2"], lang_code="en",
+            bot_commands=[{"command": "start", "description": "Bắt đầu"}],
+            common_groups=[{"title": "Sảnh Chat GNCT", "username": "aiquochientrang",
+                            "kind": "group", "members": 3758}])
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            analyzer.print_profile(prof)
+        out = buf.getvalue()
+        for expected in ("Số điện thoại", "84981726384", "đang online", "2015-10-28",
+                         "@durov2", "Premium", "en", "Nhóm chung", "Sảnh Chat GNCT",
+                         "3 758 thành viên", "@aiquochientrang", "Lệnh bot", "/start"):
+            self.assertIn(expected, out)
+
+    def test_photo_and_flags_line(self):
+        self.assertIn("profile_photos/durov.jpg",
+                      analyzer._photo_line(self._profile(photo_path="profile_photos/durov.jpg")))
+        self.assertIn("--photo-dir", analyzer._photo_line(self._profile(has_photo=True)))
+        self.assertEqual(analyzer._photo_line(self._profile()), "")
+        flags = analyzer._flags_line(self._profile(scam=True, mutual_contact=True))
+        self.assertIn("lừa đảo", flags)
+        self.assertIn("liên hệ hai chiều", flags)
+
+    def test_api_profile_helpers(self):
+        """Các helper đọc dữ liệu thô của Telethon (không cần kết nối)."""
+        from types import SimpleNamespace
+        import demo_telegram_api as api
+
+        class UserStatusOffline:
+            was_online = __import__("datetime").datetime(2026, 3, 13, 14, 7)
+
+        self.assertEqual(api._status_line(SimpleNamespace(status=UserStatusOffline())),
+                         "truy cập lần cuối 13/03/2026 14:07 UTC")
+        self.assertEqual(api._status_line(SimpleNamespace(status=None)), "")
+        self.assertEqual(api._status_line(SimpleNamespace(status=object())), "không rõ")
+
+        names = api._usernames_of(SimpleNamespace(
+            username="durov", usernames=[SimpleNamespace(username="durov2"),
+                                         SimpleNamespace(username="DUROV")]))
+        self.assertEqual(names, ["durov", "durov2"])       # khử trùng, không phân biệt hoa thường
+
+        row = api._chat_row(SimpleNamespace(title="Sảnh Chat", username="aiquochientrang",
+                                            broadcast=False, id=1, participants_count=3758))
+        self.assertEqual(row, {"title": "Sảnh Chat", "username": "aiquochientrang",
+                               "kind": "group", "id": 1, "members": 3758})
+        self.assertEqual(api._chat_row(SimpleNamespace(id=2, broadcast=True))["kind"], "channel")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

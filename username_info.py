@@ -7,20 +7,27 @@ vào một việc: **username vào, hồ sơ công khai ra**.
 
     username  ->  mở hồ sơ công khai  ->  loại tài khoản (Kênh / Nhóm / Bot / Người dùng),
                                           tên hiển thị, giới thiệu, quy mô, ID, xác minh,
+                                          ảnh đại diện (tải về), số điện thoại (*),
+                                          nhóm/kênh dùng chung (*), trạng thái hoạt động (*),
                                           và thống kê bài đăng gần đây (nếu là kênh/nhóm)
+
+    (*) chỉ có ở chế độ --api: Telegram không cho thấy số điện thoại/trạng thái/nhóm chung
+        qua trang công khai, và số điện thoại chỉ hiện khi là danh bạ hoặc họ để công khai.
 
 Hai chế độ:
     (mặc định)  đọc trang công khai `https://t.me/<username>` — **chỉ thư viện chuẩn**,
                 không cần đăng nhập, nhưng không thấy được group kín và không có ID.
     --api       dùng Telegram API (Telethon) — thêm **ID, verified, is_bot**, số thành viên,
-                và tra được cả **group kín** mà tài khoản đã tham gia (cần `--login` trước).
+                số điện thoại (nếu có), trạng thái, ngày tạo, nhóm chung, và tra được cả
+                **group kín** mà tài khoản đã tham gia (cần `--login` trước).
 
 Ví dụ
 -----
     python3 username_info.py durov
     python3 username_info.py durov @BotFather pythonchat vitalikbuterin
     python3 username_info.py durov --limit 25 --out profile.json     # kèm thống kê bài đăng
-    .venv-api/bin/python username_info.py durov pythonchat --api     # thêm ID/verified
+    .venv-api/bin/python username_info.py durov --api                # thêm ID/điện thoại/nhóm chung
+    .venv-api/bin/python username_info.py hathanh --api --photo-dir anh  # tải ảnh đại diện
     python3 username_info.py --from-json usernames.json              # lấy username từ chức năng 1
 """
 
@@ -55,11 +62,12 @@ def usernames_from_json(path: str) -> list[str]:
 # 2. Tra cứu: bản web (mặc định)
 # ---------------------------------------------------------------------------
 
-def lookup_web(name: str, limit: int) -> tuple[dict, list[dict]]:
+def lookup_web(name: str, limit: int, photo_dir: str = "", save_photo: bool = True
+               ) -> tuple[dict, list[dict]]:
     """Tra một username qua trang công khai; kênh thì lấy thêm bài gần đây."""
     import demo_telegram as web
 
-    profile = web.lookup_user(name)
+    profile = web.lookup_user(name, photo_dir=photo_dir, save=save_photo)
     records: list[dict] = []
     if limit > 0 and profile.get("kind") == "channel" and profile.get("exists"):
         try:
@@ -86,6 +94,8 @@ async def _lookup_api(names: list[str], args) -> tuple[list[dict], list[dict], i
         api._missing()
         return [], [], 111
 
+    photo_dir = getattr(args, "photo_dir", "")
+
     creds = argparse.Namespace(api_id=args.api_id, api_hash=args.api_hash)
     api_id, api_hash = api.load_credentials(creds)
     if not api_id or not api_hash:
@@ -103,7 +113,9 @@ async def _lookup_api(names: list[str], args) -> tuple[list[dict], list[dict], i
     try:
         for name in names:
             try:
-                profile, found = await api.lookup_entity(client, name, args.limit)
+                profile, found = await api.lookup_entity(
+                    client, name, args.limit, photo_dir=photo_dir,
+                    common_limit=args.common_limit)
             except RuntimeError as exc:
                 print(f"[!] {exc}", file=sys.stderr)
                 continue
@@ -121,6 +133,8 @@ async def _lookup_api(names: list[str], args) -> tuple[list[dict], list[dict], i
 # ---------------------------------------------------------------------------
 
 def run(args) -> int:
+    if getattr(args, "no_photo", False):
+        args.photo_dir = ""
     names: list[str] = []
     for name in list(args.usernames) + list(args.user or []):
         name = (name or "").strip()
@@ -154,17 +168,18 @@ def run(args) -> int:
         for profile in profiles:
             own = [r for r in records
                    if (r.get("channel") or "").lower() == (profile.get("username") or "").lower()]
-            print_profile(profile, own or None, noun=noun)
+            print_profile(profile, own or None, noun=noun, common_limit=args.common_limit)
     else:
         for name in names:
             try:
-                profile, found = lookup_web(name, args.limit)
+                profile, found = lookup_web(name, args.limit,
+                                            photo_dir=args.photo_dir, save_photo=True)
             except RuntimeError as exc:
                 print(f"[!] {name}: {exc}", file=sys.stderr)
                 continue
             profiles.append(profile)
             records += found
-            print_profile(profile, found or None, noun=noun)
+            print_profile(profile, found or None, noun=noun, common_limit=0)
 
     if not profiles:
         return 1
@@ -189,7 +204,14 @@ def main() -> int:
     p.add_argument("--limit", type=int, default=0,
                    help="số bài gần đây lấy kèm để thống kê (mặc định 0 = chỉ thông tin)")
     p.add_argument("--api", action="store_true",
-                   help="dùng Telegram API (Telethon): có ID/verified, tra được group kín")
+                   help="dùng Telegram API (Telethon): có ID/verified, số điện thoại, "
+                        "trạng thái, nhóm chung, tra được group kín")
+    p.add_argument("--photo-dir", default="profile_photos", metavar="DIR",
+                   help="thư mục lưu ảnh đại diện tải về (mặc định profile_photos; "
+                        "dùng --no-photo để không tải)")
+    p.add_argument("--no-photo", action="store_true", help="không tải ảnh đại diện")
+    p.add_argument("--common-limit", type=int, default=20, metavar="N",
+                   help="số nhóm/kênh dùng chung tối đa liệt kê ở chế độ --api (0 = bỏ qua)")
     p.add_argument("--session", default="", metavar="TEN",
                    help="tên phiên API (mặc định tg_session; ví dụ tk-phu)")
     p.add_argument("--api-id", help="api_id (mặc định: TG_API_ID hoặc tg_api.json)")

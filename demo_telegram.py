@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import os
 import re
 import sys
 import time
@@ -71,6 +72,31 @@ def fetch(url: str) -> str:
     except TimeoutError as exc:
         raise RuntimeError(f"Hết thời gian chờ khi tải {url}") from exc
     return raw.decode(charset, "replace")
+
+
+def fetch_bytes(url: str) -> bytes:
+    """Tải nội dung nhị phân (dùng cho ảnh đại diện)."""
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    try:
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+            return resp.read()
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(f"HTTP {exc.code} khi tải {url}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"Không kết nối được tới {url} ({exc.reason}).") from exc
+    except TimeoutError as exc:
+        raise RuntimeError(f"Hết thời gian chờ khi tải {url}") from exc
+
+
+def save_photo(username: str, photo_url: str, photo_dir: str) -> str:
+    """Tải ảnh đại diện về `<photo_dir>/<username>.jpg`; trả đường dẫn hay ''."""
+    if not (photo_url and photo_dir):
+        return ""
+    os.makedirs(photo_dir, exist_ok=True)
+    path = os.path.join(photo_dir, f"{username}.jpg")
+    with open(path, "wb") as fh:
+        fh.write(fetch_bytes(photo_url))
+    return path
 
 
 # ---------------------------------------------------------------------------
@@ -207,6 +233,11 @@ def parse_profile(page: str, username: str) -> dict:
             handle = m.group(1)
             break
 
+    # Ảnh đại diện: cả `og:image` lẫn <img class="tgme_page_photo_image"> đều
+    # trỏ về cùng một URL trên cdn*.telesco.pe (đã kiểm chứng với trang thật).
+    photo_url = grab(r'<img class="tgme_page_photo_image"[^>]*src="([^"]+)"') or \
+        grab(r'<meta property="og:image" content="([^"]+)"')
+
     exists = True
     verified = "✔" in (page_title or og_title)
     title = (page_title or og_title).replace("✔", "").strip()
@@ -227,13 +258,23 @@ def parse_profile(page: str, username: str) -> dict:
         username, kind, exists=exists, source=BACKEND, verified=verified,
         title=title if exists else "",
         about=about, subscribers=subscribers, members=members, monthly_users=monthly,
+        photo_url=photo_url if exists else "", has_photo=bool(photo_url) if exists else False,
     )
 
 
-def lookup_user(username: str) -> dict:
-    """Tra cứu một username qua trang công khai `https://t.me/<username>`."""
+def lookup_user(username: str, photo_dir: str = "", save: bool = True) -> dict:
+    """Tra cứu một username qua trang công khai `https://t.me/<username>`.
+
+    `photo_dir` khác rỗng thì tải ảnh đại diện (nếu có) về thư mục đó.
+    """
     name = channel_name(username)
-    return parse_profile(fetch(PROFILE_URL.format(username=name)), name)
+    profile = parse_profile(fetch(PROFILE_URL.format(username=name)), name)
+    if save and photo_dir and profile.get("photo_url"):
+        try:
+            profile["photo_path"] = save_photo(name, profile["photo_url"], photo_dir)
+        except RuntimeError as exc:
+            print(f"    ! Không tải được ảnh đại diện: {exc}")
+    return profile
 
 
 def media_types_of(block: str) -> list[str]:
@@ -388,6 +429,10 @@ def main() -> int:
     p.add_argument("--limit", type=int, default=20,
                    help="số bài tối đa cho MỖI kênh (mặc định 20)")
     p.add_argument("--out", default="posts_web.json", help="file JSON kết quả")
+    p.add_argument("--photo-dir", default="profile_photos", metavar="DIR",
+                   help="thư mục lưu ảnh đại diện tải về khi tra --user (mặc định "
+                        "profile_photos; dùng --no-photo để không tải)")
+    p.add_argument("--no-photo", action="store_true", help="không tải ảnh đại diện")
     p.add_argument("--no-report", action="store_true",
                    help="chỉ IN DANH SÁCH bài đã lấy, không in báo cáo thống kê")
     p.add_argument("--report", metavar="JSON", help="chỉ in báo cáo từ file JSON đã lưu")
@@ -445,7 +490,8 @@ def main() -> int:
 
     for raw in (args.user or []):
         try:
-            profile = lookup_user(raw)
+            profile = lookup_user(raw, photo_dir=args.photo_dir,
+                                  save=not args.no_photo)
         except (RuntimeError, ValueError) as exc:
             print(f"[!] {exc}", file=sys.stderr)
             errors += 1

@@ -9,6 +9,7 @@ tg_api.json
 
 # Media tải về
 media/
+profile_photos/
 
 __pycache__/
 

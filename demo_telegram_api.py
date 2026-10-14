@@ -385,11 +385,62 @@ async def fetch_history(client, target: str, limit: int, progress=print,
     return records
 
 
-async def lookup_entity(client, target: str, limit: int = 0) -> tuple[dict, list[dict]]:
+def _usernames_of(entity) -> list[str]:
+    """Mọi username của một thực thể (Telegram cho phép nhiều username phụ)."""
+    out: list[str] = []
+    main = getattr(entity, "username", None)
+    if main:
+        out.append(main)
+    for item in getattr(entity, "usernames", None) or []:
+        name = getattr(item, "username", None) or str(item)
+        if name and name.lower() not in {u.lower() for u in out}:
+            out.append(name)
+    return out
+
+
+def _chat_row(chat) -> dict:
+    """Một dòng mô tả nhóm/kênh (dùng cho danh sách nhóm chung)."""
+    row = {
+        "title": getattr(chat, "title", "") or "",
+        "username": getattr(chat, "username", None) or "",
+        "kind": "channel" if getattr(chat, "broadcast", False) else "group",
+        "id": getattr(chat, "id", None),
+    }
+    count = getattr(chat, "participants_count", None)
+    if count:
+        row["members"] = count
+    return row
+
+
+def _status_line(entity) -> str:
+    """Trạng thái hoạt động của người dùng, diễn giải sang tiếng Việt."""
+    status = getattr(entity, "status", None)
+    if status is None:
+        return ""
+    name = type(status).__name__
+    if name == "UserStatusOnline":
+        return "đang online"
+    if name == "UserStatusOffline":
+        was = getattr(status, "was_online", None)
+        return f"truy cập lần cuối {was:%d/%m/%Y %H:%M} UTC" if was else "offline"
+    return {
+        "UserStatusRecently": "truy cập gần đây",
+        "UserStatusLastWeek": "truy cập trong tuần qua",
+        "UserStatusLastMonth": "truy cập trong tháng qua",
+        "UserStatusEmpty": "không công khai",
+    }.get(name, "không rõ")
+
+
+async def lookup_entity(client, target: str, limit: int = 0, photo_dir: str = "",
+                        common_limit: int = 20, save_photo: bool = True
+                        ) -> tuple[dict, list[dict]]:
     """Tra cứu thông tin một username/ID qua API (kể cả group kín đã tham gia).
 
     Trả về `(profile, records)`. `records` là các tin gần đây của kênh/nhóm
     (rỗng với người dùng/bot, hoặc khi `limit=0`).
+
+    `photo_dir` khác rỗng thì tải ảnh đại diện về thư mục đó; `common_limit > 0`
+    thì liệt kê các nhóm/kênh dùng chung (chỉ có ý nghĩa với người dùng).
     """
     try:
         entity = await client.get_entity(target)
@@ -411,12 +462,31 @@ async def lookup_entity(client, target: str, limit: int = 0) -> tuple[dict, list
     subscribers = members = None
     verified = bool(getattr(entity, "verified", False))
     full_username = None
+    extras: dict = {}
     try:
         if isinstance(entity, User):
             full = await client(functions.users.GetFullUserRequest(id=entity))
-            about = getattr(full.full_user, "about", None)
-            verified = verified or bool(getattr(full.full_user, "verified", False))
-            full_username = getattr(full.full_user, "username", None)
+            fu = full.full_user
+            about = getattr(fu, "about", None)
+            verified = verified or bool(getattr(fu, "verified", False))
+            full_username = getattr(fu, "username", None)
+            # Số điện thoại: Telegram chỉ trả khi là danh bạ hoặc họ để công khai.
+            # (Với chính mình, `full_user.phone` rỗng nhưng `entity.phone` có.)
+            extras["phone"] = getattr(entity, "phone", None) or getattr(fu, "phone", None)
+            extras["common_chats_count"] = getattr(fu, "common_chats_count", None)
+            extras["bot_commands"] = [
+                {"command": getattr(c, "command", "") or "",
+                 "description": getattr(c, "description", "") or ""}
+                for c in (getattr(getattr(fu, "bot_info", None), "commands", None) or [])
+                if getattr(c, "command", "")
+            ]
+            if common_limit:
+                try:
+                    common = await client(functions.messages.GetCommonChatsRequest(
+                        user_id=entity.id, max_id=0, limit=common_limit))
+                    extras["common_groups"] = [_chat_row(c) for c in common.chats]
+                except Exception as exc:
+                    print(f"    ! Không lấy được nhóm chung: {type(exc).__name__}: {exc}")
         elif isinstance(entity, Channel):
             full = await client(functions.channels.GetFullChannelRequest(channel=entity))
             chat = full.full_chat
@@ -436,17 +506,40 @@ async def lookup_entity(client, target: str, limit: int = 0) -> tuple[dict, list
     except Exception as exc:
         print(f"    ! Không lấy được thông tin mở rộng: {type(exc).__name__}: {exc}")
 
+    created = getattr(entity, "date", None)
+    extras["created_at"] = created.strftime("%Y-%m-%d") if hasattr(created, "strftime") else None
+    extras["last_seen"] = _status_line(entity)
+    extras["usernames"] = _usernames_of(entity)
+    extras["lang_code"] = getattr(entity, "lang_code", None)
+    for key, attr in (("premium", "premium"), ("scam", "scam"), ("fake", "fake"),
+                      ("restricted", "restricted"), ("mutual_contact", "mutual_contact"),
+                      ("is_contact", "contact")):
+        if getattr(entity, attr, None):
+            extras[key] = True
+
     # `get_entity()` có thể trả về đối tượng "min" (chỉ có id), nên phải lấy
     # username từ full info hoặc từ chính tham số người dùng nhập.
-    raw = (target or "").lstrip("@").strip()
+    raw = str(target or "").lstrip("@").strip()
     username = (getattr(entity, "username", None) or full_username
                 or (raw if USERNAME_RE.match(raw) else None)
                 or str(getattr(entity, "id", target)))
+    has_photo = bool(getattr(entity, "photo", None))
+    extras["has_photo"] = has_photo
+    if save_photo and photo_dir and has_photo:
+        try:
+            os.makedirs(photo_dir, exist_ok=True)
+            path = await client.download_profile_photo(
+                entity, file=os.path.join(photo_dir, f"{username}.jpg"))
+            if path:
+                extras["photo_path"] = path
+        except Exception as exc:
+            print(f"    ! Không tải được ảnh đại diện: {type(exc).__name__}: {exc}")
+
     profile = make_profile(
         username,
         kind, source="telethon", title=title, about=about, subscribers=subscribers,
         members=members, account_id=getattr(entity, "id", None), verified=verified,
-        is_bot=(kind == "bot"),
+        is_bot=(kind == "bot"), **extras,
     )
     print(f"  [user] @{profile['username']} — {profile['kind_vi']} (id={profile['account_id']})")
 
@@ -806,7 +899,10 @@ async def run_async(args) -> int:
 
     for target in args.user or []:
         try:
-            profile, found = await lookup_entity(client, target, args.limit)
+            profile, found = await lookup_entity(
+                client, target, args.limit,
+                photo_dir="" if getattr(args, "no_photo", False) else getattr(args, "photo_dir", "profile_photos"),
+                common_limit=getattr(args, "common_limit", 20))
         except RuntimeError as exc:
             print(f"    ! {exc}")
             continue
@@ -928,6 +1024,12 @@ def main() -> int:
                    help="dừng sau khi nhận đủ N tin nhắn mới (0 = chạy mãi)")
     p.add_argument("--limit", type=int, default=30, help="số bài tối đa mỗi nguồn (mặc định 30)")
     p.add_argument("--out", default="posts_api.json", help="file JSON kết quả")
+    p.add_argument("--photo-dir", default="profile_photos", metavar="DIR",
+                   help="thư mục lưu ảnh đại diện tải về khi tra --user (mặc định "
+                        "profile_photos; dùng --no-photo để không tải)")
+    p.add_argument("--no-photo", action="store_true", help="không tải ảnh đại diện")
+    p.add_argument("--common-limit", type=int, default=20, metavar="N",
+                   help="số nhóm/kênh dùng chung tối đa liệt kê khi tra --user (0 = bỏ qua)")
     p.add_argument("--no-report", action="store_true",
                    help="chỉ IN DANH SÁCH tin nhắn đã crawl, không in báo cáo thống kê")
     p.add_argument("--report", metavar="JSON", help="chỉ in báo cáo từ file JSON đã lưu")
