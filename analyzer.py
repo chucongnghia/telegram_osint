@@ -578,7 +578,7 @@ def write_json(path: str, records: list[dict], backend: str, noun: str = NOUN_WE
     }
     if extra:
         payload.update(extra)
-    with open(path, "w", encoding="utf-8") as fh:
+    with open(_ensure_dir(path), "w", encoding="utf-8") as fh:
         json.dump(payload, fh, ensure_ascii=False, indent=2)
     print(f"[i] Đã lưu {len(out)} bài đăng vào {path}")
     return out
@@ -1110,3 +1110,62 @@ def print_profile(profile: dict, records: list[dict] | None = None, noun: str = 
         print(f"    {'Mức rủi ro':<12}: {icon_of(stats['group_level'])} "
               f"{stats['group_score']}/100 {stats['group_level']} — {stats['verdict']}")
     print(line)
+
+# ---------------------------------------------------------------------------
+# 13. Đường dẫn JSON — MỌI file .json của project nằm trong json_folder/
+# ---------------------------------------------------------------------------
+#
+# Quy ước (m01591): không rải file .json ra thư mục gốc nữa. Cả dữ liệu mẫu
+# (nhom1.json, posts_tg.json, real_tg*.json, found*.json) lẫn kết quả chạy
+# (posts_web.json, posts_api.json, found_groups.json) và cả tg_api.json đều nằm
+# trong json_folder/. Các script nhận `--out`/`--report`/`--json`/`--in` với TÊN
+# TRẦN thì tự hiểu là file trong json_folder/.
+#
+# (Khối này đặt ở cuối file để không làm dịch số dòng đã ghi trong
+# GIAI_THICH_CODE.md — mọi thứ phía trên giữ nguyên như tài liệu mô tả.)
+import os  # noqa: E402
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+JSON_DIR_NAME = "json_folder"
+JSON_DIR = os.path.join(SCRIPT_DIR, JSON_DIR_NAME)
+
+
+def _ensure_dir(path: str) -> str:
+    """Tạo thư mục cha của `path` nếu cần rồi trả lại chính `path` (cho `write_json`)."""
+    os.makedirs(os.path.dirname(os.path.abspath(path)) or ".", exist_ok=True)
+    return path
+
+
+def json_dir() -> str:
+    """Thư mục chứa mọi file JSON; tự tạo nếu chưa có."""
+    os.makedirs(JSON_DIR, exist_ok=True)
+    return JSON_DIR
+
+
+def json_path(name: str) -> str:
+    """Đường dẫn đầy đủ cho một tên file JSON trong `json_folder/`.
+
+    Tên có sẵn thư mục (chứa `/`) hoặc đường dẫn tuyệt đối thì giữ nguyên —
+    người dùng vẫn toàn quyền ghi ra chỗ khác.
+    """
+    name = (name or "").strip()
+    if not name:
+        return JSON_DIR
+    if os.path.isabs(name) or os.sep in name or "/" in name:
+        return name
+    return os.path.join(JSON_DIR, name)
+
+
+def resolve_json(path: str) -> str:
+    """Tìm file JSON người dùng gõ: nếu không thấy ở chỗ ghi ra thì thử `json_folder/`.
+
+    Nhờ vậy `--report posts_tg.json`, `--json nhom1.json`, `--in found.json` vẫn
+    chạy dù file đã nằm trong `json_folder/`.
+    """
+    path = (path or "").strip()
+    if not path:
+        return path
+    if os.path.exists(path) or os.path.isabs(path) or os.sep in path or "/" in path:
+        return path
+    candidate = os.path.join(JSON_DIR, path)
+    return candidate if os.path.exists(candidate) else path

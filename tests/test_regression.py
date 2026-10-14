@@ -40,8 +40,9 @@ import demo_telegram as web  # noqa: E402
 from analyzer import (SCAM_GROUPS, analyze, demo_posts, group_summary,  # noqa: E402
                       level_of, no_accent, normalize)
 
-POSTS_TG = json.loads((ROOT / "posts_tg.json").read_text(encoding="utf-8"))
-NHOM1 = json.loads((ROOT / "nhom1.json").read_text(encoding="utf-8"))
+JSON_DIR = ROOT / "json_folder"          # mọi file .json nằm trong đây
+POSTS_TG = json.loads((JSON_DIR / "posts_tg.json").read_text(encoding="utf-8"))
+NHOM1 = json.loads((JSON_DIR / "nhom1.json").read_text(encoding="utf-8"))
 
 
 def without_analysis(post: dict) -> dict:
@@ -485,7 +486,7 @@ class TestSplitTools(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "u.json"
             res = self._run("keyword_usernames.py",
-                            ["--json", str(ROOT / "posts_tg.json"), "--keyword", "hoàn tiền",
+                            ["--json", str(JSON_DIR / "posts_tg.json"), "--keyword", "hoàn tiền",
                              "--min-score", "40", "--out", str(out)])
             self.assertEqual(res.returncode, 0, res.stderr)
             payload = json.loads(out.read_text(encoding="utf-8"))

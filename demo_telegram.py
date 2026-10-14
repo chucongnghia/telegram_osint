@@ -35,9 +35,10 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from analyzer import (NOUN_WEB, RE_HASHTAG, analyze, demo_posts, make_profile, normalize,
-                      print_history, print_profile, print_report, print_username_payload,
-                      print_username_section, username_payload, write_json)
+from analyzer import (NOUN_WEB, RE_HASHTAG, analyze, demo_posts, json_path, make_profile,
+                      normalize, print_history, print_profile, print_report,
+                      print_username_payload, print_username_section, resolve_json,
+                      username_payload, write_json)
 
 PREVIEW_URL = "https://t.me/s/{channel}"
 USER_AGENT = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -428,7 +429,8 @@ def main() -> int:
                         "lặp lại được; có thể dùng cùng --report để tra trong JSON đã lưu)")
     p.add_argument("--limit", type=int, default=20,
                    help="số bài tối đa cho MỖI kênh (mặc định 20)")
-    p.add_argument("--out", default="posts_web.json", help="file JSON kết quả")
+    p.add_argument("--out", default=json_path("posts_web.json"),
+                   help="file JSON kết quả (tên trần ⇒ nằm trong json_folder/)")
     p.add_argument("--photo-dir", default="profile_photos", metavar="DIR",
                    help="thư mục lưu ảnh đại diện tải về khi tra --user (mặc định "
                         "profile_photos; dùng --no-photo để không tải)")
@@ -437,10 +439,17 @@ def main() -> int:
                    help="chỉ IN DANH SÁCH bài đã lấy, không in báo cáo thống kê")
     p.add_argument("--report", metavar="JSON", help="chỉ in báo cáo từ file JSON đã lưu")
     args = p.parse_args()
+    # Mọi file .json đi vào json_folder/ (trừ khi người dùng ghi đường dẫn có '/')
+    args.out = json_path(args.out)
 
     if args.report:
-        with open(args.report, encoding="utf-8") as fh:
-            payload = json.load(fh)
+        args.report = resolve_json(args.report)
+        try:
+            with open(args.report, encoding="utf-8") as fh:
+                payload = json.load(fh)
+        except OSError as exc:
+            print(f"[!] Không đọc được {args.report}: {exc}", file=sys.stderr)
+            return 2
         records = payload.get("posts", []) if isinstance(payload, dict) else payload
         profiles = (payload.get("profiles") or []) if isinstance(payload, dict) else []
         for prof in profiles:

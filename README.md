@@ -16,12 +16,39 @@ chung một bộ chấm điểm.
 | [`find_private_groups.py`](find_private_groups.py) | Tìm & đọc **group kín** qua link mời, chia 3 bước `--discover` / `--join` / `--crawl`. |
 | [`tests/test_regression.py`](tests/test_regression.py) | Test hồi quy (50 test, không cần mạng/Telethon). |
 | [`GIAI_THICH_CODE.md`](GIAI_THICH_CODE.md) | Giải thích chi tiết từng phần của code + công thức + các lỗi đã sửa. |
-| [`posts_tg.json`](posts_tg.json) | Kết quả `--demo` của bản web (17 bài mẫu, có `groups`). |
-| [`posts_api.json`](posts_api.json) | Kết quả bản API (100 bài, `backend: telethon`). |
-| [`nhom1.json`](nhom1.json) | Dữ liệu **thật** 1000 bài của group `@aiquochientrang` (`backend: telethon-user`). |
-| [`real_tg.json`](real_tg.json) / [`real_tg_vn.json`](real_tg_vn.json) | Dữ liệu thật `@durov` / `@baomoi`, `@tintucvtv`. |
-| [`found.json`](found.json), [`found_groups.json`](found_groups.json) | Kết quả bước `--discover` của `find_private_groups.py`. |
+| [`json_folder/`](json_folder) | **Mọi file `.json` của project** — dữ liệu mẫu, kết quả chạy và cả `tg_api.json` (xem "Quy ước file JSON"). |
+| [`json_folder/posts_tg.json`](json_folder/posts_tg.json) | Kết quả `--demo` của bản web (17 bài mẫu, có `groups`). |
+| [`json_folder/posts_api.json`](json_folder/posts_api.json) | Kết quả bản API (100 bài, `backend: telethon`). |
+| [`json_folder/nhom1.json`](json_folder/nhom1.json) | Dữ liệu **thật** 1000 bài của group `@aiquochientrang` (`backend: telethon-user`). |
+| [`json_folder/real_tg.json`](json_folder/real_tg.json) / [`json_folder/real_tg_vn.json`](json_folder/real_tg_vn.json) | Dữ liệu thật `@durov` / `@baomoi`, `@tintucvtv`. |
+| [`json_folder/found.json`](json_folder/found.json), [`json_folder/found_groups.json`](json_folder/found_groups.json) | Kết quả bước `--discover` của `find_private_groups.py`. |
 | [`channels.txt`](channels.txt) | Danh sách kênh mẫu cho `--seed-file`. |
+
+## Quy ước file JSON
+
+**Từ nay mọi file `.json` nằm trong `json_folder/`** — kể cả `tg_api.json` (credential, quyền 600):
+
+```
+json_folder/
+├── tg_api.json          # credential (api_id/api_hash/bot_token)
+├── nhom1.json           # dữ liệu mẫu / lịch sử
+├── posts_tg.json  posts_api.json  posts_web.json
+├── real_tg.json   real_tg_vn.json
+└── found.json     found_groups.json
+```
+
+Các cờ `--out`, `--report`, `--json`, `--in`, `--from-json` nhận **tên trần** và tự hiểu là
+file trong `json_folder/`, nên mọi lệnh dưới đây vẫn gõ ngắn như cũ:
+
+```bash
+python3 demo_telegram.py --report posts_tg.json        # = json_folder/posts_tg.json
+python3 keyword_usernames.py --json nhom1.json --keyword "chiến sự"
+python3 username_info.py durov --out profile.json      # = json_folder/profile.json
+```
+
+Muốn ghi ra chỗ khác thì truyền đường dẫn có thư mục (hoặc tuyệt đối) — script giữ nguyên:
+`--out /tmp/ketqua.json`, `--out baocao/posts.json`. Hàm dùng chung nằm ở cuối
+[`analyzer.py`](analyzer.py): `json_dir()`, `json_path(name)`, `resolve_json(path)`.
 
 ## Cài đặt
 
@@ -64,8 +91,8 @@ python3 demo_telegram.py --report posts_tg.json       # in lại báo cáo từ 
 
 Không truyền nguồn nào thì mặc định chạy `--demo`. `--channel` nhận `durov`, `@durov`,
 `t.me/durov`, `https://t.me/s/durov`; `--limit` là số bài tối đa **cho mỗi kênh**
-(mặc định 20). `--out` mặc định là `posts_web.json` (cố ý khác `posts_tg.json` để không
-ghi đè file kết quả mẫu).
+(mặc định 20). `--out` mặc định là `json_folder/posts_web.json` (cố ý khác
+`posts_tg.json` để không ghi đè file kết quả mẫu).
 
 ### Lấy dữ liệu bằng cách nào
 
@@ -295,7 +322,7 @@ python3 demo_telegram_api.py --watch @tennhom --watch-once                      
 python3 demo_telegram_api.py --bot-token <token> --watch @tennhom --interval 30 --cycles 10
 ```
 
-Sau `--setup-bot`, token được lưu vào `tg_api.json` nên các lần sau chỉ cần
+Sau `--setup-bot`, token được lưu vào `json_folder/tg_api.json` nên các lần sau chỉ cần
 `--watch @tennhom`. Giới hạn của bot (Telegram quy định, không phải lỗi code): **chỉ nhận
 tin nhắn mới** kể từ khi được thêm vào nhóm, **không đọc được lịch sử cũ**, và **không
 dùng được** `contacts.Search` — script tự cảnh báo và bỏ qua nếu truyền `--search` ở chế
@@ -315,9 +342,9 @@ python3 demo_telegram_api.py --demo                      # offline, không cần
 ```
 
 Credential truyền qua `--api-id/--api-hash`, biến môi trường `TG_API_ID`/`TG_API_HASH`,
-hoặc file `tg_api.json`. **Bot token** qua `--bot-token`, `TG_BOT_TOKEN`, hoặc khóa
-`bot_token` trong `tg_api.json`. `tg_api.json` và file phiên **không được commit** (đã có
-trong `.gitignore`).
+hoặc file `json_folder/tg_api.json`. **Bot token** qua `--bot-token`, `TG_BOT_TOKEN`,
+hoặc khóa `bot_token` trong `json_folder/tg_api.json`. `tg_api.json` và file phiên
+**không được commit** (đã có trong `.gitignore`).
 
 ## Đánh giá RỦI RO ở mức GROUP (không chỉ từng bài đăng)
 
@@ -353,8 +380,9 @@ theo dữ liệu lịch sử đã lưu, đổi được qua tham số `noun`.
 
 ### Credential được lưu tự động sau khi đăng nhập
 
-Sau khi `--login` thành công, script **tự ghi `api_id`/`api_hash` vào `tg_api.json`**
-(quyền 600), nên các lệnh sau không phải nhập lại. Nếu chưa từng đăng nhập, có thể tự tạo file:
+Sau khi `--login` thành công, script **tự ghi `api_id`/`api_hash` vào `json_folder/tg_api.json`**
+(quyền 600), nên các lệnh sau không phải nhập lại. Nếu chưa từng đăng nhập, có thể tự tạo
+`json_folder/tg_api.json`:
 
 ```json
 {"api_id": 1234567, "api_hash": "0123456789abcdef0123456789abcdef"}
@@ -388,8 +416,8 @@ rm tg_session_tk-phu.session                      # xoá phiên cũ
 Khi tái sử dụng phiên, script luôn in rõ loại phiên (`BOT` hay `TÀI KHOẢN NGƯỜI DÙNG`).
 
 **Bảo mật:** file `.session` chứa `auth_key` — ai có file là **chiếm được tài khoản**.
-Project đặt `chmod 600` cho `tg_api.json` và các file phiên, và đã `.gitignore` chúng.
-Kiểm tra lại bằng `ls -l *.session tg_api.json` (phải là `-rw-------`).
+Project đặt `chmod 600` cho `json_folder/tg_api.json` và các file phiên, và đã `.gitignore` chúng.
+Kiểm tra lại bằng `ls -l *.session json_folder/tg_api.json` (phải là `-rw-------`).
 
 ## Tìm group kín: `find_private_groups.py`
 

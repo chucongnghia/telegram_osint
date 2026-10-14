@@ -71,6 +71,10 @@ except ImportError:                                   # pragma: no cover
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_SESSION = os.path.join(SCRIPT_DIR, "tg_session")
 
+# Dùng chung quy ước đường dẫn JSON với các script khác: mọi file .json nằm trong
+# json_folder/. analyzer.py thuần stdlib nên import được cả khi máy thiếu Telethon.
+from analyzer import json_path, resolve_json  # noqa: E402
+
 # Link mời nhóm kín: t.me/+hash (mới) và t.me/joinchat/hash (cũ)
 RE_INVITE = re.compile(r"(?:https?://)?t\.me/(?:\+[\w-]{8,}|joinchat/[\w-]{8,})", re.I)
 
@@ -98,7 +102,7 @@ def extract_invites(text: str) -> list[str]:
 def load_credentials(args) -> tuple[int, str]:
     api_id = args.api_id or os.environ.get("TG_API_ID")
     api_hash = args.api_hash or os.environ.get("TG_API_HASH")
-    cfg = os.path.join(SCRIPT_DIR, "tg_api.json")
+    cfg = json_path("tg_api.json")
     if (not api_id or not api_hash) and os.path.exists(cfg):
         try:
             with open(cfg, encoding="utf-8") as fh:
@@ -367,7 +371,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="số tin quét mỗi chat khi tìm (mặc định 500)")
     p.add_argument("--in", dest="infile", metavar="FILE",
                    help="đọc kết quả bước trước từ file này")
-    p.add_argument("--out", default="found_groups.json", help="file JSON kết quả")
+    p.add_argument("--out", default="found_groups.json",
+                   help="file JSON kết quả (tên trần ⇒ nằm trong json_folder/)")
     p.add_argument("--session", metavar="TEN", help="tên phiên (mặc định: tg_session)")
     p.add_argument("--api-id", type=int, help="api_id (myl.telegram.org)")
     p.add_argument("--api-hash", help="api_hash (my.telegram.org)")
@@ -397,6 +402,7 @@ async def run(args) -> int:
     found = Found()
     # đọc kết quả bước trước nếu có
     if args.infile:
+        args.infile = resolve_json(args.infile)
         try:
             with open(args.infile, encoding="utf-8") as fh:
                 for rec in json.load(fh).get("found", []):
@@ -429,7 +435,8 @@ async def run(args) -> int:
 
     await client.disconnect()
 
-    # ghi kết quả
+    # ghi kết quả — mọi file .json nằm trong json_folder/
+    args.out = json_path(args.out)
     with open(args.out, "w", encoding="utf-8") as fh:
         json.dump({
             "generated_at": datetime.now(timezone.utc).isoformat(),

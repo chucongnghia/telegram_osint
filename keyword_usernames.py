@@ -54,8 +54,9 @@ import json
 import sys
 
 import analyzer
-from analyzer import (NOUN_API, NOUN_WEB, analyze, demo_posts, print_username_section,
-                      username_payload, write_json)
+from analyzer import (NOUN_API, NOUN_WEB, analyze, demo_posts, json_path,
+                      print_username_section, resolve_json, username_payload,
+                      write_json)
 
 BACKEND_WEB = "web (t.me/s)"
 BACKEND_JSON = "json"
@@ -185,6 +186,7 @@ def run(args) -> int:
     sources: list[str] = []
 
     if args.json:
+        args.json = resolve_json(args.json)
         records += records_from_json(args.json)
         sources.append(f"{BACKEND_JSON}: {args.json}")
     if args.demo:
@@ -230,6 +232,7 @@ def run(args) -> int:
                            limit=args.top or len(rows) or 1, compact=compact)
 
     if args.out:
+        args.out = json_path(args.out)
         write_json(args.out, records, backend="usernames-by-keyword", noun=noun,
                    extra={"keywords": keywords, "usernames": rows,
                           "invite_links": payload["invite_links"]})
@@ -282,7 +285,8 @@ def main() -> int:
                    help="mỗi username in một dòng gọn: @username — Tên (Loại)")
     p.add_argument("--full", action="store_true",
                    help="in đầy đủ chi tiết từng username (mặc định khi có dữ liệu bài)")
-    p.add_argument("--out", metavar="FILE", help="ghi kết quả ra JSON")
+    p.add_argument("--out", metavar="FILE",
+                   help="ghi kết quả ra JSON (tên trần ⇒ nằm trong json_folder/)")
     return run(p.parse_args())
 
 

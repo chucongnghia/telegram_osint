@@ -17,6 +17,10 @@ __pycache__/
 .venv-api/
 .venv/
 
-# Kết quả thu thập mặc định của bản web
+# Kết quả thu thập mặc định (nay nằm trong json_folder/)
 posts_web.json
+json_folder/posts_web.json
+json_folder/tg_api.json
+json_folder/profile.json
+json_folder/usernames.json
 *.session-journal

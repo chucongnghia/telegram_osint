@@ -47,9 +47,10 @@ from datetime import datetime, timezone
 
 # Bộ từ điển + chấm điểm dùng chung cho cả hai backend (chi tiết: analyzer.py)
 from analyzer import (NOUN_API, NOUN_WEB, RE_HASHTAG, USERNAME_RE, analyze,
-                      group_summary, make_profile, normalize, print_group_section,
-                      print_history, print_profile, print_report, print_username_payload,
-                      print_username_section, username_payload, write_json)
+                      group_summary, json_path, make_profile, normalize,
+                      print_group_section, print_history, print_profile, print_report,
+                      print_username_payload, print_username_section, resolve_json,
+                      username_payload, write_json)
 from analyzer import demo_posts as demo_posts_shared
 
 # ---------------------------------------------------------------------------
@@ -77,7 +78,7 @@ else:
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_SESSION = "tg_session"          # phiên tài khoản người dùng
 BOT_SESSION_PREFIX = "tg_bot"           # phiên bot
-API_CONFIG_PATH = os.path.join(SCRIPT_DIR, "tg_api.json")
+API_CONFIG_PATH = json_path("tg_api.json")   # json_folder/tg_api.json
 
 
 def session_path(name: str = "", bot: bool = False) -> str:
@@ -1028,7 +1029,8 @@ def main() -> int:
     p.add_argument("--cycles", type=int, default=0,
                    help="dừng sau khi nhận đủ N tin nhắn mới (0 = chạy mãi)")
     p.add_argument("--limit", type=int, default=30, help="số bài tối đa mỗi nguồn (mặc định 30)")
-    p.add_argument("--out", default="posts_api.json", help="file JSON kết quả")
+    p.add_argument("--out", default=json_path("posts_api.json"),
+                   help="file JSON kết quả (tên trần ⇒ nằm trong json_folder/)")
     p.add_argument("--photo-dir", default="profile_photos", metavar="DIR",
                    help="thư mục lưu ảnh đại diện tải về khi tra --user (mặc định "
                         "profile_photos; dùng --no-photo để không tải)")
@@ -1039,10 +1041,17 @@ def main() -> int:
                    help="chỉ IN DANH SÁCH tin nhắn đã crawl, không in báo cáo thống kê")
     p.add_argument("--report", metavar="JSON", help="chỉ in báo cáo từ file JSON đã lưu")
     args = p.parse_args()
+    # Mọi file .json đi vào json_folder/ (trừ khi người dùng ghi đường dẫn có '/')
+    args.out = json_path(args.out)
 
     if args.report:
-        with open(args.report, encoding="utf-8") as fh:
-            payload = json.load(fh)
+        args.report = resolve_json(args.report)
+        try:
+            with open(args.report, encoding="utf-8") as fh:
+                payload = json.load(fh)
+        except OSError as exc:
+            print(f"[!] Không đọc được {args.report}: {exc}", file=sys.stderr)
+            return 2
         records = payload.get("posts", []) if isinstance(payload, dict) else payload
         profiles = (payload.get("profiles") or []) if isinstance(payload, dict) else []
         for profile in profiles:
