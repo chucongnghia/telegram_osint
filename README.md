@@ -99,7 +99,7 @@ python3 demo_telegram_api.py --user durov --user @tennhom # bản API: thêm ID/
   hoặc họ để công khai), **trạng thái hoạt động** ("đang online", "truy cập lần cuối …"),
   **ngày tạo** kênh/nhóm, **các username khác**, **cờ tài khoản** (Premium / bị gắn cờ lừa đảo
   / giả mạo / bị hạn chế / liên hệ hai chiều), **lệnh bot**, và **nhóm/kênh dùng chung**
-  (`GetCommonChats`) — ví dụ `HIỀN TRANG` dùng chung nhóm *Sảnh Chat GNCT* (3 758 thành viên).
+  (`GetCommonChats`) — ví dụ `@BOSSDZAIGK88` dùng chung nhóm *VÀO CÓ 1 CHIỆU 💴💶* (65 784 thành viên).
 - **Ảnh đại diện** được tải về `profile_photos/<username>.jpg` (bản web lấy từ `og:image`,
   bản API qua `download_profile_photo`). Đổi thư mục bằng `--photo-dir DIR`, tắt bằng
   `--no-photo`. Giới hạn danh sách nhóm chung bằng `--common-limit N`.
@@ -239,7 +239,7 @@ danh sách username do chức năng 1 xuất ra.
 | `.venv-api/bin/python keyword_usernames.py --keyword "hathanh"` | 10 username kèm tên/loại: `@hathanh` Thanh Hà, `@hathanhtrading` Hà Thành Trading (Kênh, 213 người đăng ký), `@hathanhgrbot` (Bot)… |
 | `username_info.py durov pythonchat` (web) | tải được ảnh thật (`durov.jpg` 10 425 byte, `pythonchat.jpg` 15 472 byte) + dòng "Số điện thoại: (cần --api…)" |
 | `.venv-api/bin/python username_info.py BotFather sizedevchill hathanh --api` | BotFather: 12 lệnh bot; self: `Số điện thoại: 84981726384`, "truy cập lần cuối 10/10/2026 12:39 UTC"; `@hathanh`: "truy cập lần cuối 13/03/2026 14:07 UTC" |
-| `username_info.py <id> --api` (thành viên Sảnh Chat GNCT) | khối **Nhóm chung**: "1 nhóm/kênh dùng chung — Sảnh Chat GNCT … (Nhóm, 3 758 thành viên) @aiquochientrang" |
+| `.venv-api/bin/python username_info.py BOSSDZAIGK88 --api --limit 0` | khối **Nhóm chung**: "1 nhóm/kênh dùng chung — VÀO CÓ 1 CHIỆU 💴💶 (Nhóm, 65 784 thành viên)" |
 | `python3 -m unittest discover -s tests` | **50 test PASS** (cả system Python lẫn `.venv-api/bin/python`) |
 | `username_info.py durov @BotFather pythonchat vitalikbuterin` | Kênh ✔ / Bot / Nhóm 107 / Người dùng — phân loại đúng |
 

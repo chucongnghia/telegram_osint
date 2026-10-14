@@ -489,8 +489,7 @@ Thông báo khi chưa đăng nhập in đúng lệnh cần chạy
   **không** gán ảnh cho trang không tồn tại; `save_photo()` ghi đúng byte tải được (thay
   `web.fetch_bytes` bằng lambda, không cần mạng); ba biến thể của `_phone_line()` (có số / rỗng ở
   bản API / bản web "cần --api"); `print_profile()` in đủ dòng số điện thoại, ảnh đại diện, hoạt
-  động, ngày tạo, username khác, cờ Premium, lệnh bot, và khối `Nhóm chung` (`3 758 thành viên`,
-  `@aiquochientrang`); `_photo_line()`/`_flags_line()`; các helper thô của bản API không cần kết
+  động, ngày tạo, username khác, cờ Premium, lệnh bot, và khối `Nhóm chung` (`65 784 thành viên`); `_photo_line()`/`_flags_line()`; các helper thô của bản API không cần kết
   nối (`_status_line()` với lớp giả `UserStatusOffline`, `_usernames_of()`, `_chat_row()`); và
   `session_path()` không ghép tiền tố hai lần khi người dùng ghi tên phiên đầy đủ.
 
@@ -562,7 +561,7 @@ khoá **cũ** (khớp chuỗi con, còn `"thuế"` trần), nên **chấm lại 
 | `.venv-api/bin/python keyword_usernames.py --keyword "hathanh"` | không cần cờ nguồn → tự dùng API, 10 username kèm tên/loại, `@hathanh` Thanh Hà đứng đầu |
 | `username_info.py durov pythonchat --photo-dir /tmp/pp` (web) | tải ảnh thật `durov.jpg` (10 425 byte) và `pythonchat.jpg` (15 472 byte), đều là JPEG hợp lệ (`FFD8…FFD9`); dòng "Số điện thoại: (cần --api…)" |
 | `.venv-api/bin/python username_info.py BotFather sizedevchill hathanh --api --photo-dir /tmp/pp` | BotFather: **12 lệnh bot** + ảnh 99 537 byte; `@sizedevchill`: `84981726384`, "truy cập lần cuối 10/10/2026 12:39 UTC", "trong danh bạ"; `@hathanh`: "truy cập lần cuối 13/03/2026 14:07 UTC", không ảnh |
-| `.venv-api/bin/python username_info.py <id> --api` (một thành viên Sảnh Chat GNCT) | `Nhóm chung: 1 nhóm/kênh dùng chung — Sảnh Chat GNCT … (Nhóm, 3 758 thành viên) @aiquochientrang` |
+| `.venv-api/bin/python username_info.py BOSSDZAIGK88 --api --limit 0` | `Nhóm chung: 1 nhóm/kênh dùng chung — VÀO CÓ 1 CHIỆU 💴💶 (Nhóm, 65 784 thành viên)` |
 | Test hồi quy | **50/50 PASS** ở `.venv-api/bin/python` (system python3: 49 PASS + 1 skip vì thiếu Telethon) |
 | Ghi đè `api.py` trùng lặp | đã xoá `demo_telegram_api_FIXED.py` |
 
