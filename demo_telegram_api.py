@@ -18,6 +18,7 @@ Cách dùng
     python3 demo_telegram_api.py --demo                      # offline, không cần credential
     python3 demo_telegram_api.py --channel durov --limit 30  # kênh công khai, qua API
     python3 demo_telegram_api.py --channel @tennhom --limit 100   # group kín (bạn đã tham gia)
+    python3 demo_telegram_api.py --user durov --user @tennhom      # tra cứu username/ID
     python3 demo_telegram_api.py --search "đầu tư lợi nhuận" --limit 50
     python3 demo_telegram_api.py --channel kenh --media-dir media --ocr
     python3 demo_telegram_api.py --report posts_api.json
@@ -45,9 +46,10 @@ from collections import Counter
 from datetime import datetime, timezone
 
 # Bộ từ điển + chấm điểm dùng chung cho cả hai backend (chi tiết: analyzer.py)
-from analyzer import (NOUN_API, NOUN_WEB, RE_HASHTAG, analyze, group_summary,
-                      normalize, print_group_section, print_history, print_report,
-                      write_json)
+from analyzer import (NOUN_API, NOUN_WEB, RE_HASHTAG, USERNAME_RE, analyze,
+                      group_summary, make_profile, normalize, print_group_section,
+                      print_history, print_profile, print_report, print_username_payload,
+                      print_username_section, username_payload, write_json)
 from analyzer import demo_posts as demo_posts_shared
 
 # ---------------------------------------------------------------------------
@@ -353,7 +355,8 @@ def to_record(msg, entity) -> dict:
 # 5. Các chế độ thu thập
 # ---------------------------------------------------------------------------
 
-async def fetch_history(client, target: str, limit: int, progress=print) -> list[dict]:
+async def fetch_history(client, target: str, limit: int, progress=print,
+                        prefer_username: str = "") -> list[dict]:
     """Lấy `limit` bài mới nhất của một kênh/nhóm (kể cả group kín nếu đã tham gia)."""
     try:
         entity = await client.get_entity(target)
@@ -372,8 +375,86 @@ async def fetch_history(client, target: str, limit: int, progress=print) -> list
             continue
         records.append(to_record(msg, entity))
     records.sort(key=lambda r: r["posted_at"] or "")
+    # Đối tượng "min" từ get_entity() có thể thiếu username -> dùng username đã
+    # tra được ở --user để nhãn kênh/link trong báo cáo vẫn đẹp.
+    if prefer_username:
+        for rec in records:
+            rec["channel"] = prefer_username
+            rec["url"] = f"https://t.me/{prefer_username}/{rec['message_id']}"
     print(f"    lấy được {len(records)} tin nhắn")
     return records
+
+
+async def lookup_entity(client, target: str, limit: int = 0) -> tuple[dict, list[dict]]:
+    """Tra cứu thông tin một username/ID qua API (kể cả group kín đã tham gia).
+
+    Trả về `(profile, records)`. `records` là các tin gần đây của kênh/nhóm
+    (rỗng với người dùng/bot, hoặc khi `limit=0`).
+    """
+    try:
+        entity = await client.get_entity(target)
+    except Exception as exc:
+        raise RuntimeError(
+            f"Không tra được '{target}' ({type(exc).__name__}: {exc}).\n"
+            "      Kiểm tra username/ID, hoặc tài khoản chưa từng tương tác với "
+            "đối tượng này."
+        )
+    if isinstance(entity, User):
+        kind = "bot" if getattr(entity, "bot", False) else "user"
+    elif getattr(entity, "broadcast", False):
+        kind = "channel"
+    else:
+        kind = "group"
+
+    title = tl_utils.get_display_name(entity) or getattr(entity, "title", "") or ""
+    about = None
+    subscribers = members = None
+    verified = bool(getattr(entity, "verified", False))
+    full_username = None
+    try:
+        if isinstance(entity, User):
+            full = await client(functions.users.GetFullUserRequest(id=entity))
+            about = getattr(full.full_user, "about", None)
+            verified = verified or bool(getattr(full.full_user, "verified", False))
+            full_username = getattr(full.full_user, "username", None)
+        elif isinstance(entity, Channel):
+            full = await client(functions.channels.GetFullChannelRequest(channel=entity))
+            chat = full.full_chat
+            about = getattr(chat, "about", None)
+            verified = verified or bool(getattr(chat, "verified", False))
+            full_username = getattr(chat, "username", None)
+            count = getattr(chat, "participants_count", None)
+            if kind == "channel":
+                subscribers = count
+            else:
+                members = count
+        else:                                   # Chat: group cơ bản
+            full = await client(functions.messages.GetFullChatRequest(chat_id=entity.id))
+            chat = full.full_chat
+            about = getattr(chat, "about", None)
+            members = getattr(chat, "participants_count", None)
+    except Exception as exc:
+        print(f"    ! Không lấy được thông tin mở rộng: {type(exc).__name__}: {exc}")
+
+    # `get_entity()` có thể trả về đối tượng "min" (chỉ có id), nên phải lấy
+    # username từ full info hoặc từ chính tham số người dùng nhập.
+    raw = (target or "").lstrip("@").strip()
+    username = (getattr(entity, "username", None) or full_username
+                or (raw if USERNAME_RE.match(raw) else None)
+                or str(getattr(entity, "id", target)))
+    profile = make_profile(
+        username,
+        kind, source="telethon", title=title, about=about, subscribers=subscribers,
+        members=members, account_id=getattr(entity, "id", None), verified=verified,
+        is_bot=(kind == "bot"),
+    )
+    print(f"  [user] @{profile['username']} — {profile['kind_vi']} (id={profile['account_id']})")
+
+    records: list[dict] = []
+    if limit and kind in ("channel", "group"):
+        prefer = profile["username"] if USERNAME_RE.match(profile["username"]) else ""
+        records = await fetch_history(client, target, limit, prefer_username=prefer)
+    return profile, records
 
 
 async def search_global(client, keyword: str, limit: int, per_chat: int = 20) -> list[dict]:
@@ -406,6 +487,23 @@ async def search_global(client, keyword: str, limit: int, per_chat: int = 20) ->
     # cũ sắp xếp theo scam_score luôn là no-op. Việc sắp xếp được làm trong
     # run_async() SAU khi đã chấm điểm.
     return records[:limit]
+
+
+async def search_chats(client, keyword: str, limit: int = 20) -> list[dict]:
+    """Tìm kênh/nhóm theo từ khoá, trả về username để đưa vào mục [6]."""
+    try:
+        found = await client(functions.contacts.SearchRequest(q=keyword, limit=limit))
+    except Exception as exc:
+        print(f"    ! Tìm chat theo từ khoá thất bại: {type(exc).__name__}: {exc}")
+        return []
+    out: list[dict] = []
+    for chat in found.chats:
+        username = getattr(chat, "username", None)
+        if username:
+            out.append({"username": username, "keywords": [keyword],
+                        "title": getattr(chat, "title", "")})
+    print(f"    tìm chat theo '{keyword}': {len(out)} username")
+    return out
 
 
 async def download_media(client, records: list[dict], media_dir: str, do_ocr: bool) -> None:
@@ -684,9 +782,20 @@ async def run_async(args) -> int:
         return 0
 
     records: list[dict] = []
+    profiles: list[dict] = []
     sources: list[str] = []
     if args.media_dir:
         os.makedirs(args.media_dir, exist_ok=True)
+
+    for target in args.user or []:
+        try:
+            profile, found = await lookup_entity(client, target, args.limit)
+        except RuntimeError as exc:
+            print(f"    ! {exc}")
+            continue
+        profiles.append(profile)
+        sources.append(f"tra cứu @{profile['username']}")
+        records += found
 
     for target in args.channel or []:
         sources.append(f"kênh/nhóm {target}")
@@ -705,6 +814,14 @@ async def run_async(args) -> int:
             except RuntimeError as exc:
                 print(f"    ! {exc}")
 
+    extra_usernames: list[dict] = []
+    for kw in args.keyword or []:
+        sources.append(f"từ khoá '{kw}'")
+        if is_bot:
+            print("    ! Bot không dùng được tìm chat theo từ khoá — chỉ xét các bài đã lấy.")
+        else:
+            extra_usernames += await search_chats(client, kw, args.limit)
+
     # chống trùng theo kênh/message_id (dùng cho cả 2 nguồn ở trên)
     unique: dict[str, dict] = {}
     for rec in records:
@@ -719,18 +836,34 @@ async def run_async(args) -> int:
 
     await client.disconnect()
 
+    for profile in profiles:                  # in lại kèm thống kê điểm
+        print_profile(profile, records, noun=NOUN_API)
+
+    kw_payload = (username_payload(records, args.keyword, extra_usernames=extra_usernames)
+                  if args.keyword else None)
+    extra = {**({"profiles": profiles} if profiles else {}), **(kw_payload or {})}
+
     if not records:
+        if profiles or extra_usernames:
+            if kw_payload:
+                print_username_payload(kw_payload, noun=NOUN_API)
+            write_json(args.out, [], "telethon-bot" if is_bot else "telethon",
+                       noun=NOUN_API, extra=extra)
+            return 0
         print("[!] Không thu thập được bài đăng nào.")
         return 1
 
     # Sắp xếp SAU khi đã chấm điểm: bản cũ sắp xếp trong search_global() lúc
     # record còn chưa có khóa "analysis" nên thực chất không sắp xếp gì cả.
     records.sort(key=lambda r: -((r.get("analysis") or {}).get("scam_score", 0)))
-    out = write_json(args.out, records, "telethon-bot" if is_bot else "telethon", noun=NOUN_API)
+    out = write_json(args.out, records, "telethon-bot" if is_bot else "telethon",
+                     noun=NOUN_API, extra=extra or None)
     if args.no_report:
         print_history(out, sources)
     else:
         report(out, sources)
+    if kw_payload:
+        print_username_payload(kw_payload, noun=NOUN_API)
     return 0
 
 
@@ -756,8 +889,14 @@ def main() -> int:
     p.add_argument("--api-hash", help="api_hash lấy từ my.telegram.org")
     p.add_argument("--channel", action="append", metavar="@KENH",
                    help="kênh công khai / group kín / ID (lặp lại được)")
+    p.add_argument("--user", action="append", metavar="USERNAME",
+                   help="tra cứu thông tin một tài khoản/kênh/nhóm theo username hoặc ID "
+                        "(lặp lại được); kênh/nhóm còn được lấy luôn tin gần đây")
     p.add_argument("--search", action="append", metavar="TUKHOA",
                    help="tìm kiếm toàn cục theo từ khóa (trong các chat đã tham gia)")
+    p.add_argument("--keyword", action="append", metavar="TUKHOA",
+                   help="nhập từ khoá rồi liệt kê username có thể liên quan (mục [6]); "
+                        "với tài khoản người dùng còn tìm chat theo từ khoá đó (lặp lại được)")
     p.add_argument("--media-dir", metavar="DIR",
                    help="tải ảnh/video về thư mục này")
     p.add_argument("--ocr", action="store_true",
@@ -781,7 +920,18 @@ def main() -> int:
         with open(args.report, encoding="utf-8") as fh:
             payload = json.load(fh)
         records = payload.get("posts", []) if isinstance(payload, dict) else payload
+        profiles = (payload.get("profiles") or []) if isinstance(payload, dict) else []
+        for profile in profiles:
+            print_profile(profile, records, noun=NOUN_API)
+        stored_usernames = payload.get("usernames") if isinstance(payload, dict) else None
+        if args.keyword:
+            print_username_payload(username_payload(records, args.keyword), noun=NOUN_API)
+        elif stored_usernames:
+            print_username_section(stored_usernames, payload.get("keywords"),
+                                   payload.get("invite_links"), noun=NOUN_API)
         if not records:
+            if profiles or stored_usernames or args.keyword:
+                return 0
             print(f"[!] Không có bài đăng nào trong {args.report}", file=sys.stderr)
             return 1
         report(records, [args.report])
@@ -790,18 +940,22 @@ def main() -> int:
     if args.setup_bot is not None or args.login_bot:
         return asyncio.run(run_bot_mode(args))
 
-    if not any([args.demo, args.channel, args.search, args.login, args.watch]):
+    if not any([args.demo, args.channel, args.search, args.login, args.watch, args.user,
+                args.keyword]):
         args.demo = True      # không chọn nguồn nào -> chạy dữ liệu mẫu offline
 
     if args.demo:
         records = demo_posts(args.limit)
         for rec in records:
             rec["analysis"] = analyze(rec)
-        out = write_json(args.out, records, "demo (offline)", noun=NOUN_WEB)
+        kw_payload = username_payload(records, args.keyword) if args.keyword else None
+        out = write_json(args.out, records, "demo (offline)", noun=NOUN_WEB, extra=kw_payload)
         if args.no_report:
             print_history(out, ["dữ liệu mẫu offline (không cần API)"])
         else:
             report(out, ["dữ liệu mẫu offline (không cần API)"])
+        if kw_payload:
+            print_username_payload(kw_payload, noun=NOUN_WEB)
         return 0
 
     return asyncio.run(run_async(args))

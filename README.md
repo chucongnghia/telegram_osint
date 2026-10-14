@@ -8,11 +8,11 @@ chung một bộ chấm điểm.
 
 | File | Việc |
 |---|---|
-| [`analyzer.py`](analyzer.py) | **Nguồn chân lý dùng chung**: từ điển, trọng số, regex, `analyze()`, `group_summary()`, `print_report()`, `write_json()`, dữ liệu mẫu `demo_posts()`. Chỉ thư viện chuẩn. |
-| [`demo_telegram.py`](demo_telegram.py) | Backend **web**: đọc trang công khai `https://t.me/s/<kênh>`. **Chỉ thư viện chuẩn** — không cần cài gì, không cần API key, không cần đăng nhập. |
-| [`demo_telegram_api.py`](demo_telegram_api.py) | Backend **Telegram API (Telethon)**: group kín, tìm kiếm toàn cục, tải media, OCR, chế độ bot, `--watch`. |
+| [`analyzer.py`](analyzer.py) | **Nguồn chân lý dùng chung**: từ điển, trọng số, regex, `analyze()`, `group_summary()`, `print_report()`, `write_json()`, `username_payload()` / `related_usernames()` (`--keyword`), `make_profile()` / `print_profile()` (`--user`), dữ liệu mẫu `demo_posts()`. Chỉ thư viện chuẩn. |
+| [`demo_telegram.py`](demo_telegram.py) | Backend **web**: đọc trang công khai `https://t.me/s/<kênh>` (và `https://t.me/<username>` cho `--user`). **Chỉ thư viện chuẩn** — không cần cài gì, không cần API key, không cần đăng nhập. |
+| [`demo_telegram_api.py`](demo_telegram_api.py) | Backend **Telegram API (Telethon)**: group kín, tìm kiếm toàn cục, tra cứu username/ID, tìm chat theo từ khoá, tải media, OCR, chế độ bot, `--watch`. |
 | [`find_private_groups.py`](find_private_groups.py) | Tìm & đọc **group kín** qua link mời, chia 3 bước `--discover` / `--join` / `--crawl`. |
-| [`tests/test_regression.py`](tests/test_regression.py) | Test hồi quy (23 test, không cần mạng/Telethon). |
+| [`tests/test_regression.py`](tests/test_regression.py) | Test hồi quy (32 test, không cần mạng/Telethon). |
 | [`GIAI_THICH_CODE.md`](GIAI_THICH_CODE.md) | Giải thích chi tiết từng phần của code + công thức + các lỗi đã sửa. |
 | [`posts_tg.json`](posts_tg.json) | Kết quả `--demo` của bản web (17 bài mẫu, có `groups`). |
 | [`posts_api.json`](posts_api.json) | Kết quả bản API (100 bài, `backend: telethon`). |
@@ -55,6 +55,8 @@ python3 demo_telegram.py --demo                       # offline, dữ liệu m�
 python3 demo_telegram.py --channel durov --limit 25   # kênh công khai (chạy thật)
 python3 demo_telegram.py --channel baomoi --channel tintucvtv --limit 20
 python3 demo_telegram.py --seed-file channels.txt     # mỗi dòng 1 kênh hoặc link t.me
+python3 demo_telegram.py --user durov --user BotFather  # tra cứu theo username
+python3 demo_telegram.py --channel durov --keyword "telegram"   # từ khoá -> username liên quan
 python3 demo_telegram.py --report posts_tg.json       # in lại báo cáo từ JSON đã lưu
 ```
 
@@ -74,6 +76,49 @@ ghi đè file kết quả mẫu).
   khóa `kênh/message_id`.
 - Link mời nhóm kín (`t.me/+...`, `t.me/joinchat/...`) bị **từ chối kèm hướng dẫn** —
   bản web không xem được group kín.
+
+## Tra cứu username: `--user` (tài khoản này là ai?)
+
+Nhập một username (kênh / nhóm / bot / người dùng) để xem thông tin công khai:
+
+```bash
+python3 demo_telegram.py --user durov --user BotFather --user vitalikbuterin
+python3 demo_telegram.py --user pythonchat --limit 5      # nhóm: chỉ tra thông tin
+python3 demo_telegram_api.py --user durov --user @tennhom # bản API: thêm ID/verified
+```
+
+- Bản **web** đọc `https://t.me/<username>` và tự phân loại: `subscribers` → **Kênh**,
+  `members` → **Nhóm**, `monthly users`/`Start Bot` → **Bot**, `You can contact @x` →
+  **Người dùng**. Không có mô tả + không có khối thông tin → báo **không tra được**
+  (không tồn tại, riêng tư, hoặc không có bản xem trước).
+- Bản **API** dùng `get_entity()` nên tra được cả **ID**, `verified`, `is_bot`,
+  `participants_count`, và group kín mà tài khoản đã tham gia.
+- Nếu đối tượng là **kênh/nhóm**, script còn lấy luôn bài gần đây và in thống kê
+  (số bài, điểm TB, cao nhất, mức rủi ro) — tức mục `[0] THÔNG TIN TÀI KHOẢN TRA CỨU`.
+- Kết quả được lưu vào khóa `profiles` trong file JSON, `--report` đọc lại và in tiếp.
+
+## Nhập keyword → liệt kê username liên quan: `--keyword`
+
+Nhập một hoặc nhiều từ khoá, script quét các bài đã thu thập rồi liệt kê **username có
+thể liên quan** (mục `[6]`), kèm link mời nhóm kín gặp trong các bài đó:
+
+```bash
+python3 demo_telegram.py --channel durov --keyword "telegram"
+python3 demo_telegram.py --demo --keyword "đầu tư" --keyword "hoàn tiền"
+python3 demo_telegram.py --report posts_web.json --keyword "hoàn tiền"   # tra trong JSON đã lưu
+python3 demo_telegram_api.py --keyword "chiến sự"          # thêm: tìm chat theo từ khoá
+```
+
+Mỗi dòng cho biết username được gặp **vì lý do gì**: `@nhắc` (được mention trong bài),
+`link t.me` (link trong bài), `nguồn forward`, `bài đăng trong kênh`, `kết quả tìm chat`
+(chỉ bản API). Kèm **điểm nghi ngờ cao nhất** của các bài chứa username đó, nên dễ ưu tiên
+rà soát. Mục `[6]` chỉ hiện khi bạn truyền `--keyword`, hoặc khi mở lại file JSON đã lưu
+sẵn kết quả (dùng `--report`). Nếu chỉ truyền `--keyword` mà không có nguồn nào, bản web
+chạy dữ liệu mẫu offline để minh hoạ.
+
+- Bản **API** còn dùng `contacts.SearchRequest` để tìm **chat** theo từ khoá (chỉ trong
+  các chat tài khoản đã tham gia; tài khoản bot không dùng được, script tự cảnh báo).
+- Kết quả nằm trong các khóa `keywords`, `usernames` (và `invite_links`) của file JSON.
 
 ## Chấm điểm
 
@@ -99,7 +144,10 @@ ghi đè file kết quả mẫu).
 | `--channel baomoi --channel tintucvtv --limit 20` | 40 bài thật tiếng Việt (20 + 20) → `@baomoi` **11/100**, `@tintucvtv` **2/100** (đều Normal) |
 | `--channel vnexpress` | báo lỗi rõ ràng (kênh không có bản xem trước công khai) |
 | `--report posts_tg.json` / `--report posts_api.json` | in lại báo cáo + tự tính mục [5] (JSON cũ không có `groups` vẫn chạy) |
-| `python3 -m unittest discover -s tests` | 23 test PASS |
+| `--user durov --user BotFather --user vitalikbuterin --user pythonchat --user khong_ton_tai_xyz_999` | phân loại đúng **Kênh / Bot / Người dùng / Nhóm / không tra được**; `@durov` 10 397 039 người đăng ký + ✔ đã xác minh, `@BotFather` 7 560 507 người dùng/tháng, `@pythonchat` 107 thành viên |
+| `--keyword "chiến sự"` (bản API) | tìm được 7 username chat liên quan, ví dụ `@aiquochientrang`, `@bantronchiensu`, `@tintucchiensu247` |
+| `--channel aiquochientrang --keyword "chiến sự"` | 5 bài lấy về + 7 username; `@aiquochientrang` gộp 3 vai trò (link t.me, bài đăng trong kênh, kết quả tìm chat) |
+| `python3 -m unittest discover -s tests` | **32 test PASS** (cả system Python lẫn `.venv-api/bin/python`) |
 
 ## Chạy test
 
@@ -109,7 +157,9 @@ python3 -m unittest discover -s tests -v      # không cần mạng, không cầ
 
 Test khoá lại: điểm 17 bài demo khớp `posts_tg.json`; công thức group tái tạo đúng 8 nhóm
 demo + nhóm thật 1000 bài; các báo động giả nổi tiếng không còn; tin tức thật chỉ còn
-1/1000 bài bị gắn cờ; bộ đọc HTML tách đúng bài/views/media/link preview.
+1/1000 bài bị gắn cờ; bộ đọc HTML tách đúng bài/views/media/link preview; phân loại trang
+`t.me/<username>` (kênh/nhóm/bot/người dùng/không tồn tại); `--keyword` → `usernames` +
+`invite_links` và `--report` đọc lại được.
 
 ## Hai cách thu thập (chọn 1 hoặc dùng cả hai)
 
@@ -127,6 +177,8 @@ demo + nhóm thật 1000 bài; các báo động giả nổi tiếng không còn
 | Lượt xem | ✅ | ✅ |
 | Forward / reply | ❌ (trang web không có) | ✅ |
 | Chế độ bot (không cần SĐT) / `--watch` | ❌ | ✅ |
+| Tra cứu `--user` (kênh/nhóm/bot/người dùng) | ✅ (trang `t.me/<username>`) | ✅ (thêm ID, verified, group kín) |
+| `--keyword` → liệt kê username liên quan | ✅ (quét bài đã lấy) | ✅ + tìm chat theo từ khoá |
 
 ### Ba cách đăng nhập của bản API
 

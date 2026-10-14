@@ -561,10 +561,12 @@ def print_history(records: list[dict], sources: list[str] | None = None,
     print("-" * 78)
 
 
-def write_json(path: str, records: list[dict], backend: str, noun: str = NOUN_WEB) -> list[dict]:
+def write_json(path: str, records: list[dict], backend: str, noun: str = NOUN_WEB,
+               extra: dict | None = None) -> list[dict]:
     """Ghi {generated_at, total, backend, groups, posts} ra JSON.
 
     `groups` chính là mục [5] ĐIỂM RỦI RO THEO GROUP/KÊNH (xem group_summary).
+    `extra` là các khóa ghi thêm (ví dụ `usernames` của chức năng tra theo từ khoá).
     """
     out = [_public(r) for r in records]
     payload = {
@@ -574,6 +576,8 @@ def write_json(path: str, records: list[dict], backend: str, noun: str = NOUN_WE
         "groups": group_summary(out, noun=noun),
         "posts": out,
     }
+    if extra:
+        payload.update(extra)
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(payload, fh, ensure_ascii=False, indent=2)
     print(f"[i] Đã lưu {len(out)} bài đăng vào {path}")
@@ -668,3 +672,312 @@ def demo_posts(limit: int, dialect: str = "web") -> list[dict]:
                 rec["replies"] = views // 40
             out.append(rec)
     return out
+
+
+# ---------------------------------------------------------------------------
+# 10. Tra USERNAME liên quan tới từ khoá ("nhập keyword -> liệt kê username")
+# ---------------------------------------------------------------------------
+#
+# Telegram KHÔNG cho tìm username theo từ khoá trên trang công khai, nên cách làm
+# là đi từ nội dung: lọc những bài ĐÃ THU THẬP có chứa từ khoá, rồi rút ra mọi
+# username "dính" tới các bài đó:
+#
+#   * `@mention` trong nội dung                        -> mentions
+#   * link `t.me/<username>` trong bài / link preview  -> links
+#   * username của chính kênh đăng bài                 -> channels
+#   * nguồn forward dạng `t.me/<username>` hoặc `@x`   -> forwards
+#   * (chỉ ở bản API) chat trả về từ tìm kiếm chat     -> searches
+#
+# Link mời `t.me/+hash` KHÔNG có username nên được liệt kê riêng ở `invites`.
+
+#: Username Telegram: 4–32 ký tự, bắt đầu bằng chữ; cho phép cả dấu `.` vì một số
+#: link/`data-post` dùng dạng `ten.kenh` (ví dụ dữ liệu mẫu `dautu.sieuloinhuan`).
+RE_USERNAME = re.compile(r"(?:https?://)?t\.me/(?!\+|joinchat/|s/)([A-Za-z][A-Za-z0-9_.]{3,31})",
+                         re.I)
+USERNAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_.]{3,31}$")
+
+ROLE_VI = {
+    "channel": "kênh có bài chứa từ khoá",
+    "mention": "được @nhắc trong bài",
+    "link": "có link t.me/… trong bài",
+    "forward": "là nguồn forward của bài",
+    "search": "kết quả tìm kiếm chat (API)",
+}
+
+
+def keywords_in(text: str, keywords) -> list[str]:
+    """Các từ khoá có trong `text` (khớp ranh giới từ, hiểu cả chữ không dấu)."""
+    hay = normalize(text or "")
+    return hits(list(keywords), hay, no_accent(hay))
+
+
+def _username_of(value: str, strict: bool = False) -> str:
+    """Rút username từ `t.me/x`, `@x`, hoặc `x`.
+
+    `strict=True` chỉ nhận dạng có tiền tố rõ ràng (`t.me/`, `@`) — dùng cho
+    trường `forwarded_from`, vì trường đó thường là **tên hiển thị** chứ không
+    phải username.
+    """
+    value = (value or "").strip()
+    if not value:
+        return ""
+    m = RE_USERNAME.search(value)
+    if m:
+        return m.group(1)
+    if value.startswith("@"):
+        value = value[1:]
+    if strict:
+        return ""
+    return value if re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{3,31}", value) else ""
+
+
+def _record_text(record: dict) -> str:
+    """Nội dung dùng để lọc từ khoá: text + link preview + tên/mã kênh."""
+    return " ".join([record.get("text") or "", record.get("link_preview") or "",
+                     record.get("channel_title") or "", record.get("channel") or ""])
+
+
+def related_usernames(records: list[dict], keywords=None, include_channels: bool = True,
+                      limit_examples: int = 3, extra_usernames=None) -> list[dict]:
+    """Danh sách username liên quan tới `keywords` (rỗng = xét mọi bài).
+
+    `extra_usernames`: các dòng bổ sung đã ở dạng `{"username", "keywords", "source"}`
+    (dùng cho kết quả tìm kiếm chat của bản API).
+
+    Trả về list đã sắp xếp: điểm cao nhất → số bài → tên.
+    """
+    kws = [k.strip() for k in (keywords or []) if k and k.strip()]
+    rows: dict[str, dict] = {}
+
+    def row_of(username: str) -> dict:
+        key = username.lower()
+        row = rows.get(key)
+        if row is None:
+            row = rows[key] = {
+                "username": username, "profile": f"https://t.me/{username}",
+                "mentions": 0, "links": 0, "forwards": 0, "channels": 0, "searches": 0,
+                "max_score": 0, "level": "Normal",
+                "_seen": set(), "_keywords": set(), "_roles": set(), "examples": [],
+            }
+        return row
+
+    def add(username: str, kind: str, record: dict | None, kw_list) -> None:
+        if not username:
+            return
+        row = row_of(username)
+        row[f"{kind}s" if kind != "search" else "searches"] += 1
+        row["_roles"].add(ROLE_VI[kind])
+        row["_keywords"].update(kw_list)
+        if record is not None:
+            key = f"{record.get('channel')}/{record.get('message_id')}"
+            row["_seen"].add(key)
+            score = int((record.get("analysis") or {}).get("scam_score", 0))
+            if score >= row["max_score"]:
+                row["max_score"] = score
+                row["level"] = (record.get("analysis") or {}).get("level", "Normal")
+            url = record.get("url")
+            if url and url not in row["examples"] and len(row["examples"]) < limit_examples:
+                row["examples"].append(url)
+
+    matched = 0
+    for rec in records:
+        kw_list = keywords_in(_record_text(rec), kws) if kws else []
+        if kws and not kw_list:
+            continue
+        matched += 1
+        text = rec.get("text") or ""
+        for name in RE_MENTION.findall(text):
+            add(name, "mention", rec, kw_list)
+        for source in (text, rec.get("link_preview") or "", rec.get("url") or ""):
+            for name in dict.fromkeys(RE_USERNAME.findall(source or "")):
+                add(name, "link", rec, kw_list)
+        fwd = _username_of(rec.get("forwarded_from"), strict=True)
+        if fwd:
+            add(fwd, "forward", rec, kw_list)
+        if include_channels:
+            add(_username_of(rec.get("channel")), "channel", rec, kw_list)
+
+    for item in (extra_usernames or []):
+        add(_username_of(item.get("username")), "search", None,
+            item.get("keywords") or kws)
+
+    out: list[dict] = []
+    for row in rows.values():
+        row["posts"] = len(row.pop("_seen"))
+        row["keywords"] = sorted(row.pop("_keywords"))
+        row["roles"] = sorted(row.pop("_roles"))
+        if row["posts"] == 0:
+            row["posts"] = row["searches"]
+        out.append(row)
+    out.sort(key=lambda r: (-r["max_score"], -r["posts"], r["username"].lower()))
+    return out
+
+
+def related_invite_links(records: list[dict], keywords=None) -> list[dict]:
+    """Link mời `t.me/+hash` trong các bài chứa từ khoá (không có username để tra)."""
+    kws = [k.strip() for k in (keywords or []) if k and k.strip()]
+    rows: dict[str, dict] = {}
+    for rec in records:
+        kw_list = keywords_in(_record_text(rec), kws) if kws else []
+        if kws and not kw_list:
+            continue
+        for link in extract_entities(rec.get("text") or "")["invite_links"]:
+            row = rows.setdefault(link, {"link": link, "count": 0, "keywords": set(),
+                                         "examples": []})
+            row["count"] += 1
+            row["keywords"].update(kw_list)
+            url = rec.get("url")
+            if url and len(row["examples"]) < 3:
+                row["examples"].append(url)
+    out = []
+    for row in rows.values():
+        row["keywords"] = sorted(row.pop("keywords"))
+        out.append(row)
+    out.sort(key=lambda r: (-r["count"], r["link"]))
+    return out
+
+
+def print_username_section(rows: list[dict], keywords=None, invites=None, noun: str = NOUN_WEB,
+                           width: int = 100, limit: int = 50,
+                           title: str = "[6] USERNAME LIÊN QUAN TỚI TỪ KHOÁ") -> None:
+    """In mục [6]: danh sách username có thể liên quan tới từ khoá đã nhập."""
+    line = "-" * width
+    print(f"\n{title}")
+    if keywords:
+        print(f"    Từ khoá: {', '.join(keywords)}")
+    if not rows:
+        print("    (không tìm thấy username nào liên quan)")
+    for i, row in enumerate(rows[:limit], 1):
+        icon = icon_of(row.get("level", "Normal"))
+        score = row.get("max_score", 0)
+        print(f"  {i:>3}. {icon} [ {score:>3}/100 | {row.get('level', '?'):<10} ] "
+              f"@{row['username']}")
+        print(f"       {row.get('profile', '')}")
+        bits = []
+        for key, label in (("mentions", "@nhắc"), ("links", "link t.me"), ("forwards", "nguồn forward"),
+                           ("channels", "bài đăng trong kênh")):
+            if row.get(key):
+                bits.append(f"{label} {row[key]}")
+        if row.get("searches"):
+            bits.append(f"kết quả tìm chat {row['searches']}")
+        detail = f"       gặp trong {row.get('posts', 0)} {noun}"
+        if bits:
+            detail += " — " + ", ".join(bits)
+        print(detail)
+        if row.get("keywords"):
+            print(f"       từ khoá khớp: {', '.join(row['keywords'])}")
+        for url in row.get("examples") or []:
+            print(f"       ví dụ: {url}")
+    if invites:
+        print(f"\n    Link mời nhóm kín gặp trong các bài đó ({len(invites)}):")
+        for row in invites[:limit]:
+            kws = f"  [từ khoá: {', '.join(row['keywords'])}]" if row.get("keywords") else ""
+            print(f"      {row['link']}  ×{row['count']}{kws}")
+    print(line)
+
+
+def username_payload(records: list[dict], keywords=None, extra_usernames=None) -> dict:
+    """Gói kết quả "nhập keyword -> liệt kê username" để vừa in vừa ghi JSON."""
+    kws = [k.strip() for k in (keywords or []) if k and k.strip()]
+    return {
+        "keywords": kws,
+        "usernames": related_usernames(records, kws, extra_usernames=extra_usernames),
+        "invite_links": related_invite_links(records, kws),
+    }
+
+
+def print_username_payload(payload: dict, noun: str = NOUN_WEB, **kwargs) -> None:
+    """In mục [6] từ gói dữ liệu do `username_payload()` tạo."""
+    print_username_section(payload.get("usernames") or [], payload.get("keywords"),
+                           payload.get("invite_links"), noun=noun, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# 11. Tra cứu một username: đây là ai / kênh nào? ("tìm người bằng username")
+# ---------------------------------------------------------------------------
+#
+# Dùng chung cho cả hai backend. Hai backend điền được các trường khác nhau:
+#   * bản web đọc trang công khai `https://t.me/<username>` -> kind, title, about,
+#     số người đăng ký/thành viên, "bản xem trước" có hay không;
+#   * bản API dùng Telethon `get_entity()` -> thêm `id`, `verified`, `is_bot`,
+#     `participants_count`, ngày tạo, v.v.
+# Hàm `make_profile()` là nơi chuẩn hoá để hai bên ra cùng một cấu trúc.
+
+PROFILE_KIND_VI = {
+    "channel": "Kênh",
+    "group": "Nhóm",
+    "bot": "Bot",
+    "user": "Người dùng",
+    "unknown": "Không rõ",
+}
+
+
+def make_profile(username: str, kind: str = "unknown", **fields) -> dict:
+    """Chuẩn hoá thông tin một tài khoản/kênh/nhóm về cùng một cấu trúc."""
+    username = (username or "").lstrip("@").strip()
+    profile = {
+        "username": username,
+        "profile_url": f"https://t.me/{username}" if username else "",
+        "kind": kind if kind in PROFILE_KIND_VI else "unknown",
+        "kind_vi": PROFILE_KIND_VI.get(kind, PROFILE_KIND_VI["unknown"]),
+        "exists": bool(fields.pop("exists", True)),
+        "title": "", "about": "", "subscribers": None, "members": None,
+        "monthly_users": None, "account_id": None, "verified": None,
+        "is_bot": None, "source": "", "fetched_at": datetime.now(timezone.utc).isoformat(),
+    }
+    profile.update({k: v for k, v in fields.items() if v not in (None, "")})
+    return profile
+
+
+def _format_count(value) -> str:
+    try:
+        return f"{int(value):,}".replace(",", " ")
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def profile_scale(profile: dict) -> str:
+    """Câu mô tả quy mô: '10 397 035 người đăng ký', '107 thành viên'…"""
+    if profile.get("subscribers") is not None:
+        return f"{_format_count(profile['subscribers'])} người đăng ký"
+    if profile.get("members") is not None:
+        return f"{_format_count(profile['members'])} thành viên"
+    if profile.get("monthly_users") is not None:
+        return f"{_format_count(profile['monthly_users'])} người dùng/tháng"
+    return ""
+
+
+def print_profile(profile: dict, records: list[dict] | None = None, noun: str = NOUN_WEB,
+                  width: int = 100, title: str = "[0] THÔNG TIN TÀI KHOẢN TRA CỨU") -> None:
+    """In thông tin một username vừa tra, kèm thống kê điểm nếu có bài đã thu thập."""
+    line = "-" * width
+    who = "@" + profile.get("username", "?")
+    print(f"\n{title}")
+    print(line)
+    if not profile.get("exists"):
+        print(f"  {who}: KHÔNG tra được (không tồn tại, riêng tư, hoặc không có bản xem trước).")
+        print(line)
+        return
+    print(f"  {who}  —  {profile.get('kind_vi', 'Không rõ')}"
+          + ("  ✔ đã xác minh" if profile.get("verified") else ""))
+    rows = [
+        ("Tên hiển thị", profile.get("title")),
+        ("Giới thiệu", profile.get("about")),
+        ("Quy mô", profile_scale(profile)),
+        ("ID", profile.get("account_id")),
+        ("Nguồn", profile.get("source")),
+        ("Liên kết", profile.get("profile_url")),
+    ]
+    for label, value in rows:
+        if value not in (None, ""):
+            print(f"    {label:<12}: {value}")
+    stats = None
+    if records:
+        stats = group_risk_for_channel(records, profile.get("username", ""), noun=noun)
+    if stats:
+        print(f"    {'Bài đã lấy':<12}: {stats['total_messages']} {noun} — điểm TB "
+              f"{stats['avg_score']}, cao nhất {stats['max_score']}/100, "
+              f"{stats['flagged']} {noun} cần rà soát")
+        print(f"    {'Mức rủi ro':<12}: {icon_of(stats['group_level'])} "
+              f"{stats['group_score']}/100 {stats['group_level']} — {stats['verdict']}")
+    print(line)

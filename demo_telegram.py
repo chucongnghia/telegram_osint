@@ -10,6 +10,7 @@ nên **chỉ dùng thư viện chuẩn của Python** — không cần `pip inst
     python3 demo_telegram.py --channel durov --limit 25   # kênh công khai (chạy thật)
     python3 demo_telegram.py --channel baomoi --channel tintucvtv --limit 20
     python3 demo_telegram.py --seed-file channels.txt     # mỗi dòng 1 kênh / link t.me
+    python3 demo_telegram.py --user durov --user BotFather  # tra cứu theo username
     python3 demo_telegram.py --report posts_tg.json       # in lại báo cáo từ JSON đã lưu
 
 `--channel` nhận `durov`, `@durov`, `t.me/durov`, `https://t.me/s/durov`.
@@ -33,8 +34,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from analyzer import (NOUN_WEB, RE_HASHTAG, analyze, demo_posts, normalize,
-                      print_history, print_report, write_json)
+from analyzer import (NOUN_WEB, RE_HASHTAG, analyze, demo_posts, make_profile, normalize,
+                      print_history, print_profile, print_report, print_username_payload,
+                      print_username_section, username_payload, write_json)
 
 PREVIEW_URL = "https://t.me/s/{channel}"
 USER_AGENT = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -154,6 +156,84 @@ def parse_channel_info(page: str, fallback: str) -> dict:
         "channel_description": desc,
         "subscribers": subs,
     }
+
+
+PROFILE_URL = "https://t.me/{username}"
+
+
+def _clean_text(raw: str) -> str:
+    """Bỏ thẻ HTML + giải mã entity, GIỮ NGUYÊN chữ hoa/thường (khác `_text_of`)."""
+    return html.unescape(re.sub(r"<[^>]+>", "", raw)).strip()
+
+
+def parse_profile(page: str, username: str) -> dict:
+    """Đọc trang `https://t.me/<username>` -> thông tin tài khoản/kênh/nhóm.
+
+    Phân loại dựa trên các dấu hiệu đã kiểm chứng thật:
+    * `… subscribers`            -> kênh
+    * `… members`                -> nhóm
+    * `… monthly users`/Start Bot -> bot
+    * `You can contact @x` + `@x` -> người dùng
+    * og:description rỗng, không có khối `tgme_page_extra` -> không tra được
+    """
+    def grab(pattern: str) -> str:
+        m = re.search(pattern, page, re.S)
+        return _clean_text(m.group(1)) if m else ""
+
+    og_title = html.unescape(grab(r'<meta property="og:title" content="([^"]*)"')).strip()
+    about = html.unescape(grab(r'<meta property="og:description" content="([^"]*)"')).strip()
+    extras = [t for t in (_clean_text(x) for x in re.findall(
+        r'class="tgme_page_extra"[^>]*>(.*?)(?:</div>|</span>)', page, re.S)) if t]
+    action = grab(r'class="tgme_page_action"[^>]*>(.*?)</div>')
+    page_title = grab(r'class="tgme_page_title"[^>]*>(.*?)</div>')
+
+    subscribers = members = monthly = None
+    for text in extras:
+        m = re.search(r"([\d\s.,]+)\s*(subscribers|members|monthly users)", text, re.I)
+        if not m:
+            continue
+        value = parse_count(m.group(1))
+        kind = m.group(2).lower()
+        if kind.startswith("sub"):
+            subscribers = value
+        elif kind.startswith("mem"):
+            members = value
+        else:
+            monthly = value
+    handle = ""
+    for text in extras:
+        m = re.search(r"@([A-Za-z][A-Za-z0-9_.]{3,31})", text)
+        if m:
+            handle = m.group(1)
+            break
+
+    exists = True
+    verified = "✔" in (page_title or og_title)
+    title = (page_title or og_title).replace("✔", "").strip()
+    if subscribers is not None:
+        kind = "channel"
+    elif members is not None:
+        kind = "group"
+    elif monthly is not None or "start bot" in action.lower():
+        kind = "bot"
+    elif about.lower().startswith("you can contact") or handle:
+        kind = "user"
+    elif not about and not extras:
+        kind, exists = "unknown", False
+    else:
+        kind = "unknown"
+
+    return make_profile(
+        username, kind, exists=exists, source=BACKEND, verified=verified,
+        title=title if exists else "",
+        about=about, subscribers=subscribers, members=members, monthly_users=monthly,
+    )
+
+
+def lookup_user(username: str) -> dict:
+    """Tra cứu một username qua trang công khai `https://t.me/<username>`."""
+    name = channel_name(username)
+    return parse_profile(fetch(PROFILE_URL.format(username=name)), name)
 
 
 def media_types_of(block: str) -> list[str]:
@@ -297,8 +377,14 @@ def main() -> int:
                    help="chạy dữ liệu mẫu offline (không cần mạng)")
     p.add_argument("--channel", action="append", metavar="KENH",
                    help="kênh công khai: durov, @durov, t.me/durov (lặp lại được)")
+    p.add_argument("--user", action="append", metavar="USERNAME",
+                   help="tra cứu một tài khoản/kênh/nhóm theo username (lặp lại được); "
+                        "kênh/nhóm công khai còn được lấy luôn bài đăng gần đây")
     p.add_argument("--seed-file", metavar="FILE",
                    help="file danh sách kênh, mỗi dòng 1 kênh hoặc link t.me")
+    p.add_argument("--keyword", action="append", metavar="TUKHOA",
+                   help="nhập từ khoá rồi liệt kê username có thể liên quan (mục [6]; "
+                        "lặp lại được; có thể dùng cùng --report để tra trong JSON đã lưu)")
     p.add_argument("--limit", type=int, default=20,
                    help="số bài tối đa cho MỖI kênh (mặc định 20)")
     p.add_argument("--out", default="posts_web.json", help="file JSON kết quả")
@@ -311,11 +397,19 @@ def main() -> int:
         with open(args.report, encoding="utf-8") as fh:
             payload = json.load(fh)
         records = payload.get("posts", []) if isinstance(payload, dict) else payload
+        profiles = (payload.get("profiles") or []) if isinstance(payload, dict) else []
+        for prof in profiles:
+            print_profile(prof, records, noun=NOUN_WEB)
         if not records:
             print(f"[!] Không có bài đăng nào trong {args.report}", file=sys.stderr)
-            return 1
+            return 1 if not profiles else 0
         print_report(records, [args.report], title="BÁO CÁO THU THẬP TELEGRAM (bản web)",
                      noun=NOUN_WEB)
+        if args.keyword:
+            print_username_payload(username_payload(records, args.keyword), noun=NOUN_WEB)
+        elif profiles or (isinstance(payload, dict) and payload.get("usernames")):
+            print_username_section(payload.get("usernames") or [], payload.get("keywords"),
+                                   payload.get("invite_links"), noun=NOUN_WEB)
         return 0
 
     targets: list[str] = list(args.channel or [])
@@ -326,22 +420,44 @@ def main() -> int:
             print(f"[!] Không đọc được {args.seed_file}: {exc}", file=sys.stderr)
             return 2
 
-    if args.demo or not targets:
+    if args.demo or (not targets and not args.user):
+        if args.keyword and not args.demo:
+            print("[i] Chỉ có --keyword nên dùng dữ liệu mẫu offline để minh hoạ chức năng.")
         records = demo_posts(args.limit, dialect="web")
         for rec in records:
             rec["analysis"] = analyze(rec)
-        out = write_json(args.out, records, "demo (offline)", noun=NOUN_WEB)
+        kw_payload = username_payload(records, args.keyword) if args.keyword else None
+        out = write_json(args.out, records, "demo (offline)", noun=NOUN_WEB, extra=kw_payload)
         sources = ["dữ liệu mẫu offline (không cần mạng)"]
         if args.no_report:
             print_history(out, sources, noun=NOUN_WEB)
         else:
             print_report(out, sources, title="BÁO CÁO THU THẬP TELEGRAM (bản web)", noun=NOUN_WEB)
+        if kw_payload:
+            print_username_payload(kw_payload, noun=NOUN_WEB)
         return 0
 
     records: list[dict] = []
+    profiles: list[dict] = []
     sources: list[str] = []
     seen: set[str] = set()
     errors = 0
+
+    for raw in (args.user or []):
+        try:
+            profile = lookup_user(raw)
+        except (RuntimeError, ValueError) as exc:
+            print(f"[!] {exc}", file=sys.stderr)
+            errors += 1
+            continue
+        profiles.append(profile)
+        name = profile.get("username") or raw
+        sources.append(f"tra cứu @{name}")
+        if profile.get("exists") and profile.get("kind") == "channel":
+            targets.append(name)
+        elif not profile.get("exists"):
+            print(f"[!] @{name}: không tra được thông tin công khai.", file=sys.stderr)
+
     for raw in targets:
         try:
             name = channel_name(raw)
@@ -349,7 +465,8 @@ def main() -> int:
             print(f"[!] {exc}", file=sys.stderr)
             errors += 1
             continue
-        sources.append(f"kênh @{name}")
+        if f"kênh @{name}" not in sources:
+            sources.append(f"kênh @{name}")
         try:
             found, _info = scrape_channel(name, args.limit)
         except RuntimeError as exc:
@@ -362,19 +479,33 @@ def main() -> int:
                 seen.add(key)
                 records.append(rec)
 
-    if not records:
-        print("[!] Không thu thập được bài đăng nào.", file=sys.stderr)
-        return 1
-
     for rec in records:
         rec["analysis"] = analyze(rec)
     records.sort(key=lambda r: -((r.get("analysis") or {}).get("scam_score", 0)))
 
-    out = write_json(args.out, records, BACKEND, noun=NOUN_WEB)
+    for profile in profiles:
+        print_profile(profile, records, noun=NOUN_WEB)
+
+    kw_payload = username_payload(records, args.keyword) if args.keyword else None
+
+    if not records:
+        if profiles:
+            write_json(args.out, [], BACKEND, noun=NOUN_WEB,
+                       extra={**({"profiles": profiles} if profiles else {}),
+                              **(kw_payload or {})})
+            return 0 if not errors else 1
+        print("[!] Không thu thập được bài đăng nào.", file=sys.stderr)
+        return 1
+
+    out = write_json(args.out, records, BACKEND, noun=NOUN_WEB,
+                     extra={**({"profiles": profiles} if profiles else {}),
+                            **(kw_payload or {})})
     if args.no_report:
         print_history(out, sources, noun=NOUN_WEB)
     else:
         print_report(out, sources, title="BÁO CÁO THU THẬP TELEGRAM (bản web)", noun=NOUN_WEB)
+    if kw_payload:
+        print_username_payload(kw_payload, noun=NOUN_WEB)
     return 0 if not errors else 1
 
 

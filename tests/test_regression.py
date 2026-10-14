@@ -25,6 +25,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -262,6 +263,132 @@ class TestWebParser(unittest.TestCase):
         self.assertEqual(web.re.findall(r'data-before="(\d+)"', self.PAGE), ["100"])
 
 
+class TestUsernameFeatures(unittest.TestCase):
+    """Tra cứu username (--user) và nhập keyword -> liệt kê username (--keyword)."""
+
+    CHANNEL_PAGE = """
+    <meta property="og:title" content="Pavel Durov">
+    <meta property="og:description" content="Founder of Telegram.">
+    <div class="tgme_page_title"><span dir="auto">Pavel Durov ✔</span></div>
+    <div class="tgme_page_extra">10 397 040 subscribers</div>
+    <div class="tgme_page_action"><a class="tgme_action_button_new">View in Telegram</a></div>
+    """
+
+    GROUP_PAGE = """
+    <meta property="og:title" content="Python Чат">
+    <meta property="og:description" content="You can view and join @pythonchat right away.">
+    <div class="tgme_page_title"><span dir="auto">Python Чат</span></div>
+    <div class="tgme_page_extra">107 members</div>
+    <div class="tgme_page_action"><a class="tgme_action_button_new">View in Telegram</a></div>
+    """
+
+    BOT_PAGE = """
+    <meta property="og:title" content="BotFather">
+    <meta property="og:description" content="BotFather is the one bot to rule them all.">
+    <div class="tgme_page_extra"><a href="https://t.me/BotFather">@BotFather</a></div>
+    <div class="tgme_page_extra">7 560 507 monthly users</div>
+    <div class="tgme_page_action"><a class="tgme_action_button_new">Start Bot</a></div>
+    """
+
+    USER_PAGE = """
+    <meta property="og:title" content="Vitalik">
+    <meta property="og:description" content="You can contact @vitalikbuterin right away.">
+    <div class="tgme_page_extra">@vitalikbuterin</div>
+    <div class="tgme_page_action"><a class="tgme_action_button_new">Send Message</a></div>
+    """
+
+    MISSING_PAGE = """
+    <meta property="og:title" content="Telegram: Contact @khong_ton_tai_xyz_999">
+    <meta property="og:description" content="">
+    <div class="tgme_page_action"><a class="tgme_action_button_new">Send Message</a></div>
+    """
+
+    def test_parse_profile_channel(self):
+        prof = web.parse_profile(self.CHANNEL_PAGE, "durov")
+        self.assertEqual(prof["kind"], "channel")
+        self.assertEqual(prof["kind_vi"], "Kênh")
+        self.assertTrue(prof["exists"])
+        self.assertTrue(prof["verified"])
+        self.assertEqual(prof["title"], "Pavel Durov")      # giữ nguyên chữ hoa
+        self.assertEqual(prof["about"], "Founder of Telegram.")
+        self.assertEqual(prof["subscribers"], 10_397_040)
+        self.assertEqual(prof["profile_url"], "https://t.me/durov")
+
+    def test_parse_profile_group_bot_user(self):
+        group = web.parse_profile(self.GROUP_PAGE, "pythonchat")
+        self.assertEqual((group["kind"], group["members"]), ("group", 107))
+        bot = web.parse_profile(self.BOT_PAGE, "BotFather")
+        self.assertEqual(bot["kind"], "bot")
+        self.assertEqual(bot["monthly_users"], 7_560_507)
+        self.assertIsNone(bot["subscribers"])
+        user = web.parse_profile(self.USER_PAGE, "vitalikbuterin")
+        self.assertEqual(user["kind"], "user")
+        self.assertTrue(user["about"].startswith("You can contact"))
+
+    def test_parse_profile_missing(self):
+        prof = web.parse_profile(self.MISSING_PAGE, "khong_ton_tai_xyz_999")
+        self.assertFalse(prof["exists"])
+        self.assertEqual(prof["kind"], "unknown")
+        self.assertEqual(prof["title"], "")
+
+    def test_username_of_and_regex(self):
+        self.assertEqual(
+            analyzer.RE_USERNAME.findall("https://t.me/dautu.sieuloinhuan/1000"),
+            ["dautu.sieuloinhuan"])                      # dấu '.' phải được giữ
+        self.assertEqual(analyzer._username_of("@Admin_Group"), "Admin_Group")
+        self.assertEqual(analyzer._username_of("https://t.me/vieclam_bot", strict=True),
+                         "vieclam_bot")
+        # strict=True: tên hiển thị tự do không được coi là username
+        self.assertEqual(analyzer._username_of("Some Display Name", strict=True), "")
+
+    def test_keyword_to_usernames_offline(self):
+        records = demo_posts(17, dialect="web")
+        for rec in records:
+            rec["analysis"] = analyze(rec)
+        payload = analyzer.username_payload(records, ["đầu tư", "hoàn tiền"])
+        self.assertEqual(payload["keywords"], ["đầu tư", "hoàn tiền"])
+        rows = {row["username"]: row for row in payload["usernames"]}
+        self.assertIn("dautu.sieuloinhuan", rows)
+        self.assertEqual(rows["dautu.sieuloinhuan"]["max_score"], 71)
+        self.assertEqual(rows["dautu.sieuloinhuan"]["level"], "High-risk")
+        self.assertIn(analyzer.ROLE_VI["link"], rows["dautu.sieuloinhuan"]["roles"])
+        self.assertIn("admin_dautu_pro", rows)
+        self.assertIn(analyzer.ROLE_VI["mention"], rows["admin_dautu_pro"]["roles"])
+        self.assertIn("vieclam_bot", rows)
+        self.assertEqual(payload["invite_links"][0]["link"], "https://t.me/+abcdef123")
+        # kênh sạch không khớp từ khoá nào -> không xuất hiện
+        self.assertNotIn("hocpython.mienphi", rows)
+        # từ khoá không khớp gì -> danh sách rỗng
+        empty = analyzer.username_payload(records, ["zzz_khong_khop_gi"])
+        self.assertEqual(empty["usernames"], [])
+        self.assertEqual(empty["invite_links"], [])
+
+    def test_cli_exposes_user_and_keyword(self):
+        res = subprocess.run([sys.executable, str(ROOT / "demo_telegram.py"), "--help"],
+                             capture_output=True, text=True)
+        self.assertEqual(res.returncode, 0)
+        self.assertIn("--user", res.stdout)
+        self.assertIn("--keyword", res.stdout)
+
+    def test_web_report_replays_stored_usernames(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "kw.json"
+            first = subprocess.run(
+                [sys.executable, str(ROOT / "demo_telegram.py"), "--demo", "--limit", "17",
+                 "--keyword", "hoàn tiền", "--out", str(out), "--no-report"],
+                capture_output=True, text=True)
+            self.assertEqual(first.returncode, 0)
+            payload = json.loads(out.read_text(encoding="utf-8"))
+            self.assertEqual(payload["keywords"], ["hoàn tiền"])
+            self.assertIn("vieclam.ctv.hoantien", [r["username"] for r in payload["usernames"]])
+            second = subprocess.run(
+                [sys.executable, str(ROOT / "demo_telegram.py"), "--report", str(out)],
+                capture_output=True, text=True)
+            self.assertEqual(second.returncode, 0)
+            self.assertIn("[6] USERNAME LIÊN QUAN", second.stdout)
+            self.assertIn("@vieclam.ctv.hoantien", second.stdout)
+
+
 class TestBackendsEndToEnd(unittest.TestCase):
     """Chạy thật 2 backend ở chế độ --demo (offline) và kiểm tra JSON ghi ra."""
 
@@ -297,6 +424,22 @@ class TestBackendsEndToEnd(unittest.TestCase):
         self.assertEqual(len(payload["groups"]), 8)
         # bản API có thêm forwards/replies, bản web thì không
         self.assertIn("forwards", payload["posts"][0])
+
+    def test_web_keyword_end_to_end(self):
+        payload = self._run_demo(web, ["--demo", "--limit", "17", "--keyword", "hoàn tiền"])
+        self.assertEqual(sorted(payload.keys()),
+                         ["backend", "generated_at", "groups", "invite_links", "keywords",
+                          "posts", "total", "usernames"])
+        self.assertEqual(payload["keywords"], ["hoàn tiền"])
+        self.assertIn("vieclam.ctv.hoantien",
+                      [row["username"] for row in payload["usernames"]])
+
+    def test_api_demo_keyword_end_to_end(self):
+        import demo_telegram_api as api
+        payload = self._run_demo(api, ["--demo", "--limit", "17", "--keyword", "đầu tư"])
+        self.assertEqual(payload["keywords"], ["đầu tư"])
+        self.assertIn("dautu.sieuloinhuan",
+                      [row["username"] for row in payload["usernames"]])
 
     def test_web_demo_matches_saved_posts_tg(self):
         """--demo bản web phải trùng posts_tg.json, chỉ khác mốc thời gian/backend."""

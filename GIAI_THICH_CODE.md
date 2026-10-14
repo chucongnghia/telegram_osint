@@ -203,6 +203,41 @@ group_score = min(100, round( 0.6  * avg_score
 (bản web **không** có vì trang `t.me/s/` không hiển thị). Mọi bản ghi demo có
 `_note = "DỮ LIỆU MẪU offline - không phải bài đăng thật"` và `source = "demo"`.
 
+### 2.11. `--keyword` → username liên quan (:678-891)
+
+Mục đích: "nhập keyword rồi liệt kê username có thể liên quan".
+
+- `RE_USERNAME` (:695) bắt `t.me/<username>` (loại `+`, `joinchat/`, `s/`); lớp ký tự
+  **có dấu `.`** nên `dautu.sieuloinhuan` không bị cắt thành `dautu` (lỗi đã gặp & đã sửa).
+- `USERNAME_RE` (:697) kiểm tra một chuỗi có phải username hợp lệ.
+- `_username_of(value, strict=False)` (:714): nhận `t.me/x`, `@x`, `x`; `strict=True` chỉ
+  nhận dạng **có tiền tố** — dùng cho `forwarded_from` vì trường đó thường là tên hiển thị
+  tự do ("Some Display Name" không được coi là username).
+- `keywords_in()` (:708) khớp từ khoá trên cả text có dấu lẫn bản `no_accent`.
+- `_record_text()` (:734) = text + link_preview + channel_title + channel (URL của chính bài
+  **không** tính là "link được nhắc").
+- `related_usernames()` (:740): gom theo 5 vai trò — `channel` (bài đăng trong kênh),
+  `mention` (@nhắc), `link` (link t.me trong bài), `forward` (nguồn forward), `search`
+  (kết quả tìm chat, chỉ bản API qua tham số `extra_usernames`). Sắp xếp
+  `(-max_score, -posts, username)`; mỗi dòng giữ `keywords`, `roles`, `examples`.
+- `related_invite_links()` (:816): link `t.me/+hash` không có username để tra → tách riêng.
+- `username_payload()` / `print_username_payload()` (:879, :889): gói
+  `{"keywords", "usernames", "invite_links"}` để cả hai backend vừa in mục `[6]` vừa ghi JSON.
+
+### 2.12. `--user` → tra cứu một username (:893-967)
+
+Chuẩn hoá kết quả tra cứu của hai backend về **cùng một cấu trúc**:
+
+- `PROFILE_KIND_VI` (:906): `channel/group/bot/user/unknown` → Kênh/Nhóm/Bot/Người dùng/Không rõ.
+- `make_profile(username, kind, **fields)` (:915): tự thêm `profile_url`, `kind_vi`,
+  `fetched_at`; các khóa còn lại: `exists, title, about, subscribers, members,
+  monthly_users, account_id, verified, is_bot, source`.
+- `_format_count()` (:932) `1000` → `"1 000"`; `profile_scale()` (:939) → "N người đăng ký" /
+  "N thành viên" / "N người dùng/tháng" (chỉ hiện khi có số).
+- `print_profile()` (:950): in khối `[0]`; nếu truyền `records` thì in thêm thống kê qua
+  `group_risk_for_channel()`; `exists=False` → in "KHÔNG tra được (không tồn tại, riêng tư,
+  hoặc không có bản xem trước)".
+
 ## 3. `demo_telegram.py` — backend web (chỉ stdlib)
 
 | Hàm | Dòng | Việc |
@@ -215,11 +250,16 @@ group_score = min(100, round( 0.6  * avg_score
 | `media_types_of(block)` | :159 | nhận `photo`/`video`/`document`… trong một bài |
 | `parse_messages(page, info)` | :170 | tách từng `<div class="tgme_widget_message" data-post="kênh/id">` thành record |
 | `scrape_channel(name, limit, progress)` | :226 | phân trang `?before=<data-before cuối>`, chống trùng theo `kênh/id`, dừng khi hết trang hoặc đủ `limit` |
+| `_clean_text(raw)` | :164 | bỏ thẻ HTML nhưng **giữ nguyên chữ hoa/thường** (khác `_text_of` — dùng cho tên/mô tả tài khoản) |
+| `parse_profile(page, username)` | :169 | phân loại trang `t.me/<username>`: `subscribers`→Kênh, `members`→Nhóm, `monthly users`/`Start Bot`→Bot, `You can contact @x`→Người dùng, rỗng+mất khối info→`exists=False` |
+| `lookup_user(username)` | :233 | chuẩn hoá qua `channel_name()` rồi `fetch` + `parse_profile` |
 | `read_seed_file(path)` | :281 | đọc danh sách kênh, bỏ dòng trống và dòng `#` |
 | `main()` | :292 | argparse + gọi 2 hàm trên + `write_json`/`print_report` |
 
-CLI: `--demo`, `--channel` (lặp được), `--seed-file`, `--limit` (**số bài mỗi kênh**, mặc
-định 20), `--out` (mặc định `posts_web.json`), `--no-report`, `--report <json>`.
+CLI: `--demo`, `--channel` (lặp được), `--seed-file`, `--keyword` (lặp được), `--user`
+(lặp được), `--limit` (**số bài mỗi kênh**, mặc định 20), `--out` (mặc định
+`posts_web.json`), `--no-report`, `--report <json>`. Kênh/nhóm tra bằng `--user` mà tồn tại
+thì được lấy luôn bài gần đây; kết quả tra cứu lưu ở khóa `profiles`.
 Bản web **không** có `forwards`/`replies`; có `views`, `link_preview`, `has_media`,
 `media_types`, `subscribers`. Kênh riêng tư/tắt preview → báo
 `"Kênh '@x' không có bản xem trước công khai (hoặc không tồn tại)."` và liệt kê kênh thử được.
@@ -266,7 +306,14 @@ fwd_name = (getattr(fwd, "from_name", None) or getattr(chat, "title", None)
 ### 4.3. Thu thập (:352-465)
 
 `fetch_history()` đọc lịch sử kênh/nhóm, `search_global()` tìm toàn cục, `download_media()`
-tải file. **Lỗi đã sửa:** `search_global()` cũ có dòng sắp xếp theo
+tải file.
+- `lookup_entity(client, target, limit)` (:381): `get_entity()` + `GetFullUserRequest` /
+  `GetFullChannelRequest` / `GetFullChatRequest` → `make_profile()`; `get_entity()` có thể trả
+  về đối tượng **"min" chỉ có id**, nên username được lấy thêm từ full info hoặc từ chính
+  tham số người dùng nhập (nếu là username hợp lệ). Kênh/nhóm thì lấy tiếp tin gần đây qua
+  `fetch_history(..., prefer_username=...)` để nhãn kênh/link trong báo cáo không bị thành ID.
+- `search_chats(client, keyword, limit)` (:443): `contacts.SearchRequest` → username các chat
+  khớp từ khoá, đưa vào `related_usernames(..., extra_usernames=...)` với vai trò `search`. **Lỗi đã sửa:** `search_global()` cũ có dòng sắp xếp theo
 `r["analysis"]["scam_score"]` nhưng lúc đó `analysis` **chưa tồn tại** → sắp xếp vô hiệu và
 có thể `KeyError`; dòng đó đã bỏ, việc sắp xếp chuyển về `run_async()` **sau khi chấm điểm**.
 `report()` nay là wrapper gọi `print_report(..., noun=NOUN_API, title="BÁO CÁO THU THẬP
@@ -285,13 +332,16 @@ TELEGRAM QUA API (Telethon)")`, chịu được JSON thiếu `analysis`/`groups`
   `[score/100 | level] @kênh/id  category`. `--cycles N` dừng sau N tin (ngắt client);
   `--watch-once` chờ tối đa `--interval` giây rồi thoát. Kết thúc ghi JSON backend
   `"telethon-bot"`/`"telethon-watch"` và in báo cáo.
-- `run_async()` (:640): chọn `run_watch` / bot / tài khoản người dùng; in rõ loại phiên
+- `run_async()` (:700): chọn `run_watch` / bot / tài khoản người dùng; in rõ loại phiên
   (`BOT`/`TÀI KHOẢN NGƯỜI DÙNG`); `--login`/`--login-bot` chỉ xác nhận phiên rồi thoát;
-  chống trùng theo `kênh/message_id`; **sắp xếp sau khi chấm điểm**;
+  chống trùng theo `kênh/message_id`; **sắp xếp sau khi chấm điểm**; xử lý `--user` (mục
+  `[0]`) và `--keyword` (mục `[6]`, kèm tìm chat), ghi tất cả vào JSON qua `write_json(...,
+  extra=...)`.
 - `main()` (:737): argparse với `--demo`, `--login`, `--api-id`, `--api-hash`, `--channel`,
   `--search`, `--media-dir`, `--ocr`, `--limit 30`, `--out posts_api.json`, `--no-report`,
   `--report`, `--login-bot`, `--setup-bot`, `--bot-token`, `--session`, `--watch`,
-  `--watch-once`, `--interval 60`, `--cycles 0`. Không chọn nguồn nào → chạy `--demo`.
+  `--watch-once`, `--interval 60`, `--cycles 0`, `--user`, `--keyword`. Không chọn nguồn nào
+  (kể cả `--keyword`) → chạy `--demo`; `--keyword` vẫn chạy offline được với `--demo`.
 
 ## 5. `find_private_groups.py` — nhóm kín
 
@@ -315,7 +365,7 @@ Thông báo khi chưa đăng nhập in đúng lệnh cần chạy
 
 ## 6. `tests/test_regression.py`
 
-23 test, **không cần mạng/Telethon**, chạy `python3 -m unittest discover -s tests -v`:
+32 test, **không cần mạng/Telethon**, chạy `python3 -m unittest discover -s tests -v`:
 
 - `TestScoring`: `normalize`/`no_accent`; ngưỡng 25/60; 5 mẫu **báo động giả** nổi tiếng
   (`hermibooks`, `fbclid`, "phân công anh ta", "người nộp thuế", "mức thuế") chỉ được có
@@ -328,9 +378,13 @@ Thông báo khi chưa đăng nhập in đúng lệnh cần chạy
 - `TestWebParser`: `channel_name`, `parse_count`, `_text_of`, `parse_channel_info`,
   `parse_messages` trên một trang HTML giả (2 bài, 2 ảnh, forward `"nguồn ẩn"`,
   link preview vnexpress, hashtag).
-- `TestBackendsEndToEnd`: chạy thật `--demo --limit 17` của **cả hai** backend và so bản
-  web với `posts_tg.json` (bỏ qua các khóa thay đổi theo thời gian:
-  `collected_at`/`posted_at`/`backend`/`generated_at`).
+- `TestUsernameFeatures`: `parse_profile` với 5 trang HTML giả (kênh/nhóm/bot/người dùng/
+  không tồn tại); `RE_USERNAME` giữ dấu `.`; `_username_of(strict=True)` không nhận tên
+  hiển thị; `username_payload` trên 17 bài demo (điểm 71 High-risk, đủ 5 vai trò, link mời
+  `t.me/+abcdef123`); `--help` có `--user`/`--keyword`; `--report` in lại được mục `[6]`.
+- `TestBackendsEndToEnd`: chạy thật `--demo --limit 17` của **cả hai** backend (kể cả biến
+  thể `--keyword`) và so bản web với `posts_tg.json` (bỏ qua các khóa thay đổi theo thời
+  gian: `collected_at`/`posted_at`/`backend`/`generated_at`).
 
 ## 7. Các file JSON
 
@@ -342,6 +396,9 @@ Thông báo khi chưa đăng nhập in đúng lệnh cần chạy
 | `real_tg.json` | — | ❌ | 5 bài `@durov`, có `subscribers` |
 | `real_tg_vn.json` | — | ❌ | 16 bài `@baomoi`/`@tintucvtv` |
 | `found.json`, `found_groups.json` | — | — | kết quả `--discover` (link mời, chưa join) |
+
+Khóa **tuỳ chọn** xuất hiện khi dùng tính năng mới: `profiles` (kết quả `--user`),
+`keywords` + `usernames` + `invite_links` (kết quả `--keyword`).
 
 Record bài đăng (schema chung): `channel`, `channel_title`, `message_id`, `url`, `text`,
 `hashtags`, `posted_at`, `collected_at`, `views`, `has_media`, `media_types`, `media_count`,
@@ -378,7 +435,12 @@ khoá **cũ** (khớp chuỗi con, còn `"thuế"` trần), nên **chấm lại 
 | 17 bài demo | 7 Normal / 8 Suspicious / 2 High-risk (58.8%) |
 | `@durov` 25 bài (web) | group **11/100 Normal**, 10.4M subs, views 325K–6.87M |
 | `@baomoi` + `@tintucvtv` (web, 20 bài/kênh) | 40 bài → **11/100** và **2/100**, đều Normal |
-| Test hồi quy | 23/23 PASS (system python3 và `.venv-api/bin/python`) |
+| `--user durov/BotFather/vitalikbuterin/pythonchat/khong_ton_tai_xyz_999` (web) | phân loại đúng Kênh ✔ / Bot ✔ / Người dùng / Nhóm / không tra được |
+| `--user durov/BotFather/pythonchat` (API) | id 1006503122 / 93372553 / 1247302826, verified đúng, `@durov` 10 397 039 subs |
+| `--keyword "chiến sự"` (API, chỉ tìm chat) | 7 username: `@aiquochientrang`, `@bantronchiensu`, `@hongchiensu247`, `@ngavaukraine`, `@tinnongchiensu`, `@tintucchiensu247`, `@tintuctoanthegioi` |
+| `--channel aiquochientrang --keyword "chiến sự"` (API) | 5 bài + 7 username; `@aiquochientrang` gộp 3 vai trò (link t.me 5, bài đăng trong kênh 5, kết quả tìm chat 1) |
+| `--keyword "hoàn tiền"` (web, chế độ `--demo`) | 2 username (`@vieclam.ctv.hoantien`, `@vieclam_bot`) + link mời `t.me/+abcdef123` |
+| Test hồi quy | **32/32 PASS** (system python3 và `.venv-api/bin/python`) |
 | Ghi đè `api.py` trùng lặp | đã xoá `demo_telegram_api_FIXED.py` |
 
 ## 10. Muốn thêm từ khoá / đổi trọng số thì sửa ở đâu
@@ -388,6 +450,10 @@ khoá **cũ** (khớp chuỗi con, còn `"thuế"` trần), nên **chấm lại 
    nhắc lại (đặc biệt là các mẫu báo động giả ở `TestScoring`).
 3. Cập nhật lại các số liệu trong `README.md` nếu kết quả `--demo` đổi.
 4. Thêm một ca mới vào `tests/test_regression.py` để khoá hành vi vừa sửa.
+
+Muốn thêm **cách nhận diện username mới** (ví dụ tra cả `t.me/c/...`): sửa `RE_USERNAME` (:695)
+rồi bổ sung ca trong `TestUsernameFeatures`. Muốn thêm **dấu hiệu phân loại trang tài khoản**:
+sửa `parse_profile()` (`demo_telegram.py:169`) — nhớ kiểm tra bằng HTML thật vì Telegram đổi giao diện theo thời gian.
 
 Quy tắc rút ra từ chính project này: **đừng dùng từ khoá ngắn/trần** (`ib`, `stk`, `bot`,
 `thuế`) — chúng khớp vào giữa từ tiếng Anh, chuỗi base64 hoặc từ ghép tiếng Việt. Hãy dùng
