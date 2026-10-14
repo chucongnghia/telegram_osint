@@ -706,6 +706,28 @@ class TestProfileDetails(unittest.TestCase):
                                "kind": "group", "id": 1, "members": 3758})
         self.assertEqual(api._chat_row(SimpleNamespace(id=2, broadcast=True))["kind"], "channel")
 
+    def test_session_path_khong_ghep_tien_to_hai_lan(self):
+        """--session tg_session / tg_session_tk-phu phải dùng đúng tên đầy đủ."""
+        import os
+        import demo_telegram_api as api
+        base = os.path.dirname(os.path.abspath(api.__file__))
+        self.assertEqual(api.session_path(""), os.path.join(base, "tg_session"))
+        self.assertEqual(api.session_path("tk-phu"), os.path.join(base, "tg_session_tk-phu"))
+        # Tên đầy đủ: KHÔNG được ghép thành tg_session_tg_session...
+        self.assertEqual(api.session_path("tg_session"), os.path.join(base, "tg_session"))
+        self.assertEqual(api.session_path("tg_session_tk-phu"),
+                         os.path.join(base, "tg_session_tk-phu"))
+        self.assertEqual(api.session_path("tg_session_tk-phu.session"),
+                         os.path.join(base, "tg_session_tk-phu"))
+        # Bot: rỗng -> tg_bot_session; tên ngắn -> ghép; tên đầy đủ -> giữ nguyên
+        self.assertEqual(api.session_path("", bot=True), os.path.join(base, "tg_bot_session"))
+        self.assertEqual(api.session_path("tk-phu", bot=True),
+                         os.path.join(base, "tg_bot_tk-phu"))
+        self.assertEqual(api.session_path("tg_bot_tk-phu", bot=True),
+                         os.path.join(base, "tg_bot_tk-phu"))
+        # Đường dẫn có thư mục thì dùng nguyên
+        self.assertEqual(api.session_path("phu/x.session"), "phu/x")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

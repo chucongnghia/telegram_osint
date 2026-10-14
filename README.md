@@ -14,7 +14,7 @@ chung một bộ chấm điểm.
 | [`demo_telegram.py`](demo_telegram.py) | Backend **web**: đọc trang công khai `https://t.me/s/<kênh>` (và `https://t.me/<username>` cho `--user`). **Chỉ thư viện chuẩn** — không cần cài gì, không cần API key, không cần đăng nhập. |
 | [`demo_telegram_api.py`](demo_telegram_api.py) | Backend **Telegram API (Telethon)**: group kín, tìm kiếm toàn cục, tra cứu username/ID, tìm chat theo từ khoá, tải media, OCR, chế độ bot, `--watch`. |
 | [`find_private_groups.py`](find_private_groups.py) | Tìm & đọc **group kín** qua link mời, chia 3 bước `--discover` / `--join` / `--crawl`. |
-| [`tests/test_regression.py`](tests/test_regression.py) | Test hồi quy (49 test, không cần mạng/Telethon). |
+| [`tests/test_regression.py`](tests/test_regression.py) | Test hồi quy (50 test, không cần mạng/Telethon). |
 | [`GIAI_THICH_CODE.md`](GIAI_THICH_CODE.md) | Giải thích chi tiết từng phần của code + công thức + các lỗi đã sửa. |
 | [`posts_tg.json`](posts_tg.json) | Kết quả `--demo` của bản web (17 bài mẫu, có `groups`). |
 | [`posts_api.json`](posts_api.json) | Kết quả bản API (100 bài, `backend: telethon`). |
@@ -240,7 +240,7 @@ danh sách username do chức năng 1 xuất ra.
 | `username_info.py durov pythonchat` (web) | tải được ảnh thật (`durov.jpg` 10 425 byte, `pythonchat.jpg` 15 472 byte) + dòng "Số điện thoại: (cần --api…)" |
 | `.venv-api/bin/python username_info.py BotFather sizedevchill hathanh --api` | BotFather: 12 lệnh bot; self: `Số điện thoại: 84981726384`, "truy cập lần cuối 10/10/2026 12:39 UTC"; `@hathanh`: "truy cập lần cuối 13/03/2026 14:07 UTC" |
 | `username_info.py <id> --api` (thành viên Sảnh Chat GNCT) | khối **Nhóm chung**: "1 nhóm/kênh dùng chung — Sảnh Chat GNCT … (Nhóm, 3 758 thành viên) @aiquochientrang" |
-| `python3 -m unittest discover -s tests` | **49 test PASS** (cả system Python lẫn `.venv-api/bin/python`) |
+| `python3 -m unittest discover -s tests` | **50 test PASS** (cả system Python lẫn `.venv-api/bin/python`) |
 | `username_info.py durov @BotFather pythonchat vitalikbuterin` | Kênh ✔ / Bot / Nhóm 107 / Người dùng — phân loại đúng |
 
 ## Chạy test
@@ -366,7 +366,9 @@ Sau khi `--login` thành công, script **tự ghi `api_id`/`api_hash` vào `tg_a
 
 ### Phiên lưu ở đâu, và phân biệt BOT với TÀI KHOẢN NGƯỜI DÙNG
 
-`--session <tên>` đặt tên phiên; file luôn nằm cạnh script:
+`--session <tên>` đặt tên phiên; file luôn nằm cạnh script. Ghi tên ngắn (`tk-phu`)
+thì script ghép tiền tố thành `tg_session_tk-phu`; ghi tên đầy đủ (`tg_session_tk-phu`) thì
+dùng nguyên tên (không ghép thành `tg_session_tg_session_tk-phu`):
 
 | Loại phiên | Tên file | Đọc lịch sử? | Lệnh tạo |
 |---|---|---|---|

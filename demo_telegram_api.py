@@ -85,6 +85,7 @@ def session_path(name: str = "", bot: bool = False) -> str:
 
     * rỗng            -> tg_session / tg_bot_session
     * "tk-phu"        -> tg_session_tk-phu / tg_bot_tk-phu
+    * "tg_session_tk-phu" (tên đầy đủ) -> dùng nguyên tên, không ghép thêm tiền tố
     * "phu/x.session" -> dùng nguyên đường dẫn người dùng đưa
     """
     name = (name or "").strip()
@@ -94,6 +95,10 @@ def session_path(name: str = "", bot: bool = False) -> str:
         return name
     if not name:
         return os.path.join(SCRIPT_DIR, "tg_bot_session" if bot else DEFAULT_SESSION)
+    full_default = "tg_bot_session" if bot else DEFAULT_SESSION
+    if name in (full_default, BOT_SESSION_PREFIX) or name.startswith(f"{BOT_SESSION_PREFIX}_") \
+            or name.startswith(f"{DEFAULT_SESSION}_"):
+        return os.path.join(SCRIPT_DIR, name)
     return os.path.join(SCRIPT_DIR, f"{BOT_SESSION_PREFIX if bot else DEFAULT_SESSION}_{name}")
 
 
