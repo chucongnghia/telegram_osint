@@ -457,5 +457,97 @@ class TestBackendsEndToEnd(unittest.TestCase):
         self.assertEqual(payload["groups"], POSTS_TG["groups"])
 
 
+class TestSplitTools(unittest.TestCase):
+    """Hai file tách riêng: `keyword_usernames.py` (chức năng 1) và `username_info.py` (2)."""
+
+    @staticmethod
+    def _run(script: str, argv: list[str]) -> subprocess.CompletedProcess:
+        return subprocess.run([sys.executable, str(ROOT / script)] + argv,
+                              capture_output=True, text=True, cwd=str(ROOT))
+
+    def test_keyword_tool_demo_end_to_end(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "usernames.json"
+            res = self._run("keyword_usernames.py",
+                            ["--demo", "--keyword", "hoàn tiền", "--keyword", "đầu tư",
+                             "--out", str(out)])
+            self.assertEqual(res.returncode, 0, res.stderr)
+            self.assertIn("[6] USERNAME LIÊN QUAN", res.stdout)
+            self.assertIn("Username thấy : 4", res.stdout)
+            payload = json.loads(out.read_text(encoding="utf-8"))
+            self.assertEqual(payload["keywords"], ["hoàn tiền", "đầu tư"])
+            best = payload["usernames"][0]
+            self.assertEqual(best["username"], "dautu.sieuloinhuan")
+            self.assertEqual(best["max_score"], 71)
+            self.assertEqual(payload["invite_links"][0]["link"], "https://t.me/+abcdef123")
+
+    def test_keyword_tool_json_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "u.json"
+            res = self._run("keyword_usernames.py",
+                            ["--json", str(ROOT / "posts_tg.json"), "--keyword", "hoàn tiền",
+                             "--min-score", "40", "--out", str(out)])
+            self.assertEqual(res.returncode, 0, res.stderr)
+            payload = json.loads(out.read_text(encoding="utf-8"))
+            names = [row["username"] for row in payload["usernames"]]
+            self.assertEqual(names, ["vieclam.ctv.hoantien"])   # 44 điểm, bot 36 bị lọc
+            self.assertEqual(payload["usernames"][0]["posts"], 2)
+
+    def test_keyword_tool_only_text_drops_channel_name_match(self):
+        """Từ khoá chỉ có trong TÊN KÊNH: mặc định khớp, `only_text=True` thì không."""
+        record = {"channel": "aiquochientrang", "channel_title": "Tin tức chiến sự",
+                  "message_id": "1", "url": "https://t.me/aiquochientrang/1",
+                  "text": "giá dầu tăng", "link_preview": None, "forwarded_from": None,
+                  "analysis": {"scam_score": 0, "level": "Normal"}}
+        default = analyzer.username_payload([record], ["chiến sự"])["usernames"]
+        self.assertEqual([row["username"] for row in default], ["aiquochientrang"])
+        strict = analyzer.username_payload([record], ["chiến sự"], only_text=True)
+        self.assertEqual(strict["usernames"], [])
+
+    def test_keyword_tool_loose_then_word_boundary(self):
+        record = {"channel": "kenh_test", "channel_title": "", "message_id": "1",
+                  "url": "https://t.me/kenh_test/1", "text": "hermibooks la gi",
+                  "link_preview": None, "forwarded_from": None,
+                  "analysis": {"scam_score": 0, "level": "Normal"}}
+        self.assertEqual(analyzer.related_usernames([record], ["ib"]), [])
+        old = analyzer.MATCH_WORD_BOUNDARY
+        analyzer.MATCH_WORD_BOUNDARY = False
+        try:
+            rows = analyzer.related_usernames([record], ["ib"])
+        finally:
+            analyzer.MATCH_WORD_BOUNDARY = old
+        self.assertEqual([row["username"] for row in rows], ["kenh_test"])
+
+    def test_keyword_tool_filter_rows(self):
+        import keyword_usernames as kw
+
+        rows = [{"username": "a", "max_score": 71}, {"username": "b", "max_score": 30},
+                {"username": "c", "max_score": 10}]
+        self.assertEqual([r["username"] for r in kw.filter_rows(rows, 25, 0)], ["a", "b"])
+        self.assertEqual([r["username"] for r in kw.filter_rows(rows, 0, 2)], ["a", "b"])
+        self.assertEqual(kw.filter_rows(rows, 99, 0), [])
+
+    def test_username_info_reads_json_and_help(self):
+        import username_info as info
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "u.json"
+            path.write_text(json.dumps({
+                "usernames": [{"username": "dautu.sieuloinhuan"}, {"username": "@durov"},
+                              {"username": "durov"}, "pythonchat"],
+            }), encoding="utf-8")
+            self.assertEqual(info.usernames_from_json(str(path)),
+                             ["dautu.sieuloinhuan", "durov", "pythonchat"])
+        for script in ("keyword_usernames.py", "username_info.py"):
+            with self.subTest(script=script):
+                res = self._run(script, ["--help"])
+                self.assertEqual(res.returncode, 0)
+
+    def test_username_info_requires_input(self):
+        res = self._run("username_info.py", [])
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("Chưa nhập username nào", res.stderr)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

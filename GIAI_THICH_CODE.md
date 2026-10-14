@@ -7,8 +7,9 @@ Tài liệu này giải thích **từng phần của code** trong project: luồ
 
 ```
         analyzer.py  ──── nguồn chân lý dùng chung ────┐
-   (từ điển, analyze, group_summary,                 │
-    print_report, write_json, demo_posts)            │
+   (từ điển, analyze, group_summary, print_report,   │
+    write_json, demo_posts, username_payload,        │
+    make_profile)                                    │
             ▲                    ▲                    │
             │ import             │ import             │
    demo_telegram.py      demo_telegram_api.py         │
@@ -18,6 +19,11 @@ Tài liệu này giải thích **từng phần của code** trong project: luồ
             │                    ▲                    │
     trang t.me/s/<kênh>   Telegram API        find_private_groups.py
                                               (discover → join → crawl)
+            ▲                    ▲
+            │ import (muộn)      │ import (muộn)
+   keyword_usernames.py   username_info.py
+   (chức năng 1: keyword   (chức năng 2: username
+    → list username)        → thông tin tài khoản)
 ```
 
 Lý do tách `analyzer.py`: trước đây khối "từ điển + chấm điểm" bị **copy nguyên** vào cả
@@ -343,7 +349,39 @@ TELEGRAM QUA API (Telethon)")`, chịu được JSON thiếu `analysis`/`groups`
   `--watch-once`, `--interval 60`, `--cycles 0`, `--user`, `--keyword`. Không chọn nguồn nào
   (kể cả `--keyword`) → chạy `--demo`; `--keyword` vẫn chạy offline được với `--demo`.
 
-## 5. `find_private_groups.py` — nhóm kín
+## 5. `keyword_usernames.py` + `username_info.py` — hai công cụ tách riêng
+
+Hai file này **chỉ làm một việc** (người dùng yêu cầu tách khỏi bản demo đầy đủ), dùng lại
+toàn bộ lõi ở `analyzer.py`:
+
+| File | Việc | Hàm chính |
+|---|---|---|
+| `keyword_usernames.py` | keyword → danh sách username liên quan | `records_from_json()` :63, `records_from_web()` :76, `_collect_api()` :100, `filter_rows()` :148, `run()` :156 |
+| `username_info.py` | username → thông tin tài khoản | `usernames_from_json()` :48, `lookup_web()` :63, `_lookup_api()` :83, `run()` :126 |
+
+- Nguồn dữ liệu của chức năng 1 trộn được: `--demo`, `--channel` (qua `demo_telegram`),
+  `--seed-file`, `--json` (`records_from_json()` **chấm lại** bằng `analyze()` hiện tại),
+  `--api` (`demo_telegram_api.fetch_history` + `search_chats`). Chỉ khi dùng `--api` mới
+  `import demo_telegram_api` (nạp muộn trong `_import_api()`), nên mặc định vẫn thuần stdlib.
+- `--min-score` / `--top` lọc bằng `filter_rows()`; `--out` ghi JSON qua `write_json(..., extra=...)`
+  với các khóa `keywords`/`usernames`/`invite_links`.
+- Chức năng 2: bản web dùng `demo_telegram.lookup_user()` + `scrape_channel()` (kênh, nếu
+  `--limit > 0`); bản `--api` dùng `demo_telegram_api.lookup_entity()` để có thêm ID/verified.
+  `--from-json` đọc thẳng file do chức năng 1 xuất ra (`usernames_from_json()`), nên hai công
+  cụ nối được thành một pipeline: tìm username → tra từng username.
+
+**Cờ `--text-only` (chức năng 1)** — sửa trong `analyzer.py`:
+`_record_text(record, only_text)` (:734), `related_usernames(..., only_text=False)` (:740),
+`related_invite_links(..., only_text=False)` (:816), `username_payload(..., only_text=False)` (:879).
+Khi bật: chỉ khớp từ khoá trong `text` + `link_preview`, **không** lấy `url` của bài làm nguồn
+link và **không** tính vai trò "bài đăng trong kênh". Lý do cần cờ này: `nhom1.json` có
+`channel_title = "Sảnh Chat GNCT : Tin tức chiến sự Iran - Mỹ - Israel"`, nên từ khoá
+`"chiến sự"` khớp **cả 1000 bài** và trả về đúng kênh đó — đúng về mặt "username liên quan"
+nhưng gây nhiễu khi người dùng muốn tìm trong nội dung. Đã kiểm chứng: bật `--text-only` thì
+`"chiến sự"` trên `nhom1.json` ra **0 username** (không bài nào nhắc t.me), còn mặc định ra
+`@aiquochientrang` (link 1000, bài đăng trong kênh 1000).
+
+## 6. `find_private_groups.py` — nhóm kín
 
 Ba bước tách rời (`--discover` / `--join` / `--crawl`), `--session` riêng, và `Found` (:134)
 lưu kết quả bước trước cho bước sau. `RE_INVITE` (:75) nhận cả `t.me/+hash` và
@@ -363,9 +401,9 @@ Mặc định an toàn: tối đa **5** link, nghỉ **20** giây, dừng ngay k
 Thông báo khi chưa đăng nhập in đúng lệnh cần chạy
 (`python3 demo_telegram_api.py --login --session <tên>`).
 
-## 6. `tests/test_regression.py`
+## 7. `tests/test_regression.py`
 
-32 test, **không cần mạng/Telethon**, chạy `python3 -m unittest discover -s tests -v`:
+39 test, **không cần mạng/Telethon**, chạy `python3 -m unittest discover -s tests -v`:
 
 - `TestScoring`: `normalize`/`no_accent`; ngưỡng 25/60; 5 mẫu **báo động giả** nổi tiếng
   (`hermibooks`, `fbclid`, "phân công anh ta", "người nộp thuế", "mức thuế") chỉ được có
@@ -385,8 +423,13 @@ Thông báo khi chưa đăng nhập in đúng lệnh cần chạy
 - `TestBackendsEndToEnd`: chạy thật `--demo --limit 17` của **cả hai** backend (kể cả biến
   thể `--keyword`) và so bản web với `posts_tg.json` (bỏ qua các khóa thay đổi theo thời
   gian: `collected_at`/`posted_at`/`backend`/`generated_at`).
+- `TestSplitTools`: hai file tách riêng — chạy thật `keyword_usernames.py --demo` (4 username,
+  `invite_links` `t.me/+abcdef123`) và `--json posts_tg.json --min-score 40` (chỉ còn
+  `vieclam.ctv.hoantien`); `only_text=True` loại trường hợp từ khoá chỉ có trong TÊN KÊNH;
+  `--loose` khớp `ib` trong "hermibooks" còn mặc định thì không; `filter_rows`; đọc danh sách
+  username từ JSON; `--help` và trường hợp thiếu đầu vào của `username_info.py`.
 
-## 7. Các file JSON
+## 8. Các file JSON
 
 | File | `backend` | Có `groups`? | Ghi chú |
 |---|---|---|---|
@@ -396,6 +439,9 @@ Thông báo khi chưa đăng nhập in đúng lệnh cần chạy
 | `real_tg.json` | — | ❌ | 5 bài `@durov`, có `subscribers` |
 | `real_tg_vn.json` | — | ❌ | 16 bài `@baomoi`/`@tintucvtv` |
 | `found.json`, `found_groups.json` | — | — | kết quả `--discover` (link mời, chưa join) |
+
+Hai công cụ tách riêng có thể tự ghi file: `keyword_usernames.py --out` (cùng khóa
+`keywords`/`usernames`/`invite_links`) và `username_info.py --out` (khóa `profiles`).
 
 Khóa **tuỳ chọn** xuất hiện khi dùng tính năng mới: `profiles` (kết quả `--user`),
 `keywords` + `usernames` + `invite_links` (kết quả `--keyword`).
@@ -410,7 +456,7 @@ Bản API thêm `forwards`, `replies`.
 khoá **cũ** (khớp chuỗi con, còn `"thuế"` trần), nên **chấm lại sẽ ra số hơi khác**. File
 `posts_tg.json` đã được tạo lại bằng code hiện tại nên có `backend` và không còn bài 1100 = 47.
 
-## 8. Di sản không khôi phục được (ghi để minh bạch)
+## 9. Di sản không khôi phục được (ghi để minh bạch)
 
 - **Bài `vieclam.ctv.hoantien` id 1100**: bản lưu cũ ghi 47 điểm, code hiện tại cho **36**.
   Chênh lệch 11 điểm = `0.6 * 18` — tức bản cũ có nhóm `offplatform` (18) với **một** từ
@@ -425,7 +471,7 @@ khoá **cũ** (khớp chuỗi con, còn `"thuế"` trần), nên **chấm lại 
   `analyzer.py`, `demo_telegram.py` cũ và `GIAI_THICH_CODE.md` cũ. Bản hiện tại là bản viết
   lại, kiểm chứng bằng cách **dò ngược** công thức group trên 9 nhóm dữ liệu còn lưu.
 
-## 9. Kiểm chứng (chạy thật 2026-10-11)
+## 10. Kiểm chứng (chạy thật 2026-10-11)
 
 | Kiểm chứng | Kết quả |
 |---|---|
@@ -440,10 +486,18 @@ khoá **cũ** (khớp chuỗi con, còn `"thuế"` trần), nên **chấm lại 
 | `--keyword "chiến sự"` (API, chỉ tìm chat) | 7 username: `@aiquochientrang`, `@bantronchiensu`, `@hongchiensu247`, `@ngavaukraine`, `@tinnongchiensu`, `@tintucchiensu247`, `@tintuctoanthegioi` |
 | `--channel aiquochientrang --keyword "chiến sự"` (API) | 5 bài + 7 username; `@aiquochientrang` gộp 3 vai trò (link t.me 5, bài đăng trong kênh 5, kết quả tìm chat 1) |
 | `--keyword "hoàn tiền"` (web, chế độ `--demo`) | 2 username (`@vieclam.ctv.hoantien`, `@vieclam_bot`) + link mời `t.me/+abcdef123` |
-| Test hồi quy | **32/32 PASS** (system python3 và `.venv-api/bin/python`) |
+| `keyword_usernames.py --demo --keyword "đầu tư" --keyword "hoàn tiền"` | 4 username, top `@dautu.sieuloinhuan` 71 High-risk; link mời `t.me/+abcdef123` |
+| `keyword_usernames.py --channel durov --keyword "telegram" --limit 5` | 5 bài → 1 username `@durov` (11/100 Normal) |
+| `keyword_usernames.py --json nhom1.json --keyword "chiến sự"` | 1000 bài → `@aiquochientrang`; thêm `--text-only` → **0 username** (đúng: không bài nào nhắc t.me) |
+| `keyword_usernames.py --api --keyword "chiến sự"` | 7 chat từ `contacts.Search` (không cần kênh nguồn) |
+| `username_info.py durov @BotFather pythonchat vitalikbuterin khong_ton_tai_xyz_999` | Kênh ✔ / Bot (7 560 507 người dùng/tháng) / Nhóm 107 / Người dùng / không tra được |
+| `username_info.py durov --limit 25` | kèm thống kê: 5 bài, điểm TB 8.8, mức 7/100 Normal |
+| `username_info.py durov pythonchat --api --limit 3` | id 1006503122 / 1247302826, verified, group kín tra được |
+| `username_info.py --from-json usernames.json` | đọc thẳng danh sách do chức năng 1 xuất ra |
+| Test hồi quy | **39/39 PASS** (system python3 và `.venv-api/bin/python`) |
 | Ghi đè `api.py` trùng lặp | đã xoá `demo_telegram_api_FIXED.py` |
 
-## 10. Muốn thêm từ khoá / đổi trọng số thì sửa ở đâu
+## 11. Muốn thêm từ khoá / đổi trọng số thì sửa ở đâu
 
 1. Mở `analyzer.py`, thêm từ khoá vào `SCAM_GROUPS[...]` hoặc `ACTION_SIGNALS[...]` (:37/:72).
 2. Chạy `python3 -m unittest discover -s tests -v` — nếu test dữ liệu thật/demo đổi số, cân

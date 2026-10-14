@@ -731,18 +731,28 @@ def _username_of(value: str, strict: bool = False) -> str:
     return value if re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{3,31}", value) else ""
 
 
-def _record_text(record: dict) -> str:
-    """Nội dung dùng để lọc từ khoá: text + link preview + tên/mã kênh."""
-    return " ".join([record.get("text") or "", record.get("link_preview") or "",
-                     record.get("channel_title") or "", record.get("channel") or ""])
+def _record_text(record: dict, only_text: bool = False) -> str:
+    """Nội dung dùng để lọc từ khoá: text + link preview + tên/mã kênh.
+
+    `only_text=True` chỉ xét **nội dung bài** (text + link preview), bỏ tên/mã kênh —
+    nhờ vậy từ khoá trùng tên kênh không làm mọi bài của kênh đều khớp.
+    """
+    parts = [record.get("text") or "", record.get("link_preview") or ""]
+    if not only_text:
+        parts += [record.get("channel_title") or "", record.get("channel") or ""]
+    return " ".join(parts)
 
 
 def related_usernames(records: list[dict], keywords=None, include_channels: bool = True,
-                      limit_examples: int = 3, extra_usernames=None) -> list[dict]:
+                      limit_examples: int = 3, extra_usernames=None,
+                      only_text: bool = False) -> list[dict]:
     """Danh sách username liên quan tới `keywords` (rỗng = xét mọi bài).
 
     `extra_usernames`: các dòng bổ sung đã ở dạng `{"username", "keywords", "source"}`
     (dùng cho kết quả tìm kiếm chat của bản API).
+
+    `only_text=True`: chỉ khớp từ khoá trong **nội dung bài** và bỏ luôn vai trò
+    "bài đăng trong kênh" (kênh chỉ xuất hiện khi được nhắc/link thật trong bài).
 
     Trả về list đã sắp xếp: điểm cao nhất → số bài → tên.
     """
@@ -781,20 +791,23 @@ def related_usernames(records: list[dict], keywords=None, include_channels: bool
 
     matched = 0
     for rec in records:
-        kw_list = keywords_in(_record_text(rec), kws) if kws else []
+        kw_list = keywords_in(_record_text(rec, only_text), kws) if kws else []
         if kws and not kw_list:
             continue
         matched += 1
         text = rec.get("text") or ""
         for name in RE_MENTION.findall(text):
             add(name, "mention", rec, kw_list)
-        for source in (text, rec.get("link_preview") or "", rec.get("url") or ""):
+        sources = [text, rec.get("link_preview") or ""]
+        if not only_text:
+            sources.append(rec.get("url") or "")
+        for source in sources:
             for name in dict.fromkeys(RE_USERNAME.findall(source or "")):
                 add(name, "link", rec, kw_list)
         fwd = _username_of(rec.get("forwarded_from"), strict=True)
         if fwd:
             add(fwd, "forward", rec, kw_list)
-        if include_channels:
+        if include_channels and not only_text:
             add(_username_of(rec.get("channel")), "channel", rec, kw_list)
 
     for item in (extra_usernames or []):
@@ -813,12 +826,13 @@ def related_usernames(records: list[dict], keywords=None, include_channels: bool
     return out
 
 
-def related_invite_links(records: list[dict], keywords=None) -> list[dict]:
+def related_invite_links(records: list[dict], keywords=None,
+                         only_text: bool = False) -> list[dict]:
     """Link mời `t.me/+hash` trong các bài chứa từ khoá (không có username để tra)."""
     kws = [k.strip() for k in (keywords or []) if k and k.strip()]
     rows: dict[str, dict] = {}
     for rec in records:
-        kw_list = keywords_in(_record_text(rec), kws) if kws else []
+        kw_list = keywords_in(_record_text(rec, only_text), kws) if kws else []
         if kws and not kw_list:
             continue
         for link in extract_entities(rec.get("text") or "")["invite_links"]:
@@ -876,13 +890,15 @@ def print_username_section(rows: list[dict], keywords=None, invites=None, noun: 
     print(line)
 
 
-def username_payload(records: list[dict], keywords=None, extra_usernames=None) -> dict:
+def username_payload(records: list[dict], keywords=None, extra_usernames=None,
+                     only_text: bool = False) -> dict:
     """Gói kết quả "nhập keyword -> liệt kê username" để vừa in vừa ghi JSON."""
     kws = [k.strip() for k in (keywords or []) if k and k.strip()]
     return {
         "keywords": kws,
-        "usernames": related_usernames(records, kws, extra_usernames=extra_usernames),
-        "invite_links": related_invite_links(records, kws),
+        "usernames": related_usernames(records, kws, extra_usernames=extra_usernames,
+                                       only_text=only_text),
+        "invite_links": related_invite_links(records, kws, only_text=only_text),
     }
 
 
