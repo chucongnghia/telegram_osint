@@ -39,6 +39,7 @@ from analyzer import (NOUN_WEB, RE_HASHTAG, analyze, demo_posts, json_path, make
                       normalize, print_history, print_profile, print_report,
                       print_username_payload, print_username_section, resolve_json,
                       username_payload, write_json)
+from storage import add_storage_arguments, configure_storage
 
 PREVIEW_URL = "https://t.me/s/{channel}"
 USER_AGENT = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -411,7 +412,7 @@ def read_seed_file(path: str) -> list[str]:
     return out
 
 
-def main() -> int:
+def _main() -> int:
     p = argparse.ArgumentParser(
         description="Thu thập bài đăng Telegram công khai qua trang web t.me/s (chỉ thư viện chuẩn).",
         formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__)
@@ -438,7 +439,9 @@ def main() -> int:
     p.add_argument("--no-report", action="store_true",
                    help="chỉ IN DANH SÁCH bài đã lấy, không in báo cáo thống kê")
     p.add_argument("--report", metavar="JSON", help="chỉ in báo cáo từ file JSON đã lưu")
+    add_storage_arguments(p)
     args = p.parse_args()
+    configure_storage(args, tool="demo_telegram")
     # Mọi file .json đi vào json_folder/ (trừ khi người dùng ghi đường dẫn có '/')
     args.out = json_path(args.out)
 
@@ -562,6 +565,14 @@ def main() -> int:
     if kw_payload:
         print_username_payload(kw_payload, noun=NOUN_WEB)
     return 0 if not errors else 1
+
+
+def main() -> int:
+    try:
+        return _main()
+    except RuntimeError as exc:
+        print(f"[!] {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

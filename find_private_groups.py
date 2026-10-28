@@ -73,7 +73,8 @@ DEFAULT_SESSION = os.path.join(SCRIPT_DIR, "tg_session")
 
 # Dùng chung quy ước đường dẫn JSON với các script khác: mọi file .json nằm trong
 # json_folder/. analyzer.py thuần stdlib nên import được cả khi máy thiếu Telethon.
-from analyzer import json_path, resolve_json  # noqa: E402
+from analyzer import NOUN_API, analyze, json_path, json_payload, resolve_json  # noqa: E402
+from storage import add_storage_arguments, configure_storage, persist_payload  # noqa: E402
 
 # Link mời nhóm kín: t.me/+hash (mới) và t.me/joinchat/hash (cũ)
 RE_INVITE = re.compile(r"(?:https?://)?t\.me/(?:\+[\w-]{8,}|joinchat/[\w-]{8,})", re.I)
@@ -317,8 +318,17 @@ async def crawl_found(client, found: Found, limit: int, out_path: str) -> int:
             continue
         title = getattr(entity, "title", None) or rec["invite"]
         rec["title"] = title
+        rec["chat_id"] = getattr(entity, "id", None)
+        rec["channel"] = (getattr(entity, "username", None)
+                          or str(rec["chat_id"] or rec["invite"]))
+        peer_type = {"User": "user", "Chat": "chat", "ChatForbidden": "chat",
+                     "Channel": "channel", "ChannelForbidden": "channel"}.get(
+                         type(entity).__name__)
+        if peer_type:
+            rec["peer_type"] = peer_type
         print(f"  [crawl] {title}")
         msgs = []
+        stop = False
         try:
             async for msg in client.iter_messages(entity, limit=limit):
                 if not msg or msg.action:
@@ -334,11 +344,13 @@ async def crawl_found(client, found: Found, limit: int, out_path: str) -> int:
                 })
         except FloodWaitError as exc:
             print(f"    ! chờ {getattr(exc, 'seconds', 60)}s — dừng crawl")
-            break
+            stop = True
         rec["messages"] = len(msgs)
         rec["history"] = msgs
         total += len(msgs)
         print(f"    -> {len(msgs)} tin nhắn")
+        if stop:
+            break
     return total
 
 
@@ -376,6 +388,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--session", metavar="TEN", help="tên phiên (mặc định: tg_session)")
     p.add_argument("--api-id", type=int, help="api_id (myl.telegram.org)")
     p.add_argument("--api-hash", help="api_hash (my.telegram.org)")
+    add_storage_arguments(p)
     return p
 
 
@@ -437,13 +450,33 @@ async def run(args) -> int:
 
     # ghi kết quả — mọi file .json nằm trong json_folder/
     args.out = json_path(args.out)
+    payload = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "total_invites": len(found.items),
+        "joined": sum(1 for r in found.items.values() if r["joined"]),
+        "found": found.as_list(),
+    }
     with open(args.out, "w", encoding="utf-8") as fh:
-        json.dump({
-            "generated_at": datetime.now(timezone.utc).isoformat(),
-            "total_invites": len(found.items),
-            "joined": sum(1 for r in found.items.values() if r["joined"]),
-            "found": found.as_list(),
-        }, fh, ensure_ascii=False, indent=2)
+        json.dump(payload, fh, ensure_ascii=False, indent=2)
+
+    # Preserve the complete found/history output, and expose actual messages in
+    # the standard posts shape so storage can index them with their chat identity.
+    posts = []
+    for group in payload["found"]:
+        for message in group.get("history") or []:
+            post = {**message,
+                    "channel": group.get("channel") or str(group.get("chat_id")
+                                                          or group["invite"]),
+                    "channel_title": group.get("title") or group["invite"],
+                    "source": "telegram-api",
+                    "collected_at": payload["generated_at"]}
+            for key in ("chat_id", "peer_type"):
+                if group.get(key) is not None:
+                    post[key] = group[key]
+            post["analysis"] = analyze(post)
+            posts.append(post)
+    persist_payload(json_payload(posts, "private-groups", noun=NOUN_API, extra=payload),
+                    source=args.out)
 
     print(f"\n[i] Đã lưu {len(found.items)} link mời "
           f"({sum(1 for r in found.items.values() if r['joined'])} đã join) vào {args.out}")
@@ -453,7 +486,11 @@ async def run(args) -> int:
 def main() -> int:
     args = build_parser().parse_args()
     try:
+        configure_storage(args, tool="find_private_groups")
         return asyncio.run(run(args))
+    except RuntimeError as exc:
+        print(f"[!] {exc}", file=sys.stderr)
+        return 1
     except KeyboardInterrupt:
         print("\n[!] Đã dừng theo yêu cầu.", file=sys.stderr)
         return 130

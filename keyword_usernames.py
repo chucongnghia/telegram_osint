@@ -54,9 +54,10 @@ import json
 import sys
 
 import analyzer
-from analyzer import (NOUN_API, NOUN_WEB, analyze, demo_posts, json_path,
+from analyzer import (NOUN_API, NOUN_WEB, analyze, demo_posts, json_path, json_payload,
                       print_username_section, resolve_json, username_payload,
                       write_json)
+from storage import add_storage_arguments, configure_storage, persist_payload
 
 BACKEND_WEB = "web (t.me/s)"
 BACKEND_JSON = "json"
@@ -231,12 +232,16 @@ def run(args) -> int:
     print_username_section(rows, keywords, payload["invite_links"], noun=noun,
                            limit=args.top or len(rows) or 1, compact=compact)
 
+    extra_payload = {"keywords": keywords, "usernames": rows,
+                     "invite_links": payload["invite_links"]}
     if args.out:
         args.out = json_path(args.out)
         write_json(args.out, records, backend="usernames-by-keyword", noun=noun,
-                   extra={"keywords": keywords, "usernames": rows,
-                          "invite_links": payload["invite_links"]})
+                   extra=extra_payload)
         print(f"[i] Đã lưu danh sách username vào {args.out}")
+    else:
+        persist_payload(json_payload(records, "usernames-by-keyword", noun=noun,
+                                     extra=extra_payload), source="keyword_usernames")
     return 0
 
 
@@ -287,7 +292,14 @@ def main() -> int:
                    help="in đầy đủ chi tiết từng username (mặc định khi có dữ liệu bài)")
     p.add_argument("--out", metavar="FILE",
                    help="ghi kết quả ra JSON (tên trần ⇒ nằm trong json_folder/)")
-    return run(p.parse_args())
+    add_storage_arguments(p)
+    args = p.parse_args()
+    try:
+        configure_storage(args, tool="keyword_usernames")
+        return run(args)
+    except RuntimeError as exc:
+        print(f"[!] {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

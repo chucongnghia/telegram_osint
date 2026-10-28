@@ -3,6 +3,11 @@
 Tài liệu này giải thích **từng phần của code** trong project: luồng chạy, công thức chấm
 điểm, ý nghĩa các khóa JSON, những lỗi đã sửa và những chỗ **suy luận/di sản** cần biết.
 
+> Các số dòng `:N` / khoảng dòng trong phần tài liệu lịch sử bên dưới chỉ còn là **mốc
+> định hướng**, không phải vị trí chính xác sau các thay đổi code. Tra theo tên hàm / lớp
+> khi đọc mã. Các số liệu kiểm chứng ghi ngày 2026-10-11 giữ nguyên ý nghĩa lịch sử,
+> không phải kết quả hay tổng số test của bản SQLite hiện tại.
+
 ## 1. Kiến trúc
 
 ```
@@ -30,6 +35,111 @@ Lý do tách `analyzer.py`: trước đây khối "từ điển + chấm điểm
 hai backend nên hai bản dễ lệch nhau. Nay chỉ còn **một** nơi định nghĩa; sửa từ khoá/ngưỡng
 là cả hai backend đổi theo. `analyzer.py` **chỉ dùng thư viện chuẩn** (không cần Telethon),
 nên chạy được ở mọi máy và test được offline.
+
+## 1a. Kiến trúc lưu trữ SQLite — [`storage.py`](storage.py) và [`database.py`](database.py)
+
+### Vai trò trong pipeline
+
+[`storage.py`](storage.py) cung cấp lớp `Database`, quản lý **schema v1** bằng `sqlite3`
+của thư viện chuẩn. [`database.py`](database.py) là CLI quản trị / tra cứu offline; không
+cần Telethon, không cài gói pip cho SQLite, không chạy server DB.
+
+```text
+Thu thập web / API / demo / username / keyword
+          → payload kết quả thành công
+              ├─ xuất JSON theo quy ước cũ (nếu có)
+              └─ Database → snapshot run bất biến + các bảng truy vấn
+JSON lịch sử → database.py import-json → cùng lớp Database
+```
+
+Các CLI tự lưu sau khi thu thập thành công; **không phụ thuộc `--out`**, nên công cụ
+username / keyword chỉ in console vẫn có run trong DB. Các cờ chung là `--db PATH` và
+`--no-db`; thứ tự chọn đường dẫn là `--db` → `TELEGRAM_DB_PATH` → mặc định
+`data/telegram.sqlite3`. Đường dẫn mặc định được chuyển thành tuyệt đối dựa trên **vị trí
+script**, không phải thư mục làm việc. JSON export vẫn dùng các helper đường dẫn trong
+[`analyzer.py`](analyzer.py): tên trần đi vào [`json_folder/`](json_folder/), đường dẫn có
+thư mục / tuyệt đối giữ nguyên. File phiên Telethon vẫn riêng biệt.
+
+### Schema và ranh giới dữ liệu
+
+| Bảng | Vai trò / bất biến |
+|---|---|
+| `runs` | Metadata lần thu thập / import và **payload JSON gốc bất biến**, đủ để xuất lại toàn bộ trạng thái của run. SHA256 nhận diện payload để import lại cùng dữ liệu không tạo run trùng. |
+| `entities` | Định danh thực thể; namespace `demo` tách `telegram`; danh tính ổn định là **loại thực thể + Telegram ID** khi có ID. |
+| `entity_aliases` | Username / tên tra cứu gắn với thực thể; không dùng username có thể đổi làm danh tính Telegram vĩnh viễn. |
+| `messages` | **Quan sát mới nhất** của bài đăng; ràng buộc duy nhất `(entity_id, message_id)`, không chỉ riêng `message_id` vốn có thể trùng giữa các chat. |
+| `run_messages` | Liên kết run với những message được quan sát trong lần đó. |
+| `analyses` | Kết quả phân tích **theo run / message**, có provenance và phiên bản analyzer, không chỉ một điểm bị ghi đè trên message. |
+| `profile_snapshots` | Hồ sơ quan sát được trong từng run, giữ lịch sử thông tin tài khoản. |
+| `common_groups` | Nhóm chung **nhìn thấy từ phiên đang tra cứu** trong snapshot; không phải mọi nhóm mà người đó tham gia. |
+| `group_summaries` | Điểm / thống kê group của run tương ứng, giữ nguyên số liệu lịch sử. |
+| `search_results` | Kết quả username / keyword cùng ngữ cảnh run, kể cả khi không có bài đăng. |
+| `invite_links` | Link mời được quan sát, gắn với nguồn / lần thu thập. |
+
+Bản web không luôn biết Telegram ID, nên thực thể ban đầu có định danh username **tạm
+thời**; khi API trả về ID, thực thể được làm giàu / đối chiếu sang danh tính ổn định. Không
+trộn hai loại thực thể chỉ vì cùng số ID, không trộn namespace demo với Telegram thật.
+Alias hỗ trợ đổi username, kể cả username phụ. Khi hợp nhất định danh web tạm vào ID đã
+xác minh, giữ quan sát message thuộc run mới nhất, chuyển đầy đủ phân tích / tham chiếu,
+không thay snapshot gốc. Chat thường và supergroup có cùng số ID vẫn khác nhau nhờ
+`peer_type`; thu thập API, thống kê group và nhóm chung đều giữ loại peer này.
+Username web chưa xác minh không tự chứng minh danh tính thật.
+
+`messages` phục vụ truy vấn trạng thái mới nhất; **không dùng nó để tái dựng nguyên trạng
+một run cũ**. Muốn đầy đủ text, views, profile và kết quả tại thời điểm cũ, xuất snapshot
+của `runs` bằng `export RUN_ID`. Import chỉ lưu kết quả đã có, **không gọi `analyze()` để
+chấm lại** `analysis` / `groups`. Provenance cho phân tích mới là **SHA256 mã nguồn
+[`analyzer.py`](analyzer.py)**, không phải semantic version. Khi import, giữ phiên bản
+được khai báo trong payload; lịch sử không xác định được phiên bản ghi là `unversioned`,
+không lấy hash hiện tại thay thế. Điều này khác với thao tác chủ động chấm lại JSON của
+công cụ keyword mô tả ở mục 5.
+
+### CLI quản trị và di chuyển dữ liệu
+
+**`--db` là cờ toàn cục, phải đặt trước subcommand**. Các lệnh sau chỉ thao tác dữ liệu
+local, không đăng nhập và không gọi Telegram:
+
+```bash
+python3 database.py init
+python3 database.py import-json --all
+python3 database.py import-json posts_tg.json
+python3 database.py stats
+python3 database.py runs --limit 20
+python3 database.py messages --keyword 'đầu tư' --username dautu.sieuloinhuan --limit 10
+python3 database.py profiles durov
+python3 database.py results RUN_ID
+python3 database.py export RUN_ID --out sqlite_export.json
+python3 database.py backup data/backup.sqlite3
+python3 database.py --db data/thu_nghiem.sqlite3 stats
+```
+
+`import-json --all` nhập dữ liệu trong [`json_folder/`](json_folder/), **bỏ qua credential**
+[`json_folder/tg_api.json`](json_folder/tg_api.json); dạng tên trần [`posts_tg.json`](json_folder/posts_tg.json) cũng theo
+quy ước JSON hiện có. Import lại **đúng payload** là idempotent theo SHA256, không phải
+so tên file. Import lập chỉ mục cả `found[].history` trong dữ liệu discovery cũ; không
+bịa thêm điểm nếu tin nhắn chưa có `analysis`. Snapshot giữ cả kiểu gốc object hoặc list.
+`runs` cung cấp `RUN_ID` để dùng cho `results` / `export`. `export` ghi snapshot
+JSON với tên trần vào `json_folder/sqlite_export.json`, **từ chối ghi đè**; `backup` tạo
+một DB SQLite ở **đích mới**, không ghi đè bản backup cũ.
+
+### Triển khai, đồng thời và bảo vệ dữ liệu
+
+- DB **plaintext, không mã hoá**, quyền `0600`; thư mục `data/` nằm trong git-ignore.
+  Không nhập API credential, bot token hay session key vào kho thu thập. DB Telethon
+  chứa phiên đăng nhập không phải nguồn import, dù bản thân nó cũng dùng SQLite.
+- WAL cho phép đọc trong lúc ghi; `busy_timeout = 10000` ms (10 giây) giúp chờ writer.
+  Ghi hàng loạt trong **batch transaction**, không commit từng message riêng lẻ.
+  SQLite vẫn chỉ có **một writer tại một thời điểm**: phù hợp triển khai local / tiến
+  trình nhỏ, không phải cơ sở dữ liệu nhiều writer không giới hạn.
+- Dùng `backup` khi DB đang hoạt động để lấy bản sao nhất quán; chỉ copy file DB chính
+  có thể thiếu thay đổi còn trong WAL. Bảo vệ cả backup và dữ liệu cá nhân / link mời.
+- `--no-db` tắt persist cho lần chạy đó, không xoá DB cũ hay thay đổi việc xuất JSON.
+  Không cần chạy live Telegram để kiểm tra import, truy vấn, export và backup.
+- JSON và DB không dùng chung transaction: khi DB lỗi, CLI trả lỗi, nhưng file JSON đã
+  xuất trước đó vẫn giữ để phục hồi / nhập lại. Mỗi transaction DB tự rollback toàn bộ.
+- Kiểm chứng cuối: 80 test trong venv API thành công; Python hệ thống 79 thành công +
+  1 skip cần Telethon. DB thực tế nhập 9 run, 1.138 message duy nhất, 1.155 phân tích;
+  `integrity_check = ok`, `foreign_key_check` không có lỗi, import lại không tăng số run.
 
 ## 2. `analyzer.py`
 
@@ -456,7 +566,9 @@ Thông báo khi chưa đăng nhập in đúng lệnh cần chạy
 
 ## 7. `tests/test_regression.py`
 
-50 test, **không cần mạng/Telethon**, chạy `python3 -m unittest discover -s tests -v`:
+Mốc kiểm chứng **50 test** dưới đây là của ngày **2026-10-11**, không phải tổng test sau
+khi thêm SQLite. Các ca hồi quy **không cần mạng** (một số ca dùng Telethon giả lập sẽ
+skip nếu thiếu thư viện); chạy `python3 -m unittest discover -s tests -v`:
 
 - `TestScoring`: `normalize`/`no_accent`; ngưỡng 25/60; 5 mẫu **báo động giả** nổi tiếng
   (`hermibooks`, `fbclid`, "phân công anh ta", "người nộp thuế", "mức thuế") chỉ được có
@@ -493,6 +605,18 @@ Thông báo khi chưa đăng nhập in đúng lệnh cần chạy
   nối (`_status_line()` với lớp giả `UserStatusOffline`, `_usernames_of()`, `_chat_row()`); và
   `session_path()` không ghép tiền tố hai lần khi người dùng ghi tên phiên đầy đủ.
 
+### Test bổ sung cho SQLite
+
+[`tests/test_storage.py`](tests/test_storage.py) kiểm tra bằng DB tạm, không dùng DB sản
+xuất hay phiên đăng nhập Telegram: schema v1 / WAL / khóa ngoại / `busy_timeout` / quyền
+`0600`; roundtrip JSON giữ Unicode và trường chưa biết; chống trùng message / payload,
+lịch sử phân tích; demo tách dữ liệu thật; đổi username theo ID ổn định, peer type cùng
+số ID, alias bị gán lại và làm giàu thực thể web khi API có ID; snapshot hồ sơ / nhóm
+chung / kết quả tìm kiếm / link mời; truy vấn không dấu và ký tự đặc biệt SQL; rollback;
+import idempotent không chấm lại; từ chối credential, DB không phải kho dự án và schema
+mới hơn; backup nhất quán có WAL; `--no-db` và persist từ các CLI với nguồn offline /
+hồ sơ giả lập. Không suy ra tổng test mới từ mốc 50 test lịch sử ở trên.
+
 ## 8. Các file JSON — tất cả nằm trong `json_folder/`
 
 **Quy ước (m01591):** mọi file `.json` của project nằm trong `json_folder/`, kể cả
@@ -500,8 +624,8 @@ Thông báo khi chưa đăng nhập in đúng lệnh cần chạy
 `--in`, `--from-json` nhận **tên trần** và tự hiểu là file trong `json_folder/`; truyền
 đường dẫn có thư mục (hoặc tuyệt đối) thì script giữ nguyên.
 Hàm dùng chung ở **cuối** [`analyzer.py`](analyzer.py) (mục "13. Đường dẫn JSON"):
-`json_dir()`, `json_path(name)`, `resolve_json(path)`, `_ensure_dir(path)` — đặt ở cuối file
-để không làm dịch số dòng đã ghi trong tài liệu này.
+`json_dir()`, `json_path(name)`, `resolve_json(path)`, `_ensure_dir(path)` — trước đây đặt ở
+cuối file để hạn chế dịch số dòng tài liệu; các mốc dòng cũ nay chỉ dùng để định hướng.
 
 | File (trong `json_folder/`) | `backend` | Có `groups`? | Ghi chú |
 |---|---|---|---|

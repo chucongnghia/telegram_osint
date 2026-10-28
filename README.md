@@ -4,6 +4,89 @@ Bộ công cụ nhỏ để: **thu thập bài đăng Telegram → chấm điể
 tính điểm rủi ro cho cả group/kênh → in báo cáo**. Có hai backend thu thập độc lập dùng
 chung một bộ chấm điểm.
 
+## Lưu trữ SQLite: triển khai và tra cứu
+
+Kết quả thu thập thành công được **tự lưu vào SQLite**, kể cả các lệnh tra username / tìm
+keyword **không có `--out`**. JSON vẫn được xuất theo cách cũ, với quy ước tên trần nằm
+trong [`json_folder/`](json_folder/); SQLite không thay thế hay xoá các bản xuất đó.
+SQLite dùng `sqlite3` của thư viện chuẩn Python: **không cần pip, không cần máy chủ DB**.
+Telethon chỉ cần khi dùng backend API như trước.
+
+### Đường dẫn và vận hành
+
+- Mọi CLI thu thập / tra cứu dùng chung `--db PATH`, biến môi trường `TELEGRAM_DB_PATH`,
+  và `--no-db` để tắt lưu DB cho lần chạy đó. `--db` ưu tiên hơn biến môi trường.
+- Mặc định là `data/telegram.sqlite3`, được dựng thành **đường dẫn tuyệt đối từ vị trí
+  script**, không phụ thuộc thư mục đang đứng khi gọi lệnh.
+- DB là **plaintext, không mã hoá**, đặt quyền `0600`; thư mục `data/` được git-ignore.
+  Dữ liệu bài đăng, hồ sơ và link mời có thể nhạy cảm: bảo vệ cả bản sao lưu, không công
+  khai thư mục dữ liệu. Không nhập credential / session key vào kho dữ liệu này;
+  [`json_folder/tg_api.json`](json_folder/tg_api.json) bị bỏ qua khi import hàng loạt.
+- File phiên Telethon là **kho riêng**, không phải DB thu thập và không được nhập vào đó.
+- Cấu hình SQLite dùng **WAL**, `busy_timeout = 10000` ms (10 giây), ghi theo **batch
+  transaction**. SQLite chỉ có **một writer tại một thời điểm**; tránh nhiều tiến trình
+  ghi kéo dài cùng lúc. Sao lưu DB đang dùng bằng lệnh `backup`, không chỉ chép file DB
+  chính khi còn dữ liệu trong WAL.
+
+```bash
+python3 demo_telegram.py --demo --db data/thu_nghiem.sqlite3
+python3 keyword_usernames.py --demo --keyword 'đầu tư'  # tự lưu dù không có --out
+python3 username_info.py durov --no-db                 # không lưu DB lần này
+TELEGRAM_DB_PATH=/tmp/telegram.sqlite3 python3 demo_telegram.py --demo
+```
+
+### Quản trị bằng [`database.py`](database.py) (offline, không gọi Telegram)
+
+**Cờ toàn cục `--db` phải đứng trước subcommand**; các ví dụ không ghi cờ này dùng DB
+mặc định (hoặc `TELEGRAM_DB_PATH`). Chạy từ thư mục project:
+
+```bash
+python3 database.py init
+python3 database.py import-json --all                   # quét JSON, bỏ qua tg_api.json
+python3 database.py import-json posts_tg.json            # đọc json_folder/posts_tg.json
+python3 database.py stats
+python3 database.py runs --limit 20
+python3 database.py messages --keyword 'đầu tư' --username dautu.sieuloinhuan --limit 10
+python3 database.py profiles durov
+python3 database.py results RUN_ID
+python3 database.py export RUN_ID --out sqlite_export.json
+python3 database.py backup data/backup.sqlite3
+python3 database.py --db data/thu_nghiem.sqlite3 stats
+```
+
+Thay `RUN_ID` bằng ID lấy từ `runs`. `export` giữ quy ước JSON: tên trần trong ví dụ là
+`json_folder/sqlite_export.json`; **không ghi đè** file có sẵn. `backup` yêu cầu **đích
+mới**, không dùng lại file backup đã tồn tại. Import lại **đúng cùng payload** là idempotent
+nhờ SHA256, không tạo bản run trùng và **không chấm lại điểm lịch sử**.
+
+### Hiểu dữ liệu đã lưu
+
+[`storage.py`](storage.py) quản lý `Database` schema v1; [`database.py`](database.py) là CLI
+quản trị. Mỗi `run` giữ **snapshot JSON gốc bất biến**. Bảng `messages` là quan sát mới
+nhất, duy nhất theo `(entity_id, message_id)`; trạng thái cũ đầy đủ vẫn lấy được bằng
+`export RUN_ID`. Phân tích được giữ **theo từng run / message**, có nguồn gốc và phiên bản
+analyzer. Phân tích mới dùng **SHA256 mã nguồn analyzer** làm provenance (không phải
+semantic version); JSON import giữ phiên bản đã khai báo, hoặc `unversioned` nếu không
+biết phiên bản, không gán giả phiên bản hiện tại. Import cũng lập chỉ mục tin nhắn trong
+`found[].history` của bản xuất discovery cũ, nếu có, mà không sửa snapshot gốc.
+
+JSON và SQLite là hai lần ghi riêng, **không phải một transaction chung**. Nếu SQLite báo
+lỗi sau khi xuất JSON, file JSON vẫn còn để nhập lại; CLI trả mã lỗi thay vì báo lưu DB
+thành công. Snapshot mỗi run được giữ đầy đủ nên dung lượng DB tăng theo số lần thu thập.
+
+Định danh ổn định dùng **loại thực thể + Telegram ID**, còn username chỉ là alias có thể
+đổi. Dữ liệu web chưa có ID dùng định danh username **tạm thời**, được làm giàu khi API
+phân giải được ID sau đó. Namespace `demo` tách khỏi `telegram`, tránh trộn bài mẫu với
+bài thật. Hồ sơ, kết quả tìm kiếm, link mời và điểm group được lưu theo ngữ cảnh run.
+`common_groups` chỉ là **những nhóm chung nhìn thấy được từ phiên đang tra cứu**, không
+phải toàn bộ danh sách nhóm mà một tài khoản tham gia.
+
+**Kiểm chứng triển khai:** 80 test offline chạy thành công bằng Python trong venv API;
+Python hệ thống chạy 79 test thành công, bỏ qua 1 test cần Telethon. DB đã nhập 9 snapshot,
+1.138 bài đăng duy nhất và 1.155 bản phân tích; `integrity_check = ok`, không có lỗi khóa
+ngoại. Import lại không nhân đôi dữ liệu. Bản sao lưu ban đầu được giữ cục bộ tại
+[`initial-import-backup.sqlite3`](data/initial-import-backup.sqlite3).
+
 ## File
 
 | File | Việc |
@@ -14,7 +97,10 @@ chung một bộ chấm điểm.
 | [`demo_telegram.py`](demo_telegram.py) | Backend **web**: đọc trang công khai `https://t.me/s/<kênh>` (và `https://t.me/<username>` cho `--user`). **Chỉ thư viện chuẩn** — không cần cài gì, không cần API key, không cần đăng nhập. |
 | [`demo_telegram_api.py`](demo_telegram_api.py) | Backend **Telegram API (Telethon)**: group kín, tìm kiếm toàn cục, tra cứu username/ID, tìm chat theo từ khoá, tải media, OCR, chế độ bot, `--watch`. |
 | [`find_private_groups.py`](find_private_groups.py) | Tìm & đọc **group kín** qua link mời, chia 3 bước `--discover` / `--join` / `--crawl`. |
-| [`tests/test_regression.py`](tests/test_regression.py) | Test hồi quy (50 test, không cần mạng/Telethon). |
+| [`storage.py`](storage.py) | `Database` schema v1: snapshot run, thực thể / alias, message, phân tích và kết quả tra cứu. |
+| [`database.py`](database.py) | CLI SQLite: init, import JSON, thống kê, truy vấn, export run và backup. |
+| [`tests/test_regression.py`](tests/test_regression.py) | Test hồi quy offline; mốc 50 test là số liệu kiểm chứng lịch sử 2026-10-11, không phải tổng hiện tại. |
+| [`tests/test_storage.py`](tests/test_storage.py) | Test SQLite offline: schema, snapshot / identity, import / truy vấn / export / backup và persist từ CLI. |
 | [`GIAI_THICH_CODE.md`](GIAI_THICH_CODE.md) | Giải thích chi tiết từng phần của code + công thức + các lỗi đã sửa. |
 | [`json_folder/`](json_folder) | **Mọi file `.json` của project** — dữ liệu mẫu, kết quả chạy và cả `tg_api.json` (xem "Quy ước file JSON"). |
 | [`json_folder/posts_tg.json`](json_folder/posts_tg.json) | Kết quả `--demo` của bản web (17 bài mẫu, có `groups`). |
@@ -283,6 +369,14 @@ demo + nhóm thật 1000 bài; các báo động giả nổi tiếng không còn
 `save_photo`, dòng số điện thoại/ảnh/nhóm chung/lệnh bot, helper `_status_line` /
 `_usernames_of` / `_chat_row`); `--keyword` → `usernames` + `invite_links` và `--report`
 đọc lại được.
+
+Các test bổ sung trong [`tests/test_storage.py`](tests/test_storage.py) dùng DB tạm và
+nguồn giả lập, không dùng phiên Telegram / DB thật: schema v1, WAL / khóa ngoại / quyền
+`0600`, snapshot roundtrip, dedupe / lịch sử điểm, demo tách dữ liệu thật, ID ổn định /
+alias / nâng cấp username web, hồ sơ / nhóm chung / kết quả / link mời, tìm kiếm Unicode
+an toàn với SQL, rollback, import idempotent không chấm lại, từ chối credential / DB lạ /
+schema tương lai, backup kể cả WAL, `--no-db` và tự persist từ các CLI. Đây là phần phủ
+kiểm thử thêm, **không phải công bố tổng test mới hoặc lần chạy live mới**.
 
 ## Hai cách thu thập (chọn 1 hoặc dùng cả hai)
 

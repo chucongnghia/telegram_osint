@@ -25,6 +25,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -43,6 +44,22 @@ from analyzer import (SCAM_GROUPS, analyze, demo_posts, group_summary,  # noqa: 
 JSON_DIR = ROOT / "json_folder"          # mọi file .json nằm trong đây
 POSTS_TG = json.loads((JSON_DIR / "posts_tg.json").read_text(encoding="utf-8"))
 NHOM1 = json.loads((JSON_DIR / "nhom1.json").read_text(encoding="utf-8"))
+
+
+def setUpModule():
+    # CLI tests must never write into the user's application database.
+    global _db_tmp, _old_db_env
+    _db_tmp = tempfile.TemporaryDirectory()
+    _old_db_env = os.environ.get("TELEGRAM_DB_PATH")
+    os.environ["TELEGRAM_DB_PATH"] = str(Path(_db_tmp.name) / "regression.sqlite3")
+
+
+def tearDownModule():
+    if _old_db_env is None:
+        os.environ.pop("TELEGRAM_DB_PATH", None)
+    else:
+        os.environ["TELEGRAM_DB_PATH"] = _old_db_env
+    _db_tmp.cleanup()
 
 
 def without_analysis(post: dict) -> dict:

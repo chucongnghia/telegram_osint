@@ -30,6 +30,8 @@ import unicodedata
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 
+from storage import persist_payload
+
 # ---------------------------------------------------------------------------
 # 1. Bộ từ điển
 # ---------------------------------------------------------------------------
@@ -330,8 +332,10 @@ GROUP_WEIGHT_CONCENTRATION = 10.0
 GROUP_WEIGHT_PEAK = 15.0
 
 
-def _group_key(record: dict) -> str:
-    return str(record.get("channel") or record.get("channel_title") or "?")
+def _group_key(record: dict) -> tuple:
+    if record.get("peer_type") and record.get("chat_id") is not None:
+        return (record["peer_type"], str(record["chat_id"]))
+    return (str(record.get("channel") or record.get("channel_title") or "?"),)
 
 
 def group_summary(records: list[dict], noun: str = NOUN_WEB) -> list[dict]:
@@ -342,12 +346,13 @@ def group_summary(records: list[dict], noun: str = NOUN_WEB) -> list[dict]:
     flagged_ratio, levels, categories, repeat_top_text (nếu có), group_score,
     group_level, verdict, reasons`.
     """
-    buckets: dict[str, list[dict]] = {}
+    buckets: dict[tuple, list[dict]] = {}
     for rec in records:
         buckets.setdefault(_group_key(rec), []).append(rec)
 
     out: list[dict] = []
-    for channel, items in buckets.items():
+    for items in buckets.values():
+        channel = str(items[0].get("channel") or items[0].get("channel_title") or "?")
         scores = [int((r.get("analysis") or {}).get("scam_score", 0)) for r in items]
         total = len(items)
         flagged_posts = [r for r in items if (r.get("analysis") or {}).get("level") != "Normal"]
@@ -393,6 +398,8 @@ def group_summary(records: list[dict], noun: str = NOUN_WEB) -> list[dict]:
             "levels": dict(levels),
             "categories": dict(categories),
         }
+        if items[0].get("peer_type") and items[0].get("chat_id") is not None:
+            record.update({key: items[0][key] for key in ("chat_id", "peer_type", "entity_kind") if key in items[0]})
         # `repeat_top_text`: số nội dung khác nhau bị **spam lặp từ 3 lần trở lên**.
         # Ngữ nghĩa này dò ra từ mẫu lịch sử duy nhất còn lưu (nhom1.json:
         # giá trị 2, trong khi nhóm có 3 nội dung lặp >= 2 lần và 1 nội dung lặp 4 lần).
@@ -561,13 +568,9 @@ def print_history(records: list[dict], sources: list[str] | None = None,
     print("-" * 78)
 
 
-def write_json(path: str, records: list[dict], backend: str, noun: str = NOUN_WEB,
-               extra: dict | None = None) -> list[dict]:
-    """Ghi {generated_at, total, backend, groups, posts} ra JSON.
-
-    `groups` chính là mục [5] ĐIỂM RỦI RO THEO GROUP/KÊNH (xem group_summary).
-    `extra` là các khóa ghi thêm (ví dụ `usernames` của chức năng tra theo từ khoá).
-    """
+def json_payload(records: list[dict], backend: str, noun: str = NOUN_WEB,
+                 extra: dict | None = None) -> dict:
+    """Build the shared JSON/storage payload without writing or persisting it."""
     out = [_public(r) for r in records]
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -578,8 +581,21 @@ def write_json(path: str, records: list[dict], backend: str, noun: str = NOUN_WE
     }
     if extra:
         payload.update(extra)
+    return payload
+
+
+def write_json(path: str, records: list[dict], backend: str, noun: str = NOUN_WEB,
+               extra: dict | None = None) -> list[dict]:
+    """Ghi {generated_at, total, backend, groups, posts} ra JSON.
+
+    `groups` chính là mục [5] ĐIỂM RỦI RO THEO GROUP/KÊNH (xem group_summary).
+    `extra` là các khóa ghi thêm (ví dụ `usernames` của chức năng tra theo từ khoá).
+    """
+    payload = json_payload(records, backend, noun=noun, extra=extra)
     with open(_ensure_dir(path), "w", encoding="utf-8") as fh:
         json.dump(payload, fh, ensure_ascii=False, indent=2)
+    persist_payload(payload, source=path)
+    out = payload["posts"]
     print(f"[i] Đã lưu {len(out)} bài đăng vào {path}")
     return out
 

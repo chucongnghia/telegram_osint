@@ -52,6 +52,7 @@ from analyzer import (NOUN_API, NOUN_WEB, RE_HASHTAG, USERNAME_RE, analyze,
                       print_username_payload, print_username_section, resolve_json,
                       username_payload, write_json)
 from analyzer import demo_posts as demo_posts_shared
+from storage import add_storage_arguments, configure_storage
 
 # ---------------------------------------------------------------------------
 # 0. Import Telethon (báo lỗi rõ ràng nếu chưa cài)
@@ -317,6 +318,18 @@ def extract_link_preview(msg) -> str:
     return ""
 
 
+def _peer_type(entity) -> str:
+    """Keep basic chats distinct from channels, even when their numeric IDs match."""
+    name = type(entity).__name__
+    if name in ("User", "UserEmpty"):
+        return "user"
+    if name in ("Chat", "ChatEmpty", "ChatForbidden"):
+        return "chat"
+    if name in ("Channel", "ChannelForbidden"):
+        return "channel"
+    return ""
+
+
 def to_record(msg, entity) -> dict:
     text = normalize(msg.message or "")
     has_media, kinds, _ = media_kind(msg)
@@ -332,7 +345,15 @@ def to_record(msg, entity) -> dict:
                     or "nguồn ẩn")
     username = getattr(entity, "username", None) or ""
     title = getattr(entity, "title", None) or username or str(getattr(entity, "id", ""))
+    peer_type = _peer_type(entity)
+    identity = {"chat_id": getattr(entity, "id", None)}
+    if peer_type:
+        identity["peer_type"] = peer_type
+        identity["entity_kind"] = ("bot" if getattr(entity, "bot", False) else "user"
+                                   if peer_type == "user" else "channel"
+                                   if getattr(entity, "broadcast", False) else "group")
     return {
+        **identity,
         "message_id": str(msg.id),
         "url": f"https://t.me/{username}/{msg.id}" if username else "",
         "channel": username or str(getattr(entity, "id", "")),
@@ -412,6 +433,9 @@ def _chat_row(chat) -> dict:
         "kind": "channel" if getattr(chat, "broadcast", False) else "group",
         "id": getattr(chat, "id", None),
     }
+    peer_type = _peer_type(chat)
+    if peer_type:
+        row["peer_type"] = peer_type
     count = getattr(chat, "participants_count", None)
     if count:
         row["members"] = count
@@ -469,6 +493,9 @@ async def lookup_entity(client, target: str, limit: int = 0, photo_dir: str = ""
     verified = bool(getattr(entity, "verified", False))
     full_username = None
     extras: dict = {}
+    peer_type = _peer_type(entity)
+    if peer_type:
+        extras["peer_type"] = peer_type
     try:
         if isinstance(entity, User):
             full = await client(functions.users.GetFullUserRequest(id=entity))
@@ -941,10 +968,13 @@ async def run_async(args) -> int:
         else:
             extra_usernames += await search_chats(client, kw, args.limit)
 
-    # chống trùng theo kênh/message_id (dùng cho cả 2 nguồn ở trên)
-    unique: dict[str, dict] = {}
+    # Message IDs are scoped to a typed Telegram peer, not just its raw ID.
+    unique: dict[tuple, dict] = {}
     for rec in records:
-        unique.setdefault(f"{rec['channel']}/{rec['message_id']}", rec)
+        key = (("peer", rec["peer_type"], str(rec["chat_id"]), str(rec["message_id"]))
+               if rec.get("peer_type") and rec.get("chat_id") is not None
+               else ("username", str(rec["channel"]).lower(), str(rec["message_id"])))
+        unique.setdefault(key, rec)
     records = list(unique.values())
 
     for rec in records:                       # chấm điểm (chưa có OCR)
@@ -986,7 +1016,7 @@ async def run_async(args) -> int:
     return 0
 
 
-def main() -> int:
+def _main() -> int:
     p = argparse.ArgumentParser(
         description="Demo thu thập bài đăng Telegram qua API (Telethon) + chấm điểm lừa đảo.",
         formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__)
@@ -1040,7 +1070,9 @@ def main() -> int:
     p.add_argument("--no-report", action="store_true",
                    help="chỉ IN DANH SÁCH tin nhắn đã crawl, không in báo cáo thống kê")
     p.add_argument("--report", metavar="JSON", help="chỉ in báo cáo từ file JSON đã lưu")
+    add_storage_arguments(p)
     args = p.parse_args()
+    configure_storage(args, tool="demo_telegram_api")
     # Mọi file .json đi vào json_folder/ (trừ khi người dùng ghi đường dẫn có '/')
     args.out = json_path(args.out)
 
@@ -1092,6 +1124,14 @@ def main() -> int:
         return 0
 
     return asyncio.run(run_async(args))
+
+
+def main() -> int:
+    try:
+        return _main()
+    except RuntimeError as exc:
+        print(f"[!] {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

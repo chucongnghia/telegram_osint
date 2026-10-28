@@ -37,8 +37,9 @@ import argparse
 import json
 import sys
 
-from analyzer import (NOUN_API, NOUN_WEB, analyze, json_path, print_profile,
+from analyzer import (NOUN_API, NOUN_WEB, analyze, json_path, json_payload, print_profile,
                       resolve_json, write_json)
+from storage import add_storage_arguments, configure_storage, persist_payload
 
 
 # ---------------------------------------------------------------------------
@@ -186,11 +187,15 @@ def run(args) -> int:
     if not profiles:
         return 1
 
+    backend = "telethon" if args.api else "web (t.me)"
     if args.out:
         args.out = json_path(args.out)
-        write_json(args.out, records, backend="telethon" if args.api else "web (t.me)",
+        write_json(args.out, records, backend=backend,
                    noun=noun, extra={"profiles": profiles})
         print(f"[i] Đã lưu thông tin {len(profiles)} tài khoản vào {args.out}")
+    else:
+        persist_payload(json_payload(records, backend, noun=noun,
+                                     extra={"profiles": profiles}), source="username_info")
     return 0
 
 
@@ -221,7 +226,14 @@ def main() -> int:
     p.add_argument("--api-hash", help="api_hash (mặc định: TG_API_HASH hoặc tg_api.json)")
     p.add_argument("--out", metavar="FILE",
                    help="ghi kết quả ra JSON (tên trần ⇒ nằm trong json_folder/)")
-    return run(p.parse_args())
+    add_storage_arguments(p)
+    args = p.parse_args()
+    try:
+        configure_storage(args, tool="username_info")
+        return run(args)
+    except RuntimeError as exc:
+        print(f"[!] {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
