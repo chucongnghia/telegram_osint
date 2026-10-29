@@ -4,6 +4,129 @@ Bộ công cụ nhỏ để: **thu thập bài đăng Telegram → chấm điể
 tính điểm rủi ro cho cả group/kênh → in báo cáo**. Có hai backend thu thập độc lập dùng
 chung một bộ chấm điểm.
 
+## Bản đầu: tin nhắn văn bản → Jev → SQLite
+
+[`classify_messages.py`](<classify_messages.py>) phân loại **văn bản đã thu thập trong DB**
+bằng model Jev thật, không phải bộ từ khoá trong analyzer. Bước này chạy **tường minh sau
+thu thập**, không tự gọi dịch vụ có phí khi crawl. Chỉ dùng thư viện chuẩn Python; chưa
+xử lý âm thanh, ảnh hay video và không truy cập link trong tin nhắn.
+
+### Năm nhãn
+
+| Nhãn | Ý nghĩa |
+|---|---|
+| `scam_indicators` | Có dấu hiệu cụ thể như xin OTP, phí mở khoá thưởng/rút tiền, lợi nhuận phi thực tế. |
+| `advertising_unverified` | Quảng cáo nhưng chưa có dấu hiệu lừa đảo cụ thể; **không có nghĩa đã xác minh an toàn**. |
+| `reporting_warning` | Tin tức, cảnh báo, trích dẫn/ví dụ về lừa đảo, không phải lời mời tham gia thực tế. |
+| `other` | Nội dung khác đủ rõ. |
+| `insufficient_information` | Thiếu bối cảnh, hoặc cần ảnh/video/link chưa được cung cấp. |
+
+Rubric có phiên bản và hướng dẫn không làm theo chỉ dẫn nằm trong tin nhắn. Đây là
+**sàng lọc dấu hiệu**, không phải kết luận pháp lý. Xác suất/confidence của Jev **không
+được xem là độ chính xác đã hiệu chuẩn**, không dùng một ngưỡng cố định để tự kết tội.
+
+### Chạy độc lập bằng API key TypeSafe
+
+API theo [tài liệu chính thức](https://docs.typesafe.ai/introduction/quickstart.md),
+mặc định `https://api.typesafe.ai/v1/systemone`. Key này **khác** Telegram API ID/hash:
+
+```bash
+# Thu thập trước bằng các CLI hiện có, hoặc nhập JSON lịch sử:
+python3 database.py import-json --all
+
+# Xem ứng viên, không gọi mạng / không ghi kết quả phân loại:
+python3 classify_messages.py run --limit 10 --dry-run
+
+# Nhập kín vào biến môi trường, không ghi key vào source/JSON:
+read -rsp 'TypeSafe API key: ' TYPESAFE_API_KEY; echo
+export TYPESAFE_API_KEY
+python3 classify_messages.py run --limit 10
+unset TYPESAFE_API_KEY
+
+# Xem lịch sử offline:
+python3 classify_messages.py results --limit 20
+python3 classify_messages.py results --label scam_indicators
+```
+
+Cờ toàn cục `--db PATH` đứng **trước** subcommand; mặc định dùng DB chung và
+`TELEGRAM_DB_PATH`. Các bộ lọc `--keyword`, `--username`, `--run-id`, `--message-id`
+giới hạn ứng viên. `--message-id` là **row ID nội bộ SQLite**, không phải ID Telegram.
+Mặc định tối đa 10 tin/lần, bỏ tin rỗng và namespace demo; thêm `--include-demo` để thử
+fixture. Tin quá 16.000 ký tự được bỏ qua có báo lỗi, **không cắt ngầm**. `run` và
+`prepare` ghi trạng thái terminal `skipped/text_too_long` để lần sau vượt qua tin đó,
+không bị kẹt trước `--limit`; `--recheck` cho phép xét lại cả các tin đã bỏ qua.
+
+Lần sau bỏ qua kết quả thành công cùng nội dung/rubric/backend/model yêu cầu; tin sửa
+nội dung được phân loại lại. Dùng `--recheck` khi muốn đánh giá lại. `--model` hoặc
+`JEV_MODEL` chọn model; nên pin phiên bản cho thí nghiệm tái lập. Alias `jev-latest` có
+thể đổi ở nhà cung cấp mà cache không tự biết: dùng `--recheck` sau khi đổi phiên bản.
+HTTP không tự retry; lỗi key/rate limit/mạng được lưu với trạng thái `error`, dừng batch
+và trả mã khác 0, **không lấy heuristic làm nhãn AI dự phòng**. Chạy lại để tiếp tục.
+`JEV_API_URL` cho phép cấu hình endpoint HTTPS khác; chỉ đặt khi tin cậy nơi nhận key.
+
+**Quyền riêng tư:** API chỉ nhận `state.text` và rubric/model, không gửi toàn bộ hồ sơ
+hay session Telegram. Văn bản vẫn có thể chứa số điện thoại/thông tin nhạy cảm; chỉ gửi
+nội dung bạn có quyền xử lý. DB lưu nguyên văn để truy vết và **không mã hoá**.
+
+### Dùng công cụ Jev có sẵn trong phiên DSH
+
+CLI độc lập không tự dùng credential nội bộ DSH. Nếu chưa có `TYPESAFE_API_KEY`, agent
+có thể gọi công cụ `jev_ask` của phiên rồi nhập kết quả qua bridge tường minh:
+
+```bash
+python3 classify_messages.py prepare --limit 10 --out jev_requests.json
+# Agent gọi jev_ask cho từng item với đúng state, questions và model trong manifest;
+# chép NGUYÊN VĂN output công cụ vào results, không tự tạo nhãn.
+python3 classify_messages.py apply --requests jev_requests.json --results jev_results.json
+python3 classify_messages.py results
+```
+
+Manifest và results có tên trần được đặt trong [`json_folder/`](<json_folder/>), tạo mới
+với quyền `0600`, không ghi đè. Manifest/results giới hạn **16 MiB UTF-8**; `prepare`
+từ chối tạo manifest quá lớn, cần giảm `--limit` và chia batch. Results dùng cấu trúc
+sau (các giá trị là placeholder):
+
+```json
+{
+  "format": "telegram-jev-results-v1",
+  "batch_id": "<batch_id từ manifest>",
+  "results": [{
+    "message_row_id": 123,
+    "input_sha256": "<hash từ item>",
+    "tool_output": "<toàn bộ output Jev, bắt đầu bằng Jev jev-...>"
+  }]
+}
+```
+
+Bridge kiểm tra batch/hash/rubric và nội dung/nguồn còn khớp DB trước khi lưu. Thiếu
+kết quả thì báo thiếu, không đoán nhãn; replay bình thường không nhân đôi. Đây là
+**artifact do người vận hành cung cấp, không có chữ ký xác thực từ dịch vụ**: lưu provider
+`dsh-jev-tool-import`, tách khỏi API trực tiếp. Output hiển thị đã làm tròn được giữ
+nguyên văn; bridge **không biến nó thành xác suất số giả chính xác**. API trực tiếp giữ
+response JSON và xác suất gốc. Không gửi toàn bộ manifest (chứa nguồn) làm `state`.
+
+### Lưu trữ, kiểm thử và giới hạn
+
+Schema v2 thêm bảng `message_classifications`, giữ lịch sử riêng: text/hash, snapshot
+nguồn, model thực tế, rubric/version, provider/backend, nhãn, response, lỗi và thời điểm.
+**Không ghi đè điểm heuristic hoặc snapshot lịch sử.** Kết quả cũ được đánh dấu `stale`
+nếu text hiện tại thay đổi. Mỗi kết quả commit riêng; không giữ transaction trong lúc
+chờ API. Không chạy nhiều classifier cùng lúc nếu cần tránh gọi model trùng nhau.
+Schema v1 được nâng cấp cộng thêm bảng khi mở DB; nên dùng lệnh backup trước nâng cấp.
+Các artifact `jev_*.json` và DB bị git-ignore vì chứa nội dung tin nhắn.
+
+Đã smoke-test Jev thật qua công cụ DSH trên **6 tin tổng hợp**, bao phủ đủ năm nhãn,
+cảnh báo có trích dẫn và thử chèn chỉ dẫn: kết quả lưu/replay thành công với model
+`jev-1.14.0`. Đây **không phải phép đo độ chính xác trên dữ liệu thực tế**. Nhánh HTTP
+được test offline bằng mock; chạy HTTP có xác thực cần API key của bạn.
+
+Kiểm thử bản Jev: bộ **139 test** chạy bằng venv API đều thành công; cùng bộ test
+trên Python hệ thống thành công với 1 test cần Telethon được bỏ qua. Các test không
+gọi dịch vụ có phí. Test hồi quy bao gồm tiến độ sau tin quá dài và giới hạn byte
+UTF-8 của manifest.
+DB hiện có đã được sao lưu tại [`pre-jev-v2-backup.sqlite3`](<data/pre-jev-v2-backup.sqlite3>)
+trước khi nâng cấp; các bảng dữ liệu cũ giữ nguyên, không tự gửi tin lịch sử lên Jev.
+
 ## Lưu trữ SQLite: triển khai và tra cứu
 
 Kết quả thu thập thành công được **tự lưu vào SQLite**, kể cả các lệnh tra username / tìm
@@ -61,7 +184,7 @@ nhờ SHA256, không tạo bản run trùng và **không chấm lại điểm l�
 
 ### Hiểu dữ liệu đã lưu
 
-[`storage.py`](storage.py) quản lý `Database` schema v1; [`database.py`](database.py) là CLI
+[`storage.py`](storage.py) quản lý `Database` schema v2; [`database.py`](database.py) là CLI
 quản trị. Mỗi `run` giữ **snapshot JSON gốc bất biến**. Bảng `messages` là quan sát mới
 nhất, duy nhất theo `(entity_id, message_id)`; trạng thái cũ đầy đủ vẫn lấy được bằng
 `export RUN_ID`. Phân tích được giữ **theo từng run / message**, có nguồn gốc và phiên bản
@@ -81,7 +204,7 @@ bài thật. Hồ sơ, kết quả tìm kiếm, link mời và điểm group đ�
 `common_groups` chỉ là **những nhóm chung nhìn thấy được từ phiên đang tra cứu**, không
 phải toàn bộ danh sách nhóm mà một tài khoản tham gia.
 
-**Kiểm chứng triển khai:** 80 test offline chạy thành công bằng Python trong venv API;
+**Kiểm chứng đợt SQLite ban đầu (trước Jev):** 80 test offline chạy thành công bằng Python trong venv API;
 Python hệ thống chạy 79 test thành công, bỏ qua 1 test cần Telethon. DB đã nhập 9 snapshot,
 1.138 bài đăng duy nhất và 1.155 bản phân tích; `integrity_check = ok`, không có lỗi khóa
 ngoại. Import lại không nhân đôi dữ liệu. Bản sao lưu ban đầu được giữ cục bộ tại
@@ -97,8 +220,12 @@ ngoại. Import lại không nhân đôi dữ liệu. Bản sao lưu ban đầu 
 | [`demo_telegram.py`](demo_telegram.py) | Backend **web**: đọc trang công khai `https://t.me/s/<kênh>` (và `https://t.me/<username>` cho `--user`). **Chỉ thư viện chuẩn** — không cần cài gì, không cần API key, không cần đăng nhập. |
 | [`demo_telegram_api.py`](demo_telegram_api.py) | Backend **Telegram API (Telethon)**: group kín, tìm kiếm toàn cục, tra cứu username/ID, tìm chat theo từ khoá, tải media, OCR, chế độ bot, `--watch`. |
 | [`find_private_groups.py`](find_private_groups.py) | Tìm & đọc **group kín** qua link mời, chia 3 bước `--discover` / `--join` / `--crawl`. |
-| [`storage.py`](storage.py) | `Database` schema v1: snapshot run, thực thể / alias, message, phân tích và kết quả tra cứu. |
+| [`storage.py`](storage.py) | `Database` schema v2: snapshot run, thực thể / alias, message, phân tích và kết quả tra cứu. |
 | [`database.py`](database.py) | CLI SQLite: init, import JSON, thống kê, truy vấn, export run và backup. |
+| [`classify_messages.py`](<classify_messages.py>) | CLI văn bản → Jev → SQLite: run / prepare / apply / results. |
+| [`text_classifier.py`](<text_classifier.py>) | Rubric có phiên bản, chọn ứng viên/cache, lưu bằng chứng và lịch sử phân loại. |
+| [`jev_client.py`](<jev_client.py>) | HTTP client stdlib cho API TypeSafe; xác thực response và che lỗi nhạy cảm. |
+| [`tests/test_text_classifier.py`](<tests/test_text_classifier.py>) / [`tests/test_jev_client.py`](<tests/test_jev_client.py>) | Test classifier, migration/cache/bridge và HTTP offline, không cần key. |
 | [`tests/test_regression.py`](tests/test_regression.py) | Test hồi quy offline; mốc 50 test là số liệu kiểm chứng lịch sử 2026-10-11, không phải tổng hiện tại. |
 | [`tests/test_storage.py`](tests/test_storage.py) | Test SQLite offline: schema, snapshot / identity, import / truy vấn / export / backup và persist từ CLI. |
 | [`GIAI_THICH_CODE.md`](GIAI_THICH_CODE.md) | Giải thích chi tiết từng phần của code + công thức + các lỗi đã sửa. |
@@ -371,7 +498,7 @@ demo + nhóm thật 1000 bài; các báo động giả nổi tiếng không còn
 đọc lại được.
 
 Các test bổ sung trong [`tests/test_storage.py`](tests/test_storage.py) dùng DB tạm và
-nguồn giả lập, không dùng phiên Telegram / DB thật: schema v1, WAL / khóa ngoại / quyền
+nguồn giả lập, không dùng phiên Telegram / DB thật: schema v2, WAL / khóa ngoại / quyền
 `0600`, snapshot roundtrip, dedupe / lịch sử điểm, demo tách dữ liệu thật, ID ổn định /
 alias / nâng cấp username web, hồ sơ / nhóm chung / kết quả / link mời, tìm kiếm Unicode
 an toàn với SQL, rollback, import idempotent không chấm lại, từ chối credential / DB lạ /

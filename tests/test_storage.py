@@ -37,7 +37,7 @@ class TestDatabase(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_schema_pragmas_and_permissions(self):
-        self.assertEqual(self.db.conn.execute("PRAGMA user_version").fetchone()[0], 1)
+        self.assertEqual(self.db.conn.execute("PRAGMA user_version").fetchone()[0], storage.SCHEMA_VERSION)
         self.assertEqual(self.db.conn.execute("PRAGMA journal_mode").fetchone()[0], "wal")
         self.assertEqual(self.db.conn.execute("PRAGMA foreign_keys").fetchone()[0], 1)
         self.assertEqual(self.db.conn.execute("PRAGMA busy_timeout").fetchone()[0], 10000)

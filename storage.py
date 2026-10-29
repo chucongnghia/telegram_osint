@@ -15,11 +15,30 @@ from contextlib import closing, contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 APPLICATION_ID = 0x54475343  # TGSC; never mistake a Telethon session for app data
 DEFAULT_DB = Path(__file__).resolve().parent / "data" / "telegram.sqlite3"
 _active_path: str | None = None
 _active_tool = ""
+
+CLASSIFICATION_SCHEMA = """
+CREATE TABLE IF NOT EXISTS message_classifications (
+    id INTEGER PRIMARY KEY,
+    message_row_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,
+    batch_id TEXT NOT NULL, created_at TEXT NOT NULL,
+    provider TEXT NOT NULL, model TEXT NOT NULL, backend_key TEXT NOT NULL,
+    rubric_version TEXT NOT NULL, rubric_json TEXT NOT NULL,
+    input_sha256 TEXT NOT NULL, input_text TEXT NOT NULL,
+    source_json TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('success','error','skipped')),
+    label TEXT, probabilities_json TEXT, response_json TEXT, error_code TEXT,
+    CHECK((status='success' AND label IS NOT NULL) OR
+          (status!='success' AND label IS NULL))
+);
+CREATE INDEX IF NOT EXISTS idx_classifications_cache
+    ON message_classifications(message_row_id,input_sha256,rubric_version,backend_key,status);
+CREATE INDEX IF NOT EXISTS idx_classifications_label ON message_classifications(label);
+"""
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
@@ -91,7 +110,7 @@ CREATE TABLE IF NOT EXISTS invite_links (
 CREATE INDEX IF NOT EXISTS idx_messages_time ON messages(posted_at);
 CREATE INDEX IF NOT EXISTS idx_analyses_score ON analyses(score);
 CREATE INDEX IF NOT EXISTS idx_entities_username ON entities(username COLLATE NOCASE);
-"""
+""" + CLASSIFICATION_SCHEMA
 
 
 def now() -> str:
@@ -150,9 +169,9 @@ class Database:
             self.conn.execute("PRAGMA foreign_keys=ON")
             version = self.conn.execute("PRAGMA user_version").fetchone()[0]
             app_id = self.conn.execute("PRAGMA application_id").fetchone()[0]
-            if version not in (0, SCHEMA_VERSION):
+            if version not in (0, 1, SCHEMA_VERSION):
                 raise ValueError(f"Schema version {version} chưa được hỗ trợ (cần {SCHEMA_VERSION})")
-            if version == SCHEMA_VERSION and app_id != APPLICATION_ID:
+            if version != 0 and app_id != APPLICATION_ID:
                 raise ValueError("Database không thuộc ứng dụng Telegram scanner")
             if version == 0:
                 existing = self.conn.execute(
@@ -162,6 +181,10 @@ class Database:
                     raise ValueError("Không khởi tạo trên database không thuộc ứng dụng (ví dụ session Telethon)")
                 self.conn.executescript("BEGIN;\n" + SCHEMA +
                                         f"\nPRAGMA user_version={SCHEMA_VERSION};\nPRAGMA application_id={APPLICATION_ID};\nCOMMIT;")
+            if version == 1:
+                # Additive migration: no historical runs/scores are rewritten.
+                self.conn.executescript("BEGIN IMMEDIATE;\n" + CLASSIFICATION_SCHEMA +
+                                        f"\nPRAGMA user_version={SCHEMA_VERSION};\nCOMMIT;")
             self.conn.execute("PRAGMA journal_mode=WAL")
             self.conn.execute("PRAGMA synchronous=NORMAL")
         except Exception:
@@ -202,6 +225,10 @@ class Database:
             self.conn.execute("INSERT OR IGNORE INTO run_messages SELECT run_id, ? FROM run_messages WHERE message_id=?",
                               (dest, msg["id"]))
             self.conn.execute("INSERT OR IGNORE INTO analyses SELECT run_id, ?, score, level, category, analyzer_version, analysis_json FROM analyses WHERE message_id=?",
+                              (dest, msg["id"]))
+            # Keep AI judgments linked through identity promotion, with their
+            # immutable original text/source even if the canonical message changed.
+            self.conn.execute("UPDATE message_classifications SET message_row_id=? WHERE message_row_id=?",
                               (dest, msg["id"]))
             self.conn.execute("DELETE FROM messages WHERE id=?", (msg["id"],))
         for table, fields in (
@@ -371,7 +398,7 @@ class Database:
 
     def stats(self) -> dict:
         tables = ("runs", "entities", "messages", "analyses", "profile_snapshots", "common_groups",
-                  "group_summaries", "search_results", "invite_links")
+                  "group_summaries", "search_results", "invite_links", "message_classifications")
         return {t: self.conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in tables}
 
     def runs(self, limit: int = 20) -> list[dict]:

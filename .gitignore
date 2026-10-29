@@ -31,3 +31,6 @@ json_folder/usernames.json
 *.sqlite3-wal
 *.sqlite3-shm
 *.sqlite3-journal
+
+# Jev bridge artifacts contain full message text / judgments
+json_folder/jev_*.json

@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 from analyzer import json_path, resolve_json
-from storage import DEFAULT_DB, Database, add_storage_arguments
+from storage import SCHEMA_VERSION, Database, add_storage_arguments
 
 
 def positive(value: str) -> int:
@@ -53,7 +53,7 @@ def main(argv=None) -> int:
     try:
         with Database(args.db) as db:
             if args.command == "init":
-                print(f"[i] SQLite sẵn sàng: {db.path} (schema v1, SQLite {sqlite3.sqlite_version})")
+                print(f"[i] SQLite sẵn sàng: {db.path} (schema v{SCHEMA_VERSION}, SQLite {sqlite3.sqlite_version})")
             elif args.command == "stats":
                 print(json.dumps(db.stats(), ensure_ascii=False, indent=2))
             elif args.command == "runs":
