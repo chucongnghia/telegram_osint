@@ -140,13 +140,13 @@ class ClassifierTests(unittest.TestCase):
     def test_schema_v1_migration_preserves_payload(self):
         path = Path(self.temp.name) / "v1.sqlite3"
         with closing(sqlite3.connect(path)) as conn:
-            conn.executescript(storage.SCHEMA.replace(storage.CLASSIFICATION_SCHEMA, "") +
+            conn.executescript(storage.SCHEMA.replace(storage.CLASSIFICATION_SCHEMA, "").replace(storage.VIDEO_SCHEMA, "") +
                                f"PRAGMA user_version=1; PRAGMA application_id={storage.APPLICATION_ID};")
             conn.execute("INSERT INTO runs VALUES(1,'test','test','web','test','telegram',NULL,?)",
                          (json.dumps(self.payload),))
             conn.commit()
         with Database(path) as db:
-            self.assertEqual(db.conn.execute("PRAGMA user_version").fetchone()[0], 2)
+            self.assertEqual(db.conn.execute("PRAGMA user_version").fetchone()[0], storage.SCHEMA_VERSION)
             self.assertEqual(db.payload(1), self.payload)
             self.assertEqual(db.stats()["message_classifications"], 0)
             self.assertEqual(db.conn.execute("PRAGMA foreign_key_check").fetchall(), [])

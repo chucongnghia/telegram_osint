@@ -20,6 +20,7 @@ __pycache__/
 
 # Môi trường ảo (không commit)
 .venv-api/
+.venv-video/
 .venv/
 
 # Kết quả thu thập mặc định (nay nằm trong json_folder/)
@@ -39,3 +40,5 @@ json_folder/usernames.json
 
 # Jev bridge artifacts contain full message text / judgments
 json_folder/jev_*.json
+json_folder/video_*.json
+json_folder/video-*.json

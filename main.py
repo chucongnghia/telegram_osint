@@ -22,6 +22,7 @@ COMMANDS = {
     "profile": ("username_info", "Tra hồ sơ theo username"),
     "db": ("database", "Quản lý SQLite và nhập/xuất JSON"),
     "classify": ("classify_messages", "Phân loại văn bản bằng Jev và lưu SQLite"),
+    "video": ("video", "FFmpeg → Whisper/thị giác → Jev → SQLite"),
 }
 LEGACY_ALIASES = {module + ".py": command for command, (module, _) in COMMANDS.items()}
 
@@ -35,7 +36,7 @@ def main(argv=None) -> int:
         description=description, formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="Dùng: python3 main.py COMMAND --help để xem các tuỳ chọn chi tiết.",
     )
-    parser.add_argument("command", metavar="COMMAND", help="web | api | groups | search | profile | db | classify")
+    parser.add_argument("command", metavar="COMMAND", help="web | api | groups | search | profile | db | classify | video")
     parser.add_argument("arguments", nargs=argparse.REMAINDER, help=argparse.SUPPRESS)
     if not argv:
         parser.print_help()

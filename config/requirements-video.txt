@@ -1,0 +1,4 @@
+# Optional CPU-only video transcription. No change to the stdlib-only base CLI.
+faster-whisper==1.2.1
+# PyAV 19 removed metadata_errors used by faster-whisper 1.2.1.
+av==16.0.1

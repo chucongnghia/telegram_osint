@@ -6,11 +6,12 @@ chung một bộ chấm điểm.
 
 > Bắt đầu nhanh tại [README](<../README.md>). Các lệnh dưới đây chạy từ thư mục gốc
 > project, qua [điểm vào chung](<../main.py>): `web`, `api`, `groups`, `search`,
-> `profile`, `db`, `classify`. Dùng [`python3 main.py COMMAND --help`](<../main.py>) để xem cờ.
+> `profile`, `db`, `classify`, `video`. Dùng [`python3 main.py COMMAND --help`](<../main.py>) để xem cờ.
 > Không còn script CLI ở thư mục gốc; mã triển khai nằm trong [gói nguồn](<../src/telegram_demo/>).
 
 ## Mục lục
 
+- [Phân tích video: FFmpeg → Whisper/thị giác → Jev](<VIDEO.md>)
 - [Phân loại văn bản bằng Jev](#bản-đầu-tin-nhắn-văn-bản--jev--sqlite)
 - [SQLite: lưu trữ, truy vấn và sao lưu](#lưu-trữ-sqlite-triển-khai-và-tra-cứu)
 - [Bố cục mã và dữ liệu](#file)
@@ -28,7 +29,8 @@ chung một bộ chấm điểm.
 [`classify_messages.py`](<../src/telegram_demo/cli/classify_messages.py>) phân loại **văn bản đã thu thập trong DB**
 bằng model Jev thật, không phải bộ từ khoá trong analyzer. Bước này chạy **tường minh sau
 thu thập**, không tự gọi dịch vụ có phí khi crawl. Chỉ dùng thư viện chuẩn Python; chưa
-xử lý âm thanh, ảnh hay video và không truy cập link trong tin nhắn.
+xử lý âm thanh, ảnh hay video trong lệnh text này và không truy cập link trong tin nhắn.
+Video cục bộ dùng lệnh `video` riêng; xem [hướng dẫn video](<VIDEO.md>).
 
 ### Năm nhãn
 
@@ -207,7 +209,7 @@ nhờ SHA256, không tạo bản run trùng và **không chấm lại điểm l�
 
 ### Hiểu dữ liệu đã lưu
 
-[`storage.py`](<../src/telegram_demo/storage.py>) quản lý `Database` schema v2; [`database.py`](<../src/telegram_demo/cli/database.py>) là CLI
+[`storage.py`](<../src/telegram_demo/storage.py>) quản lý `Database` schema v3; [`database.py`](<../src/telegram_demo/cli/database.py>) là CLI
 quản trị. Mỗi `run` giữ **snapshot JSON gốc bất biến**. Bảng `messages` là quan sát mới
 nhất, duy nhất theo `(entity_id, message_id)`; trạng thái cũ đầy đủ vẫn lấy được bằng
 `export RUN_ID`. Phân tích được giữ **theo từng run / message**, có nguồn gốc và phiên bản
@@ -240,7 +242,7 @@ Chạy qua dispatcher với tên lệnh ở cột mô tả.
 
 | File | Việc |
 |---|---|
-| [main.py](<../main.py>) | Điểm vào chung: `web`, `api`, `groups`, `search`, `profile`, `db`, `classify`. |
+| [main.py](<../main.py>) | Điểm vào chung: `web`, `api`, `groups`, `search`, `profile`, `db`, `classify`, `video`. |
 | [paths.py](<../src/telegram_demo/paths.py>) | Neo đường dẫn mặc định theo `PROJECT_ROOT`. |
 | [`keyword_usernames.py`](<../src/telegram_demo/cli/keyword_usernames.py>) | `search` — **Chức năng 1, tách riêng**: nhập keyword → in danh sách username liên quan. |
 | [`username_info.py`](<../src/telegram_demo/cli/username_info.py>) | `profile` — **Chức năng 2, tách riêng**: nhập username → in thông tin tài khoản đó. |
@@ -248,7 +250,7 @@ Chạy qua dispatcher với tên lệnh ở cột mô tả.
 | [`demo_telegram.py`](<../src/telegram_demo/cli/demo_telegram.py>) | `web` — Backend **web**: đọc trang công khai `https://t.me/s/<kênh>` (và `https://t.me/<username>` cho `--user`). **Chỉ thư viện chuẩn** — không cần cài gì, không cần API key, không cần đăng nhập. |
 | [`demo_telegram_api.py`](<../src/telegram_demo/cli/demo_telegram_api.py>) | `api` — Backend **Telegram API (Telethon)**: group kín, tìm kiếm toàn cục, tra cứu username/ID, tìm chat theo từ khoá, tải media, OCR, chế độ bot, `--watch`. |
 | [`find_private_groups.py`](<../src/telegram_demo/cli/find_private_groups.py>) | `groups` — Tìm & đọc **group kín** qua link mời, chia 3 bước `--discover` / `--join` / `--crawl`. |
-| [`storage.py`](<../src/telegram_demo/storage.py>) | `Database` schema v2: snapshot run, thực thể / alias, message, phân tích và kết quả tra cứu. |
+| [`storage.py`](<../src/telegram_demo/storage.py>) | `Database` schema v3: snapshot run, thực thể / alias, message, phân tích và kết quả tra cứu. |
 | [`database.py`](<../src/telegram_demo/cli/database.py>) | `db` — CLI SQLite: init, import JSON, thống kê, truy vấn, export run và backup. |
 | [`classify_messages.py`](<../src/telegram_demo/cli/classify_messages.py>) | `classify` — CLI văn bản → Jev → SQLite: run / prepare / apply / results. |
 | [`text_classifier.py`](<../src/telegram_demo/text_classifier.py>) | Rubric có phiên bản, chọn ứng viên/cache, lưu bằng chứng và lịch sử phân loại. |
@@ -522,10 +524,14 @@ python3 -m unittest discover -s tests -v      # không cần mạng, không cầ
 .venv-api/bin/python -m unittest discover -s tests -v
 ```
 
-Sau khi tổ chức lại: **158 test đạt** trong venv API; Python hệ thống thành công với
-1 test cần Telethon được bỏ qua. Trong đó [19 test bố cục](<../tests/test_layout.py>)
-kiểm tra launcher, cả bảy CLI, import động, thư mục làm việc khác, mặc định DB/JSON/ảnh/
+Sau mở rộng video: **243 test thành công** trong venv API; Python hệ thống chạy cùng
+243 test với 1 test cần Telethon được bỏ qua. Trong đó [19 test bố cục](<../tests/test_layout.py>)
+kiểm tra launcher, cả tám CLI, import động, thư mục làm việc khác, mặc định DB/JSON/ảnh/
 phiên đăng nhập và cách giữ nguyên đường dẫn tuỳ chỉnh. Các test không gọi API có phí.
+[85 test video](<../tests/test_video_pipeline.py>) bao gồm FFmpeg/Whisper/vision giả lập,
+HTTP loopback cục bộ, migration v1/v2 → v3, cache/partial/error, evidence và bridge.
+Không tải model trong test suite. Smoke FFmpeg + Whisper + Jev thực tế được ghi riêng
+ở [hướng dẫn video](<VIDEO.md#6-kiểm-chứng-bản-triển-khai>).
 
 Test khoá lại: điểm 17 bài demo khớp [`posts_tg.json`](<../json_folder/posts_tg.json>); công thức group tái tạo đúng 8 nhóm
 demo + nhóm thật 1000 bài; các báo động giả nổi tiếng không còn; tin tức thật chỉ còn
@@ -536,7 +542,7 @@ demo + nhóm thật 1000 bài; các báo động giả nổi tiếng không còn
 đọc lại được.
 
 Các test bổ sung trong [`tests/test_storage.py`](<../tests/test_storage.py>) dùng DB tạm và
-nguồn giả lập, không dùng phiên Telegram / DB thật: schema v2, WAL / khóa ngoại / quyền
+nguồn giả lập, không dùng phiên Telegram / DB thật: schema v3, WAL / khóa ngoại / quyền
 `0600`, snapshot roundtrip, dedupe / lịch sử điểm, demo tách dữ liệu thật, ID ổn định /
 alias / nâng cấp username web, hồ sơ / nhóm chung / kết quả / link mời, tìm kiếm Unicode
 an toàn với SQL, rollback, import idempotent không chấm lại, từ chối credential / DB lạ /
