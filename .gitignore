@@ -1,4 +1,8 @@
 # Phiên đăng nhập Telegram (chứa auth key - KHÔNG commit)
+/sessions/
+*.session
+*.session-wal
+*.session-shm
 tg_session.session
 tg_session.session-journal
 tg_bot_session.session
@@ -12,6 +16,7 @@ media/
 profile_photos/
 
 __pycache__/
+/.cache/
 
 # Môi trường ảo (không commit)
 .venv-api/

@@ -20,7 +20,7 @@ Nguồn dữ liệu (chọn một hoặc nhiều, có thể trộn):
 
 Cách dùng ngắn nhất — quên hết cờ đi, chỉ cần từ khoá; script tự tìm trên Telegram:
 
-    .venv-api/bin/python keyword_usernames.py --keyword "hathanh"
+    .venv-api/bin/python main.py search --keyword "hathanh"
 
         @hathanh123   Hà Thanh
         @hathanhp     thanh Meshchain.Ai
@@ -32,19 +32,19 @@ Cách dùng ngắn nhất — quên hết cờ đi, chỉ cần từ khoá; scri
 Ví dụ
 -----
     # offline, minh hoạ nhanh
-    python3 keyword_usernames.py --keyword "đầu tư" --keyword "hoàn tiền" --demo
+    python3 main.py search --keyword "đầu tư" --keyword "hoàn tiền" --demo
 
     # quét một kênh công khai thật (chỉ thư viện chuẩn)
-    python3 keyword_usernames.py --keyword "telegram" --channel durov --limit 25
+    python3 main.py search --keyword "telegram" --channel durov --limit 25
 
     # tra lại trong dữ liệu đã lưu, chỉ lấy username >= 25 điểm và chỉ khớp trong nội dung bài
-    python3 keyword_usernames.py --keyword "chiến sự" --json nhom1.json --min-score 25 --text-only
+    python3 main.py search --keyword "chiến sự" --json nhom1.json --min-score 25 --text-only
 
     # qua Telegram API: thêm kết quả tìm chat theo từ khoá (cần .venv-api + --login)
-    .venv-api/bin/python keyword_usernames.py --keyword "chiến sự" --api
+    .venv-api/bin/python main.py search --keyword "chiến sự" --api
 
     # lưu kết quả ra file
-    python3 keyword_usernames.py --keyword "đầu tư" --demo --out usernames.json
+    python3 main.py search --keyword "đầu tư" --demo --out usernames.json
 """
 
 from __future__ import annotations
@@ -53,11 +53,11 @@ import argparse
 import json
 import sys
 
-import analyzer
-from analyzer import (NOUN_API, NOUN_WEB, analyze, demo_posts, json_path, json_payload,
+from .. import analyzer
+from ..analyzer import (NOUN_API, NOUN_WEB, analyze, demo_posts, json_path, json_payload,
                       print_username_section, resolve_json, username_payload,
                       write_json)
-from storage import add_storage_arguments, configure_storage, persist_payload
+from ..storage import add_storage_arguments, configure_storage, persist_payload
 
 BACKEND_WEB = "web (t.me/s)"
 BACKEND_JSON = "json"
@@ -81,8 +81,7 @@ def records_from_json(path: str) -> list[dict]:
 
 def records_from_web(channels: list[str], limit: int) -> list[dict]:
     """Quét các kênh công khai qua trang `t.me/s/<kênh>` (chỉ thư viện chuẩn)."""
-    import demo_telegram as web
-
+    from . import demo_telegram as web
     records: list[dict] = []
     for name in channels:
         try:
@@ -100,7 +99,7 @@ def records_from_web(channels: list[str], limit: int) -> list[dict]:
 def _import_api():
     """Nạp `demo_telegram_api` muộn (chỉ khi dùng --api) để bản web vẫn thuần stdlib."""
     try:
-        import demo_telegram_api as api
+        from . import demo_telegram_api as api
     except ImportError as exc:                       # pragma: no cover
         print(f"[!] Không nạp được demo_telegram_api.py: {exc}", file=sys.stderr)
         return None
@@ -168,7 +167,7 @@ def run(args) -> int:
     keywords = args.keyword or []
     channels = list(args.channel or [])
     if args.seed_file:
-        import demo_telegram as web
+        from . import demo_telegram as web
         channels += web.read_seed_file(args.seed_file)
 
     # Không chọn nguồn nào -> mặc định tìm thẳng trên Telegram (API): đây là cách duy
@@ -207,7 +206,7 @@ def run(args) -> int:
 
     if not records and not extra:
         print("[!] Chưa có dữ liệu nào. Chọn nguồn: --demo | --channel K | --seed-file F "
-              "| --json FILE | --api\n    Ví dụ: python3 keyword_usernames.py "
+              "| --json FILE | --api\n    Ví dụ: python3 main.py search "
               "--keyword \"đầu tư\" --demo", file=sys.stderr)
         return 1
 

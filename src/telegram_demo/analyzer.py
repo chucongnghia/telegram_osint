@@ -30,7 +30,7 @@ import unicodedata
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 
-from storage import persist_payload
+from .storage import persist_payload
 
 # ---------------------------------------------------------------------------
 # 1. Bộ từ điển
@@ -1137,11 +1137,11 @@ def print_profile(profile: dict, records: list[dict] | None = None, noun: str = 
 # trong json_folder/. Các script nhận `--out`/`--report`/`--json`/`--in` với TÊN
 # TRẦN thì tự hiểu là file trong json_folder/.
 #
-# (Khối này đặt ở cuối file để không làm dịch số dòng đã ghi trong
-# GIAI_THICH_CODE.md — mọi thứ phía trên giữ nguyên như tài liệu mô tả.)
+# Đường dẫn mặc định được neo vào gốc project, không phải thư mục mã nguồn.
 import os  # noqa: E402
+from .paths import PROJECT_ROOT  # noqa: E402
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+SCRIPT_DIR = str(PROJECT_ROOT)
 JSON_DIR_NAME = "json_folder"
 JSON_DIR = os.path.join(SCRIPT_DIR, JSON_DIR_NAME)
 

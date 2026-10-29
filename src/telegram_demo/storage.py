@@ -15,9 +15,11 @@ from contextlib import closing, contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .paths import DATA_DIR
+
 SCHEMA_VERSION = 2
 APPLICATION_ID = 0x54475343  # TGSC; never mistake a Telethon session for app data
-DEFAULT_DB = Path(__file__).resolve().parent / "data" / "telegram.sqlite3"
+DEFAULT_DB = DATA_DIR / "telegram.sqlite3"
 _active_path: str | None = None
 _active_tool = ""
 

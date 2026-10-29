@@ -6,12 +6,12 @@ Cách hoạt động: đọc trang xem trước công khai `https://t.me/s/<kên
 nên **chỉ dùng thư viện chuẩn của Python** — không cần `pip install`, không cần
 `api_id`/`api_hash`, không cần đăng nhập.
 
-    python3 demo_telegram.py --demo                       # offline, dữ liệu mẫu
-    python3 demo_telegram.py --channel durov --limit 25   # kênh công khai (chạy thật)
-    python3 demo_telegram.py --channel baomoi --channel tintucvtv --limit 20
-    python3 demo_telegram.py --seed-file channels.txt     # mỗi dòng 1 kênh / link t.me
-    python3 demo_telegram.py --user durov --user BotFather  # tra cứu theo username
-    python3 demo_telegram.py --report posts_tg.json       # in lại báo cáo từ JSON đã lưu
+    python3 main.py web --demo                       # offline, dữ liệu mẫu
+    python3 main.py web --channel durov --limit 25   # kênh công khai (chạy thật)
+    python3 main.py web --channel baomoi --channel tintucvtv --limit 20
+    python3 main.py web --seed-file config/channels.txt     # mỗi dòng 1 kênh / link t.me
+    python3 main.py web --user durov --user BotFather  # tra cứu theo username
+    python3 main.py web --report posts_tg.json       # in lại báo cáo từ JSON đã lưu
 
 `--channel` nhận `durov`, `@durov`, `t.me/durov`, `https://t.me/s/durov`.
 Tự phân trang bằng `?before=<message_id>` (mỗi trang ~20 bài) và chống trùng theo
@@ -35,11 +35,12 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from analyzer import (NOUN_WEB, RE_HASHTAG, analyze, demo_posts, json_path, make_profile,
+from ..analyzer import (NOUN_WEB, RE_HASHTAG, analyze, demo_posts, json_path, make_profile,
                       normalize, print_history, print_profile, print_report,
                       print_username_payload, print_username_section, resolve_json,
                       username_payload, write_json)
-from storage import add_storage_arguments, configure_storage
+from ..storage import add_storage_arguments, configure_storage
+from ..paths import PROFILE_PHOTOS_DIR
 
 PREVIEW_URL = "https://t.me/s/{channel}"
 USER_AGENT = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -432,9 +433,9 @@ def _main() -> int:
                    help="số bài tối đa cho MỖI kênh (mặc định 20)")
     p.add_argument("--out", default=json_path("posts_web.json"),
                    help="file JSON kết quả (tên trần ⇒ nằm trong json_folder/)")
-    p.add_argument("--photo-dir", default="profile_photos", metavar="DIR",
+    p.add_argument("--photo-dir", default=str(PROFILE_PHOTOS_DIR), metavar="DIR",
                    help="thư mục lưu ảnh đại diện tải về khi tra --user (mặc định "
-                        "profile_photos; dùng --no-photo để không tải)")
+                        "media/profile_photos; dùng --no-photo để không tải)")
     p.add_argument("--no-photo", action="store_true", help="không tải ảnh đại diện")
     p.add_argument("--no-report", action="store_true",
                    help="chỉ IN DANH SÁCH bài đã lấy, không in báo cáo thống kê")

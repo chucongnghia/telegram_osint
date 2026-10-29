@@ -23,12 +23,12 @@ Hai chế độ:
 
 Ví dụ
 -----
-    python3 username_info.py durov
-    python3 username_info.py durov @BotFather pythonchat vitalikbuterin
-    python3 username_info.py durov --limit 25 --out profile.json     # kèm thống kê bài đăng
-    .venv-api/bin/python username_info.py durov --api                # thêm ID/điện thoại/nhóm chung
-    .venv-api/bin/python username_info.py hathanh --api --photo-dir anh  # tải ảnh đại diện
-    python3 username_info.py --from-json usernames.json              # lấy username từ chức năng 1
+    python3 main.py profile durov
+    python3 main.py profile durov @BotFather pythonchat vitalikbuterin
+    python3 main.py profile durov --limit 25 --out profile.json     # kèm thống kê bài đăng
+    .venv-api/bin/python main.py profile durov --api                # thêm ID/điện thoại/nhóm chung
+    .venv-api/bin/python main.py profile hathanh --api --photo-dir anh  # tải ảnh đại diện
+    python3 main.py profile --from-json usernames.json              # lấy username từ chức năng 1
 """
 
 from __future__ import annotations
@@ -37,9 +37,10 @@ import argparse
 import json
 import sys
 
-from analyzer import (NOUN_API, NOUN_WEB, analyze, json_path, json_payload, print_profile,
+from ..analyzer import (NOUN_API, NOUN_WEB, analyze, json_path, json_payload, print_profile,
                       resolve_json, write_json)
-from storage import add_storage_arguments, configure_storage, persist_payload
+from ..storage import add_storage_arguments, configure_storage, persist_payload
+from ..paths import PROFILE_PHOTOS_DIR
 
 
 # ---------------------------------------------------------------------------
@@ -67,8 +68,7 @@ def usernames_from_json(path: str) -> list[str]:
 def lookup_web(name: str, limit: int, photo_dir: str = "", save_photo: bool = True
                ) -> tuple[dict, list[dict]]:
     """Tra một username qua trang công khai; kênh thì lấy thêm bài gần đây."""
-    import demo_telegram as web
-
+    from . import demo_telegram as web
     profile = web.lookup_user(name, photo_dir=photo_dir, save=save_photo)
     records: list[dict] = []
     if limit > 0 and profile.get("kind") == "channel" and profile.get("exists"):
@@ -88,7 +88,7 @@ def lookup_web(name: str, limit: int, photo_dir: str = "", save_photo: bool = Tr
 async def _lookup_api(names: list[str], args) -> tuple[list[dict], list[dict], int]:
     """Tra lần lượt qua API. Trả `(profiles, records, exit_code)`."""
     try:
-        import demo_telegram_api as api
+        from . import demo_telegram_api as api
     except ImportError as exc:                       # pragma: no cover
         print(f"[!] Không nạp được demo_telegram_api.py: {exc}", file=sys.stderr)
         return [], [], 111
@@ -150,8 +150,8 @@ def run(args) -> int:
 
     if not names:
         print("[!] Chưa nhập username nào.\n"
-              "    Ví dụ: python3 username_info.py durov @BotFather\n"
-              "           python3 username_info.py --from-json usernames.json",
+              "    Ví dụ: python3 main.py profile durov @BotFather\n"
+              "           python3 main.py profile --from-json usernames.json",
               file=sys.stderr)
         return 1
 
@@ -214,8 +214,8 @@ def main() -> int:
     p.add_argument("--api", action="store_true",
                    help="dùng Telegram API (Telethon): có ID/verified, số điện thoại, "
                         "trạng thái, nhóm chung, tra được group kín")
-    p.add_argument("--photo-dir", default="profile_photos", metavar="DIR",
-                   help="thư mục lưu ảnh đại diện tải về (mặc định profile_photos; "
+    p.add_argument("--photo-dir", default=str(PROFILE_PHOTOS_DIR), metavar="DIR",
+                   help="thư mục lưu ảnh đại diện tải về (mặc định media/profile_photos; "
                         "dùng --no-photo để không tải)")
     p.add_argument("--no-photo", action="store_true", help="không tải ảnh đại diện")
     p.add_argument("--common-limit", type=int, default=20, metavar="N",

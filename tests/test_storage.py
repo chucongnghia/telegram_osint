@@ -14,11 +14,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
 
-import storage
-from storage import Database
+from telegram_demo import storage
+from telegram_demo.storage import Database
 
 
 def post(channel="test_channel", mid="1", **fields):
@@ -148,7 +149,7 @@ class TestDatabase(unittest.TestCase):
         self.assertEqual(self.db.profiles("person")[0]["phone"], "test-only")
 
     def test_common_groups_keep_typed_peer_ids(self):
-        import demo_telegram_api as api
+        from telegram_demo.cli import demo_telegram_api as api
         basic = type("Chat", (), {"id": 50, "title": "Basic group"})()
         supergroup = type("Channel", (), {"id": 50, "title": "Supergroup", "broadcast": False})()
         profile = {"username": "person", "account_id": 12, "kind": "user",
@@ -251,7 +252,10 @@ class TestSQLiteCLI(unittest.TestCase):
         self.tmp.cleanup()
 
     def cli(self, script, *args):
-        return subprocess.run([sys.executable, str(ROOT / script), *map(str, args)],
+        commands = {"database.py": "db", "demo_telegram.py": "web",
+                    "demo_telegram_api.py": "api", "keyword_usernames.py": "search"}
+        return subprocess.run([sys.executable, str(ROOT / "main.py"), commands[script],
+                               *map(str, args)],
                               cwd=ROOT, env=self.env, capture_output=True, text=True, timeout=30)
 
     def test_init_import_query_export_and_backup(self):
@@ -288,7 +292,7 @@ class TestSQLiteCLI(unittest.TestCase):
 
     def test_profile_tool_saves_without_out_offline_mock(self):
         import argparse
-        import username_info
+        from telegram_demo.cli import username_info
         profile = {"username": "a_user", "kind": "user", "exists": True, "source": "test"}
         args = argparse.Namespace(usernames=["a_user"], user=None, from_json=None, api=False,
                                   no_photo=True, photo_dir="", limit=0, common_limit=0, out=None)
@@ -318,7 +322,7 @@ class TestSQLiteCLI(unittest.TestCase):
         import contextlib
         import io
         from unittest.mock import AsyncMock
-        import demo_telegram_api as api
+        from telegram_demo.cli import demo_telegram_api as api
 
         output = Path(self.tmp.name) / "typed-peers.json"
         chat_post = post("42", chat_id=42, peer_type="chat", entity_kind="group",

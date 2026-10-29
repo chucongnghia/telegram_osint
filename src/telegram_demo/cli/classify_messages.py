@@ -11,9 +11,9 @@ import sys
 import uuid
 from pathlib import Path
 
-from analyzer import json_path, resolve_json
-from storage import DEFAULT_DB, Database
-from text_classifier import (ClassifierStore, LABELS, MAX_TEXT_CHARS, QUESTIONS,
+from ..analyzer import json_path, resolve_json
+from ..storage import DEFAULT_DB, Database
+from ..text_classifier import (ClassifierStore, LABELS, MAX_TEXT_CHARS, QUESTIONS,
                              RESULT_FORMAT, RUBRIC_VERSION, new_manifest, tool_backend,
                              validate_manifest)
 
@@ -57,7 +57,7 @@ def options(args):
 
 
 def run_api(store, args):
-    from jev_client import JevClient, JevError
+    from ..jev_client import JevClient, JevError
     try:
         client = JevClient(model=args.model, timeout=args.timeout)
     except JevError as exc:

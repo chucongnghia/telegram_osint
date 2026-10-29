@@ -8,8 +8,9 @@ import sqlite3
 import sys
 from pathlib import Path
 
-from analyzer import json_path, resolve_json
-from storage import SCHEMA_VERSION, Database, add_storage_arguments
+from ..analyzer import json_path, resolve_json
+from ..paths import JSON_DIR
+from ..storage import SCHEMA_VERSION, Database, add_storage_arguments
 
 
 def positive(value: str) -> int:
@@ -48,7 +49,7 @@ def main(argv=None) -> int:
     if args.no_db:
         parser.error("database.py quản lý SQLite nên không nhận --no-db")
     if args.command not in ("init", "import-json") and not Path(args.db).expanduser().is_file():
-        print("[!] Database chưa tồn tại. Chạy: python3 database.py init", file=sys.stderr)
+        print("[!] Database chưa tồn tại. Chạy: python3 main.py db init", file=sys.stderr)
         return 2
     try:
         with Database(args.db) as db:
@@ -81,7 +82,7 @@ def main(argv=None) -> int:
             elif args.command == "import-json":
                 files = [Path(resolve_json(f)) for f in args.files]
                 if args.all:
-                    files += sorted((Path(__file__).resolve().parent / "json_folder").glob("*.json"))
+                    files += sorted(JSON_DIR.glob("*.json"))
                 if not files:
                     parser.error("import-json cần FILE hoặc --all")
                 errors = 0

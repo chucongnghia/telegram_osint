@@ -10,26 +10,26 @@ Chuẩn bị (một lần)
 1. Vào https://my.telegram.org → API development tools → lấy `api_id` và `api_hash`.
 2. Cài thư viện và đăng nhập:
        pip install telethon
-       python3 demo_telegram_api.py --login
+       python3 main.py api --login
    (nhập số điện thoại + mã OTP Telegram gửi về app; phiên được lưu vào tg_session.session)
 
 Cách dùng
 ---------
-    python3 demo_telegram_api.py --demo                      # offline, không cần credential
-    python3 demo_telegram_api.py --channel durov --limit 30  # kênh công khai, qua API
-    python3 demo_telegram_api.py --channel @tennhom --limit 100   # group kín (bạn đã tham gia)
-    python3 demo_telegram_api.py --user durov --user @tennhom      # tra cứu username/ID
-    python3 demo_telegram_api.py --search "đầu tư lợi nhuận" --limit 50
-    python3 demo_telegram_api.py --channel kenh --media-dir media --ocr
-    python3 demo_telegram_api.py --report posts_api.json
-    python3 demo_telegram_api.py --login --session tk-phu    # phiên riêng: tg_session_tk-phu.session
+    python3 main.py api --demo                      # offline, không cần credential
+    python3 main.py api --channel durov --limit 30  # kênh công khai, qua API
+    python3 main.py api --channel @tennhom --limit 100   # group kín (bạn đã tham gia)
+    python3 main.py api --user durov --user @tennhom      # tra cứu username/ID
+    python3 main.py api --search "đầu tư lợi nhuận" --limit 50
+    python3 main.py api --channel kenh --media-dir media --ocr
+    python3 main.py api --report posts_api.json
+    python3 main.py api --login --session tk-phu    # phiên riêng: tg_session_tk-phu.session
 
 Chế độ BOT (không cần số điện thoại, chỉ cần token từ @BotFather)
 -----------------------------------------------------------------
-    python3 demo_telegram_api.py --setup-bot <token>          # kiểm tra token + liệt kê group bot đang ở
-    python3 demo_telegram_api.py --login-bot --bot-token <token>
-    python3 demo_telegram_api.py --bot-token <token> --watch @tennhom --watch-once
-    python3 demo_telegram_api.py --bot-token <token> --watch @tennhom --interval 30 --cycles 10
+    python3 main.py api --setup-bot <token>          # kiểm tra token + liệt kê group bot đang ở
+    python3 main.py api --login-bot --bot-token <token>
+    python3 main.py api --bot-token <token> --watch @tennhom --watch-once
+    python3 main.py api --bot-token <token> --watch @tennhom --interval 30 --cycles 10
 
 Bot **chỉ nhận tin nhắn mới** kể từ khi được thêm vào nhóm, **không đọc được lịch sử
 cũ** và **không dùng được tìm kiếm toàn cục** (`--search`) — script sẽ tự cảnh báo.
@@ -46,13 +46,13 @@ from collections import Counter
 from datetime import datetime, timezone
 
 # Bộ từ điển + chấm điểm dùng chung cho cả hai backend (chi tiết: analyzer.py)
-from analyzer import (NOUN_API, NOUN_WEB, RE_HASHTAG, USERNAME_RE, analyze,
+from ..analyzer import (NOUN_API, NOUN_WEB, RE_HASHTAG, USERNAME_RE, analyze,
                       group_summary, json_path, make_profile, normalize,
                       print_group_section, print_history, print_profile, print_report,
                       print_username_payload, print_username_section, resolve_json,
                       username_payload, write_json)
-from analyzer import demo_posts as demo_posts_shared
-from storage import add_storage_arguments, configure_storage
+from ..analyzer import demo_posts as demo_posts_shared
+from ..storage import add_storage_arguments, configure_storage
 
 # ---------------------------------------------------------------------------
 # 0. Import Telethon (báo lỗi rõ ràng nếu chưa cài)
@@ -69,14 +69,16 @@ except ImportError:                                        # pragma: no cover
     def _missing():
         print("[!] Chưa cài Telethon. Cài bằng:\n"
               "      pip install telethon\n"
-              "    Hoặc chạy bản không cần API: python3 demo_telegram.py --demo",
+              "    Hoặc chạy bản không cần API: python3 main.py web --demo",
               file=sys.stderr)
         return 111
 else:
     def _missing():
         return None
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+from ..paths import PROFILE_PHOTOS_DIR, SESSIONS_DIR
+
+SESSION_DIR = str(SESSIONS_DIR)
 DEFAULT_SESSION = "tg_session"          # phiên tài khoản người dùng
 BOT_SESSION_PREFIX = "tg_bot"           # phiên bot
 API_CONFIG_PATH = json_path("tg_api.json")   # json_folder/tg_api.json
@@ -96,12 +98,12 @@ def session_path(name: str = "", bot: bool = False) -> str:
     if name and (os.sep in name or "/" in name):
         return name
     if not name:
-        return os.path.join(SCRIPT_DIR, "tg_bot_session" if bot else DEFAULT_SESSION)
+        return os.path.join(SESSION_DIR, "tg_bot_session" if bot else DEFAULT_SESSION)
     full_default = "tg_bot_session" if bot else DEFAULT_SESSION
     if name in (full_default, BOT_SESSION_PREFIX) or name.startswith(f"{BOT_SESSION_PREFIX}_") \
             or name.startswith(f"{DEFAULT_SESSION}_"):
-        return os.path.join(SCRIPT_DIR, name)
-    return os.path.join(SCRIPT_DIR, f"{BOT_SESSION_PREFIX if bot else DEFAULT_SESSION}_{name}")
+        return os.path.join(SESSION_DIR, name)
+    return os.path.join(SESSION_DIR, f"{BOT_SESSION_PREFIX if bot else DEFAULT_SESSION}_{name}")
 
 
 def session_kind(path: str) -> str:
@@ -120,7 +122,7 @@ def session_kind(path: str) -> str:
 #   * analyze(post, ocr_text="")                         — điểm 0-100 cho 1 bài
 #   * group_summary(records, noun=...)                   — điểm rủi ro theo group
 #   * print_group_section(groups, noun=...)              — in mục [5] của báo cáo
-# Giải thích chi tiết: xem GIAI_THICH_CODE.md.
+# Giải thích chi tiết: xem docs/USAGE.md.
 
 
 # ---------------------------------------------------------------------------
@@ -229,12 +231,12 @@ def credentials_help() -> str:
         "  1. Mở https://my.telegram.org  → đăng nhập bằng số điện thoại Telegram\n"
         "  2. Vào 'API development tools' → tạo app → copy api_id và api_hash\n"
         "  3. Truyền vào chương trình theo một trong ba cách:\n"
-        "       python3 demo_telegram_api.py --login --api-id 123456 --api-hash abcdef...\n"
+        "       python3 main.py api --login --api-id 123456 --api-hash abcdef...\n"
         "       export TG_API_ID=123456 TG_API_HASH=abcdef...\n"
         "       hoặc tạo file tg_api.json: {\"api_id\": 123456, \"api_hash\": \"abcdef...\"}\n"
         "  Lần đầu chạy sẽ hỏi số điện thoại + mã OTP; phiên được lưu vào tg_session.session.\n"
         "  Không có số điện thoại? Dùng bot: --setup-bot <token> (token từ @BotFather).\n"
-        "  Không muốn dùng API? Chạy bản web: python3 demo_telegram.py --channel <kênh>"
+        "  Không muốn dùng API? Chạy bản web: python3 main.py web --channel <kênh>"
     )
 
 
@@ -246,6 +248,8 @@ async def open_client(api_id: int, api_hash: str, interactive: bool = True,
         # Tái sử dụng phiên cũ: nói rõ loại phiên để tránh nhầm bot/người dùng.
         print(f"[i] Dùng lại phiên {os.path.basename(path)}.session "
               f"(loại: {session_kind(path)})")
+    if os.path.abspath(os.path.dirname(path)) == SESSION_DIR:
+        SESSIONS_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
     client = TelegramClient(path, api_id, api_hash)
     try:
         await client.connect()
@@ -255,7 +259,7 @@ async def open_client(api_id: int, api_hash: str, interactive: bool = True,
         if not interactive:
             await client.disconnect()
             return None, ("Phiên chưa đăng nhập. Chạy trước:  "
-                          "python3 demo_telegram_api.py --login")
+                          "python3 main.py api --login")
         try:
             print("[i] Chưa đăng nhập — bắt đầu đăng nhập (một lần)...")
             await client.start()
@@ -270,6 +274,8 @@ async def open_bot_client(api_id: int, api_hash: str, token: str, session: str =
     path = session_path(session, bot=True)
     if os.path.exists(path + ".session"):
         print(f"[i] Dùng lại phiên bot {os.path.basename(path)}.session")
+    if os.path.abspath(os.path.dirname(path)) == SESSION_DIR:
+        SESSIONS_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
     client = TelegramClient(path, api_id, api_hash)
     try:
         await client.start(bot_token=token)
@@ -934,7 +940,7 @@ async def run_async(args) -> int:
         try:
             profile, found = await lookup_entity(
                 client, target, args.limit,
-                photo_dir="" if getattr(args, "no_photo", False) else getattr(args, "photo_dir", "profile_photos"),
+                photo_dir="" if getattr(args, "no_photo", False) else getattr(args, "photo_dir", str(PROFILE_PHOTOS_DIR)),
                 common_limit=getattr(args, "common_limit", 20))
         except RuntimeError as exc:
             print(f"    ! {exc}")
@@ -1061,9 +1067,9 @@ def _main() -> int:
     p.add_argument("--limit", type=int, default=30, help="số bài tối đa mỗi nguồn (mặc định 30)")
     p.add_argument("--out", default=json_path("posts_api.json"),
                    help="file JSON kết quả (tên trần ⇒ nằm trong json_folder/)")
-    p.add_argument("--photo-dir", default="profile_photos", metavar="DIR",
+    p.add_argument("--photo-dir", default=str(PROFILE_PHOTOS_DIR), metavar="DIR",
                    help="thư mục lưu ảnh đại diện tải về khi tra --user (mặc định "
-                        "profile_photos; dùng --no-photo để không tải)")
+                        "media/profile_photos; dùng --no-photo để không tải)")
     p.add_argument("--no-photo", action="store_true", help="không tải ảnh đại diện")
     p.add_argument("--common-limit", type=int, default=20, metavar="N",
                    help="số nhóm/kênh dùng chung tối đa liệt kê khi tra --user (0 = bỏ qua)")

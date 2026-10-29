@@ -20,23 +20,23 @@ Script làm đúng chuỗi đó, chia 3 bước tách rời để bạn kiểm s
 Cách dùng
 ---------
     # B1: tìm link mời từ một kênh công khai (không join gì cả, an toàn)
-    python3 find_private_groups.py --discover --channel @kenh_cong_khai --limit 500 \
+    python3 main.py groups --discover --channel @kenh_cong_khai --limit 500 \
         --out found.json
 
     # B1 (thêm): tìm link mời từ kết quả tìm kiếm toàn cục
-    python3 find_private_groups.py --discover --search "đầu tư lợi nhuận" --out found.json
+    python3 main.py groups --discover --search "đầu tư lợi nhuận" --out found.json
 
     # B1b: thử cả trong các nhóm bạn đã tham gia (tìm link mời được share nội bộ)
-    python3 find_private_groups.py --discover --in-my-chats --out found.json
+    python3 main.py groups --discover --in-my-chats --out found.json
 
     # B2: join (mặc định CHỈ thử 5 link, nghỉ 20s giữa các lần)
-    python3 find_private_groups.py --join --in found.json --max-join 5 --delay 20
+    python3 main.py groups --join --in found.json --max-join 5 --delay 20
 
     # B3: đọc lịch sử các group đã join
-    python3 find_private_groups.py --crawl --in found.json --limit 1000 --out groups.json
+    python3 main.py groups --crawl --in found.json --limit 1000 --out groups.json
 
     # Hoặc làm cả 3 bước một lượt (vẫn cần bạn xác nhận trước khi join)
-    python3 find_private_groups.py --discover --channel @kenh --join --crawl --limit 300
+    python3 main.py groups --discover --channel @kenh --join --crawl --limit 300
 
 CẢNH BÁO
 --------
@@ -68,13 +68,15 @@ except ImportError:                                   # pragma: no cover
     class FloodWaitError(Exception):
         seconds = 0
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_SESSION = os.path.join(SCRIPT_DIR, "tg_session")
+from ..paths import SESSIONS_DIR
+from .demo_telegram_api import session_path as _shared_session_path
+
+DEFAULT_SESSION = str(SESSIONS_DIR / "tg_session")
 
 # Dùng chung quy ước đường dẫn JSON với các script khác: mọi file .json nằm trong
 # json_folder/. analyzer.py thuần stdlib nên import được cả khi máy thiếu Telethon.
-from analyzer import NOUN_API, analyze, json_path, json_payload, resolve_json  # noqa: E402
-from storage import add_storage_arguments, configure_storage, persist_payload  # noqa: E402
+from ..analyzer import NOUN_API, analyze, json_path, json_payload, resolve_json  # noqa: E402
+from ..storage import add_storage_arguments, configure_storage, persist_payload  # noqa: E402
 
 # Link mời nhóm kín: t.me/+hash (mới) và t.me/joinchat/hash (cũ)
 RE_INVITE = re.compile(r"(?:https?://)?t\.me/(?:\+[\w-]{8,}|joinchat/[\w-]{8,})", re.I)
@@ -116,12 +118,13 @@ def load_credentials(args) -> tuple[int, str]:
 
 
 def session_path(name: str) -> str:
-    if not name:
-        return DEFAULT_SESSION
-    return os.path.join(SCRIPT_DIR, f"tg_session_{re.sub(r'[^\w.-]', '_', name)}")
+    """Reuse the API CLI's naming rules and shared sessions/ directory."""
+    return _shared_session_path(name)
 
 
 async def open_client(api_id: int, api_hash: str, session: str):
+    if os.path.abspath(os.path.dirname(session)) == str(SESSIONS_DIR):
+        SESSIONS_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
     client = TelegramClient(session, api_id, api_hash)
     await client.connect()
     if not await client.is_user_authorized():
@@ -408,7 +411,7 @@ async def run(args) -> int:
     if err:
         await client.disconnect()
         print("[!] Phiên chưa đăng nhập. Chạy trước:\n"
-              f"      python3 demo_telegram_api.py --login --session {args.session or 'tg_session'}\n"
+              f"      python3 main.py api --login --session {args.session or 'tg_session'}\n"
               "    (hoặc bỏ --session để dùng phiên mặc định tg_session.session)", file=sys.stderr)
         return 2
 

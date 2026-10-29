@@ -9,7 +9,7 @@ import hashlib
 import json
 import uuid
 
-from storage import Database, dumps, now, search_text
+from .storage import Database, dumps, now, search_text
 
 LABELS = {
     "scam_indicators": "Có dấu hiệu lừa đảo",

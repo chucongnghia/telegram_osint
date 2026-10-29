@@ -18,11 +18,12 @@ import urllib.response
 from email.message import Message
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
 
-import jev_client
-from jev_client import JevClient, JevError
+from telegram_demo import jev_client
+from telegram_demo.jev_client import JevClient, JevError
 
 
 QUESTIONS = {
@@ -61,7 +62,7 @@ class TestJevClient(unittest.TestCase):
         self.env.start()
         self.addCleanup(self.env.stop)
         self.opener = Mock()
-        self.build = patch("jev_client.urllib.request.build_opener", return_value=self.opener)
+        self.build = patch("telegram_demo.jev_client.urllib.request.build_opener", return_value=self.opener)
         self.build_mock = self.build.start()
         self.addCleanup(self.build.stop)
         self.client = JevClient(api_key="test-key")
@@ -106,7 +107,7 @@ class TestJevClient(unittest.TestCase):
 
     def test_raw_decoded_dict_identity_is_preserved(self):
         expected = valid_response()
-        with patch("jev_client.json.loads", return_value=expected):
+        with patch("telegram_demo.jev_client.json.loads", return_value=expected):
             self.assertIs(self.client.ask({}, QUESTIONS), expected)
 
     def test_no_credentials_needed_for_construction(self):
@@ -396,7 +397,7 @@ class TestJevClient(unittest.TestCase):
         for status in (301, 302, 303, 307, 308):
             calls.clear()
             with self.subTest(status=status), patch(
-                "jev_client.urllib.request.build_opener",
+                "telegram_demo.jev_client.urllib.request.build_opener",
                 side_effect=lambda handler: original_build(handler, FakeTransport()),
             ):
                 client = JevClient("test-key", "http://127.0.0.1:12345/api")

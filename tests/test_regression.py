@@ -33,12 +33,13 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
 
-import analyzer  # noqa: E402
-import demo_telegram as web  # noqa: E402
-from analyzer import (SCAM_GROUPS, analyze, demo_posts, group_summary,  # noqa: E402
+from telegram_demo import analyzer  # noqa: E402
+from telegram_demo.cli import demo_telegram as web  # noqa: E402
+from telegram_demo.analyzer import (SCAM_GROUPS, analyze, demo_posts, group_summary,  # noqa: E402
                       level_of, no_accent, normalize)
 
 JSON_DIR = ROOT / "json_folder"          # mọi file .json nằm trong đây
@@ -382,7 +383,7 @@ class TestUsernameFeatures(unittest.TestCase):
         self.assertEqual(empty["invite_links"], [])
 
     def test_cli_exposes_user_and_keyword(self):
-        res = subprocess.run([sys.executable, str(ROOT / "demo_telegram.py"), "--help"],
+        res = subprocess.run([sys.executable, str(ROOT / "main.py"), "web", "--help"],
                              capture_output=True, text=True)
         self.assertEqual(res.returncode, 0)
         self.assertIn("--user", res.stdout)
@@ -392,7 +393,7 @@ class TestUsernameFeatures(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "kw.json"
             first = subprocess.run(
-                [sys.executable, str(ROOT / "demo_telegram.py"), "--demo", "--limit", "17",
+                [sys.executable, str(ROOT / "main.py"), "web", "--demo", "--limit", "17",
                  "--keyword", "hoàn tiền", "--out", str(out), "--no-report"],
                 capture_output=True, text=True)
             self.assertEqual(first.returncode, 0)
@@ -400,7 +401,7 @@ class TestUsernameFeatures(unittest.TestCase):
             self.assertEqual(payload["keywords"], ["hoàn tiền"])
             self.assertIn("vieclam.ctv.hoantien", [r["username"] for r in payload["usernames"]])
             second = subprocess.run(
-                [sys.executable, str(ROOT / "demo_telegram.py"), "--report", str(out)],
+                [sys.executable, str(ROOT / "main.py"), "web", "--report", str(out)],
                 capture_output=True, text=True)
             self.assertEqual(second.returncode, 0)
             self.assertIn("[6] USERNAME LIÊN QUAN", second.stdout)
@@ -435,7 +436,7 @@ class TestBackendsEndToEnd(unittest.TestCase):
             self.assertIn("analysis", post)
 
     def test_api_backend_demo(self):
-        import demo_telegram_api as api
+        from telegram_demo.cli import demo_telegram_api as api
         payload = self._run_demo(api, ["--demo", "--limit", "17"])
         self.assertEqual(payload["total"], 17)
         self.assertEqual(payload["backend"], "demo (offline)")
@@ -453,7 +454,7 @@ class TestBackendsEndToEnd(unittest.TestCase):
                       [row["username"] for row in payload["usernames"]])
 
     def test_api_demo_keyword_end_to_end(self):
-        import demo_telegram_api as api
+        from telegram_demo.cli import demo_telegram_api as api
         payload = self._run_demo(api, ["--demo", "--limit", "17", "--keyword", "đầu tư"])
         self.assertEqual(payload["keywords"], ["đầu tư"])
         self.assertIn("dautu.sieuloinhuan",
@@ -480,7 +481,8 @@ class TestSplitTools(unittest.TestCase):
 
     @staticmethod
     def _run(script: str, argv: list[str]) -> subprocess.CompletedProcess:
-        return subprocess.run([sys.executable, str(ROOT / script)] + argv,
+        commands = {"keyword_usernames.py": "search", "username_info.py": "profile"}
+        return subprocess.run([sys.executable, str(ROOT / "main.py"), commands[script]] + argv,
                               capture_output=True, text=True, cwd=str(ROOT))
 
     def test_keyword_tool_demo_end_to_end(self):
@@ -537,7 +539,7 @@ class TestSplitTools(unittest.TestCase):
         self.assertEqual([row["username"] for row in rows], ["kenh_test"])
 
     def test_keyword_tool_filter_rows(self):
-        import keyword_usernames as kw
+        from telegram_demo.cli import keyword_usernames as kw
 
         rows = [{"username": "a", "max_score": 71}, {"username": "b", "max_score": 30},
                 {"username": "c", "max_score": 10}]
@@ -546,7 +548,7 @@ class TestSplitTools(unittest.TestCase):
         self.assertEqual(kw.filter_rows(rows, 99, 0), [])
 
     def test_username_info_reads_json_and_help(self):
-        import username_info as info
+        from telegram_demo.cli import username_info as info
 
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "u.json"
@@ -595,7 +597,7 @@ class TestSplitTools(unittest.TestCase):
         """`contacts.Search` trả người dùng trong `.users` — trước đây bị bỏ sót."""
         import asyncio
         from types import SimpleNamespace
-        import demo_telegram_api as api
+        from telegram_demo.cli import demo_telegram_api as api
         if getattr(api, "functions", None) is None:     # system Python không có Telethon
             self.skipTest("chưa cài Telethon")
 
@@ -703,7 +705,7 @@ class TestProfileDetails(unittest.TestCase):
     def test_api_profile_helpers(self):
         """Các helper đọc dữ liệu thô của Telethon (không cần kết nối)."""
         from types import SimpleNamespace
-        import demo_telegram_api as api
+        from telegram_demo.cli import demo_telegram_api as api
 
         class UserStatusOffline:
             was_online = __import__("datetime").datetime(2026, 3, 13, 14, 7)
@@ -727,8 +729,8 @@ class TestProfileDetails(unittest.TestCase):
     def test_session_path_khong_ghep_tien_to_hai_lan(self):
         """--session tg_session / tg_session_tk-phu phải dùng đúng tên đầy đủ."""
         import os
-        import demo_telegram_api as api
-        base = os.path.dirname(os.path.abspath(api.__file__))
+        from telegram_demo.cli import demo_telegram_api as api
+        base = str(ROOT / "sessions")
         self.assertEqual(api.session_path(""), os.path.join(base, "tg_session"))
         self.assertEqual(api.session_path("tk-phu"), os.path.join(base, "tg_session_tk-phu"))
         # Tên đầy đủ: KHÔNG được ghép thành tg_session_tg_session...

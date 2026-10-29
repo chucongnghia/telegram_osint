@@ -15,13 +15,14 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
 
-import storage
-import classify_messages as cli
-from storage import Database
-from text_classifier import (ClassifierStore, LABELS, MAX_TEXT_CHARS, QUESTIONS,
+from telegram_demo import storage
+from telegram_demo.cli import classify_messages as cli
+from telegram_demo.storage import Database
+from telegram_demo.text_classifier import (ClassifierStore, LABELS, MAX_TEXT_CHARS, QUESTIONS,
                              RESULT_FORMAT, RUBRIC_VERSION, new_manifest, tool_backend,
                              validate_manifest)
 
@@ -262,7 +263,7 @@ class ClassifierTests(unittest.TestCase):
         self.assertEqual(json.loads(out)[0]["label"], "scam_indicators")
 
     def test_direct_api_success_and_resume(self):
-        from jev_client import JevClient
+        from telegram_demo.jev_client import JevClient
         response = {"model": "jev-1.14.0", "answers": {"classification": {
             "type": "choice", "choice": "scam_indicators", "confidence": 0.9,
             "probabilities": {key: (0.9 if key == "scam_indicators" else 0.025) for key in LABELS}}},
@@ -277,7 +278,7 @@ class ClassifierTests(unittest.TestCase):
         self.assertEqual(row["response"]["requested_model"], "jev-latest")
 
     def test_direct_api_failure_stored_no_fallback_and_retry_possible(self):
-        from jev_client import JevClient, JevError
+        from telegram_demo.jev_client import JevClient, JevError
         with patch.object(JevClient, "ask", side_effect=JevError("auth", "redacted")):
             code, _, err = self.call("run")
         self.assertEqual(code, 1)
@@ -288,7 +289,7 @@ class ClassifierTests(unittest.TestCase):
         self.assertEqual(len(self.store.candidates(backend_key=JevClient().backend_key)), 1)
 
     def test_dry_run_no_network_no_inference_records(self):
-        from jev_client import JevClient
+        from telegram_demo.jev_client import JevClient
         with patch.object(JevClient, "ask", side_effect=AssertionError("must not call")):
             code, out, err = self.call("run", "--dry-run")
         self.assertEqual((code, err), (0, ""))
@@ -296,7 +297,7 @@ class ClassifierTests(unittest.TestCase):
         self.assertEqual(self.db.stats()["message_classifications"], 0)
 
     def test_long_text_run_advances_past_terminal_skip(self):
-        from jev_client import JevClient
+        from telegram_demo.jev_client import JevClient
         self.db.save_payload({"posts": [post(2, "a" * (MAX_TEXT_CHARS + 1))]})
         response = {"model": "jev-1.14.0", "answers": {"classification": {
             "type": "choice", "choice": "other", "confidence": 1.0,
@@ -340,7 +341,7 @@ class ClassifierTests(unittest.TestCase):
             self.assertFalse(target.exists())
 
     def test_long_text_skipped_not_truncated_or_sent(self):
-        from jev_client import JevClient
+        from telegram_demo.jev_client import JevClient
         self.db.save_payload({"posts": [post(1, "a" * (MAX_TEXT_CHARS + 1))]})
         with patch.object(JevClient, "ask", side_effect=AssertionError("must not call")):
             code, _, _ = self.call("run")
