@@ -10,7 +10,7 @@ Chạy từ thư mục gốc project với Python 3.10+. Web/demo và SQLite ch�
 Tám lệnh mẫu sau gồm cả thao tác offline lẫn thao tác mạng được ghi chú rõ:
 
 ```bash
-# 1. Xem tám nhóm lệnh: web, api, groups, search, profile, db, classify, video
+# 1. Xem chín nhóm lệnh: web, api, groups, search, profile, db, classify, video, download
 python3 main.py --help
 
 # 2. Demo offline; kết quả mặc định vào json_folder/posts_web.json và SQLite
@@ -43,13 +43,29 @@ Video cục bộ (FFmpeg → Whisper/thị giác → Jev, tuỳ chọn, không t
 **[hướng dẫn video](<docs/VIDEO.md>)**. Không cần API key để inspect/extract;
 vision từ xa cần opt-in riêng, phân loại Jev là bước riêng có thể tính phí.
 
+## Tải đúng một video Telegram
+
+Copy **link tin nhắn có video** trong Telegram, rồi chạy (cần phiên đã đăng nhập):
+
+```bash
+.venv-api/bin/python main.py download "https://t.me/TEN_KENH/123"
+# Chọn tài khoản khác hoặc thư mục đích riêng:
+.venv-api/bin/python main.py download "https://t.me/c/1234567890/789" --session tk-phu --output-dir media/telegram_downloads
+```
+
+Mặc định lưu ở `media/telegram_downloads/` trong [media](<media/>), tên file do chương trình tạo.
+Chỉ lấy message ID trong link, không quét các bài khác/album, không ghi đè file đã có,
+không tự tham gia nhóm hay vượt bảo vệ nội dung. Không ghi DB/JSON và không gọi Jev.
+Link nhóm riêng cần tài khoản có quyền xem và phiên nhận diện được nhóm đó;
+link bình luận `?comment=...` không được hỗ trợ. Xem [chi tiết](<docs/VIDEO.md#tải-video-telegram-theo-link>).
+
 ## Bố cục
 
 ```text
 .
 ├── main.py                       # dispatcher CLI duy nhất ở gốc
 ├── src/telegram_demo/
-│   ├── cli/                      # 8 CLI; thêm video.py cho video cục bộ
+│   ├── cli/                      # 9 CLI; video cục bộ và download theo link
 │   ├── analyzer.py               # heuristic và xuất báo cáo dùng chung
 │   ├── storage.py                # SQLite, snapshot, truy vấn và sao lưu
 │   ├── paths.py                  # các đường dẫn mặc định neo ở gốc project
@@ -85,6 +101,6 @@ chọn có thư mục vẫn tương đối với **cwd người gọi**; tên JS
 - [DB](<data/>) và [JSON](<json_folder/>) có thể chứa dữ liệu cá nhân, không mã hoá.
   Không chia sẻ [credential](<json_folder/tg_api.json>) hay [phiên Telethon](<sessions/>):
   ai có phiên có thể chiếm quyền tài khoản. Chỉ thu thập dữ liệu bạn được phép xử lý.
-- **243 test** thành công trong venv API; Python hệ thống bỏ qua 1 test cần Telethon.
+- **284 test** thành công trong venv API; Python hệ thống bỏ qua 1 test cần Telethon.
   Suite không gọi API có phí/tải model. Chất lượng phân loại video thực tế **chưa đo**;
   xem [kiểm thử](<docs/USAGE.md#chạy-test>) và [smoke video](<docs/VIDEO.md#6-kiểm-chứng-bản-triển-khai>).

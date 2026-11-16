@@ -6,6 +6,45 @@ Pipeline: FFmpeg tách audio/khung hình → Whisper phiên âm + model thị gi
 → Jev phân loại bằng chứng văn bản → lưu lịch sử riêng trong SQLite.
 `analyze` **chưa gọi Jev**; phân loại văn bản Telegram vẫn là lệnh `classify` riêng.
 
+## Tải video Telegram theo link
+
+Lệnh `video` vẫn chỉ xử lý file cục bộ. Dùng lệnh **`download`** riêng để tải đúng
+một video từ link bài đăng, không lấy các tin khác:
+
+```bash
+# Dùng phiên Telegram hiện có; không cần Jev key/Gemini key/FFmpeg/Whisper để tải:
+.venv-api/bin/python main.py download "https://t.me/TEN_KENH/123"
+# Nhóm riêng hoặc topic (tài khoản phải có quyền xem):
+.venv-api/bin/python main.py download "https://t.me/c/1234567890/789" --session tk-phu
+.venv-api/bin/python main.py download "https://t.me/TEN_NHOM/456/789" --output-dir media/my_videos
+```
+
+- Copy **link tin nhắn video**, không dùng link trang cá nhân/kênh, link mời hoặc URL
+  video ở trang web khác. Hỗ trợ `t.me`, `telegram.me`, link `/s/kenh/id`, link
+  `/c/channel_id/id` và topic `/c/channel_id/topic_id/id` hoặc `/kenh/topic_id/id`.
+- Chỉ lấy **message ID cuối cùng**, không lấy toàn album hoặc quét lịch sử. `?single`
+  và `?t=...` được chấp nhận; `?comment=...`/`?thread=...` và tham số khác bị từ chối
+  để tránh tải nhầm bài gốc thay vì bình luận. Ảnh, audio, text, link preview không
+  phải video trực tiếp sẽ báo lỗi, không tải file thay thế.
+- Reuse Telegram `api_id/api_hash` từ môi trường/cấu hình hiện có và phiên trong
+  [sessions](<../sessions/>). Nếu chưa đăng nhập, chủ động chạy
+  `.venv-api/bin/python main.py api --login` (thêm cùng `--session` nếu cần). Lệnh tải
+  không hỏi OTP, tự tạo phiên mới, tham gia nhóm, hoặc vượt bảo vệ nội dung.
+- Link riêng chỉ dùng được nếu tài khoản có quyền xem và session có thông tin nhóm;
+  nếu không, kiểm tra đúng tài khoản/phiên và quyền truy cập. Không bypass restricted media.
+- Mặc định `media/telegram_downloads/` neo theo gốc project. `--output-dir` tuỳ chỉnh
+  tương đối với cwd của bạn. Tên file dạng `telegram_<peer>_<message_id>.mp4` (đuôi
+  video thực tế có thể khác), không dùng tên file tuỳ ý từ Telegram.
+- File mới quyền `0600`, không ghi đè file cũ/symlink. Khi tải lỗi, hủy hoặc sai kích
+  thước, chỉ dọn file chưa hoàn tất của lượt này. Muốn tải lại file đã có, chọn thư mục
+  khác; không tự xoá file người dùng.
+- Chỉ tải file: **không** thêm run/analysis vào SQLite, không ghi JSON và không tự gọi
+  Whisper/vision/Jev. Lệnh in đường dẫn video; dùng đường dẫn đó với `video analyze`
+  theo các mục bên dưới nếu muốn phân tích sau.
+- Các ca parser, tải stream, bảo vệ nội dung, chống ghi đè, cleanup và CLI được kiểm
+  thử offline; chưa tải video Telegram thật trong lần thêm tính năng vì chưa có link
+  cụ thể từ người dùng.
+
 ## 1. Cài thành phần tuỳ chọn
 
 CLI cơ bản vẫn chỉ dùng thư viện chuẩn; `--help`, `inspect`, `extract`, `results`

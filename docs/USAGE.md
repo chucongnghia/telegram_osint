@@ -6,7 +6,7 @@ chung một bộ chấm điểm.
 
 > Bắt đầu nhanh tại [README](<../README.md>). Các lệnh dưới đây chạy từ thư mục gốc
 > project, qua [điểm vào chung](<../main.py>): `web`, `api`, `groups`, `search`,
-> `profile`, `db`, `classify`, `video`. Dùng [`python3 main.py COMMAND --help`](<../main.py>) để xem cờ.
+> `profile`, `db`, `classify`, `video`, `download`. Dùng [`python3 main.py COMMAND --help`](<../main.py>) để xem cờ.
 > Không còn script CLI ở thư mục gốc; mã triển khai nằm trong [gói nguồn](<../src/telegram_demo/>).
 
 ## Mục lục
@@ -31,6 +31,7 @@ bằng model Jev thật, không phải bộ từ khoá trong analyzer. Bước n
 thu thập**, không tự gọi dịch vụ có phí khi crawl. Chỉ dùng thư viện chuẩn Python; chưa
 xử lý âm thanh, ảnh hay video trong lệnh text này và không truy cập link trong tin nhắn.
 Video cục bộ dùng lệnh `video` riêng; xem [hướng dẫn video](<VIDEO.md>).
+Tải đúng một video từ link Telegram bằng `download`; xem [cú pháp và giới hạn](<VIDEO.md#tải-video-telegram-theo-link>).
 
 ### Năm nhãn
 
@@ -242,7 +243,7 @@ Chạy qua dispatcher với tên lệnh ở cột mô tả.
 
 | File | Việc |
 |---|---|
-| [main.py](<../main.py>) | Điểm vào chung: `web`, `api`, `groups`, `search`, `profile`, `db`, `classify`, `video`. |
+| [main.py](<../main.py>) | Điểm vào chung: `web`, `api`, `groups`, `search`, `profile`, `db`, `classify`, `video`, `download`. |
 | [paths.py](<../src/telegram_demo/paths.py>) | Neo đường dẫn mặc định theo `PROJECT_ROOT`. |
 | [`keyword_usernames.py`](<../src/telegram_demo/cli/keyword_usernames.py>) | `search` — **Chức năng 1, tách riêng**: nhập keyword → in danh sách username liên quan. |
 | [`username_info.py`](<../src/telegram_demo/cli/username_info.py>) | `profile` — **Chức năng 2, tách riêng**: nhập username → in thông tin tài khoản đó. |
@@ -524,12 +525,15 @@ python3 -m unittest discover -s tests -v      # không cần mạng, không cầ
 .venv-api/bin/python -m unittest discover -s tests -v
 ```
 
-Sau mở rộng video: **243 test thành công** trong venv API; Python hệ thống chạy cùng
-243 test với 1 test cần Telethon được bỏ qua. Trong đó [19 test bố cục](<../tests/test_layout.py>)
-kiểm tra launcher, cả tám CLI, import động, thư mục làm việc khác, mặc định DB/JSON/ảnh/
+Sau thêm tải video theo link: **284 test thành công** trong venv API; Python hệ thống chạy cùng
+284 test với 1 test cần Telethon được bỏ qua. Trong đó [19 test bố cục](<../tests/test_layout.py>)
+kiểm tra launcher, cả chín CLI, import động, thư mục làm việc khác, mặc định DB/JSON/ảnh/
 phiên đăng nhập và cách giữ nguyên đường dẫn tuỳ chỉnh. Các test không gọi API có phí.
 [85 test video](<../tests/test_video_pipeline.py>) bao gồm FFmpeg/Whisper/vision giả lập,
 HTTP loopback cục bộ, migration v1/v2 → v3, cache/partial/error, evidence và bridge.
+[41 test tải một video](<../tests/test_telegram_download.py>) kiểm tra link công khai/riêng/topic,
+chọn đúng message, private channel ID theo Telethon, file riêng tư/chống ghi đè,
+lỗi/hủy/kích thước và phiên đăng nhập giả lập. Không tải Telegram thật trong suite.
 Không tải model trong test suite. Smoke FFmpeg + Whisper + Jev thực tế được ghi riêng
 ở [hướng dẫn video](<VIDEO.md#6-kiểm-chứng-bản-triển-khai>).
 

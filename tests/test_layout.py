@@ -30,7 +30,7 @@ from telegram_demo.cli import username_info as profile
 COMMANDS = {
     "web": "demo_telegram", "api": "demo_telegram_api", "groups": "find_private_groups",
     "search": "keyword_usernames", "profile": "username_info", "db": "database",
-    "classify": "classify_messages", "video": "video",
+    "classify": "classify_messages", "video": "video", "download": "telegram_download",
 }
 
 
