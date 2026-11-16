@@ -585,7 +585,7 @@ def json_payload(records: list[dict], backend: str, noun: str = NOUN_WEB,
 
 
 def write_json(path: str, records: list[dict], backend: str, noun: str = NOUN_WEB,
-               extra: dict | None = None) -> list[dict]:
+               extra: dict | None = None, *, classify: bool = True) -> list[dict]:
     """Ghi {generated_at, total, backend, groups, posts} ra JSON.
 
     `groups` chính là mục [5] ĐIỂM RỦI RO THEO GROUP/KÊNH (xem group_summary).
@@ -594,7 +594,7 @@ def write_json(path: str, records: list[dict], backend: str, noun: str = NOUN_WE
     payload = json_payload(records, backend, noun=noun, extra=extra)
     with open(_ensure_dir(path), "w", encoding="utf-8") as fh:
         json.dump(payload, fh, ensure_ascii=False, indent=2)
-    persist_payload(payload, source=path)
+    persist_payload(payload, source=path, classify=classify)
     out = payload["posts"]
     print(f"[i] Đã lưu {len(out)} bài đăng vào {path}")
     return out

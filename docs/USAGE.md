@@ -13,6 +13,7 @@ chung một bộ chấm điểm.
 
 - [Phân tích video: FFmpeg → Whisper/thị giác → Jev](<VIDEO.md>)
 - [Phân loại văn bản bằng Jev](#bản-đầu-tin-nhắn-văn-bản--jev--sqlite)
+  - [Opt-in Jev trong collector: cờ, ngân sách và watch](#opt-in-jev-ngay-trong-lệnh-thu-thập)
 - [SQLite: lưu trữ, truy vấn và sao lưu](#lưu-trữ-sqlite-triển-khai-và-tra-cứu)
 - [Bố cục mã và dữ liệu](#file)
 - [Quy ước đường dẫn JSON](#quy-ước-file-json)
@@ -26,12 +27,118 @@ chung một bộ chấm điểm.
 
 ## Bản đầu: tin nhắn văn bản → Jev → SQLite
 
-[`classify_messages.py`](<../src/telegram_demo/cli/classify_messages.py>) phân loại **văn bản đã thu thập trong DB**
-bằng model Jev thật, không phải bộ từ khoá trong analyzer. Bước này chạy **tường minh sau
-thu thập**, không tự gọi dịch vụ có phí khi crawl. Chỉ dùng thư viện chuẩn Python; chưa
-xử lý âm thanh, ảnh hay video trong lệnh text này và không truy cập link trong tin nhắn.
+Phân loại **văn bản bài đăng** bằng model Jev thật, không phải bộ từ khoá trong analyzer.
+Có hai cách opt-in: bật `--jev` trên lệnh thu thập, hoặc chạy `classify` riêng trên dữ liệu
+đã lưu trong DB ([mã CLI](<../src/telegram_demo/cli/classify_messages.py>)). Không có opt-in
+thì thu thập không gọi Jev. Chỉ dùng thư viện chuẩn Python; không xử lý âm thanh, ảnh hay
+video trong bước text này, không tự tải video/media, không gọi vision và không truy cập
+link trong tin nhắn.
 Video cục bộ dùng lệnh `video` riêng; xem [hướng dẫn video](<VIDEO.md>).
 Tải đúng một video từ link Telegram bằng `download`; xem [cú pháp và giới hạn](<VIDEO.md#tải-video-telegram-theo-link>).
+
+### Opt-in Jev ngay trong lệnh thu thập
+
+Năm collector `web`, `api`, `groups`, `search`, `profile` dùng chung các cờ Jev qua
+`add_storage_arguments` trong [storage.py](<../src/telegram_demo/storage.py>). Mặc định vẫn
+chỉ thu thập/lưu/chấm heuristic; phải truyền **`--jev`** mới bật bước phân loại văn bản.
+
+| Cờ | Ý nghĩa |
+|---|---|
+| `--jev` | Opt-in bắt buộc để dùng Jev lúc thu thập; cần SQLite, không đi cùng `--no-db`. |
+| `--jev-limit N` | Mặc định **10**, tối đa **1000** lần thử HTTP cho **toàn bộ một lần gọi lệnh**. |
+| `--jev-model ALIAS` | Alias model, mặc định biến môi trường `JEV_MODEL`, nếu không có thì `jev-latest`. |
+| `--jev-timeout SECONDS` | Timeout mỗi request, mặc định **60 giây**, tối đa **300 giây**. |
+| `--jev-include-demo` | Cho phép xét cả bài thuộc namespace demo; mặc định bỏ qua demo. |
+| `--jev-dry-run` | Chỉ lập kế hoạch: không gọi API, không ghi bất kỳ kết quả/trạng thái phân loại nào; **vẫn thu thập và persist JSON/SQLite**. |
+
+Các modifier `--jev-*` **bị từ chối nếu thiếu `--jev`**. Chế độ `--report`, login và setup
+(ví dụ `--login`, `--login-bot`, `--setup-bot`) không phân loại và **từ chối `--jev`**.
+Thiếu `TYPESAFE_API_KEY` sẽ lỗi **trước khi thu thập**, trừ `--jev-dry-run`. Chương trình
+đọc biến môi trường terminal, **không tự nạp `.env`**; key không phải credential Telegram.
+Không ghi key vào tài liệu/chat/source/JSON, không truyền key thật trong dòng lệnh.
+
+Ví dụ offline, không cần key hay mạng; dùng tên xuất mới cho mỗi lần chạy để không đụng
+fixture/kết quả lịch sử:
+
+```bash
+python3 main.py web --demo --jev --jev-include-demo --jev-dry-run \
+    --out "jev_demo_plan_$(date +%s%N).json"
+```
+
+Các ví dụ bên dưới **gọi Telegram và Jev thật, có thể tính phí**; chỉ chạy trên nguồn bạn
+được phép xử lý. Nhập kín key vào môi trường terminal như hướng dẫn độc lập:
+
+```bash
+read -rsp 'TypeSafe API key: ' TYPESAFE_API_KEY; echo
+export TYPESAFE_API_KEY
+
+# Một kênh: tối đa 25 bài thu thập, nhưng chỉ tối đa 5 lần thử HTTP Jev.
+python3 main.py web --channel durov --limit 25 --jev --jev-limit 5 \
+    --out "jev_one_channel_$(date +%s%N).json"
+
+# Nhiều kênh: --limit cho mỗi kênh, --jev-limit là tổng chung, KHÔNG phải 10/kênh.
+python3 main.py web --channel baomoi --channel tintucvtv --limit 20 \
+    --jev --jev-limit 10 --out "jev_many_channels_$(date +%s%N).json"
+
+# Watch có giới hạn thời gian nhận tin (60 giây), rồi drain worker trước khi thoát.
+# Cần Telethon + phiên Telegram có quyền đọc nhóm; không tải media trong ví dụ này.
+.venv-api/bin/python main.py api --watch @tennhom --watch-once --interval 60 \
+    --jev --jev-limit 5 --out "jev_watch_once_$(date +%s%N).json"
+
+# Crawl group kín đã có quyền truy cập; đầu vào từ bước discovery trước đó.
+# --crawl KHÔNG tự join: muốn tham gia phải là bước --join riêng, có chủ ý.
+.venv-api/bin/python main.py groups --crawl --in found.json --limit 100 \
+    --jev --jev-limit 10 --out "jev_private_groups_$(date +%s%N).json"
+
+# Hai collector gọn cũng hỗ trợ; chỉ các bài thực sự lấy được mới được xét.
+python3 main.py search --keyword "telegram" --channel durov --limit 10 --jev --jev-limit 3
+python3 main.py profile durov --limit 5 --no-photo --jev --jev-limit 3
+
+unset TYPESAFE_API_KEY
+```
+
+**Phạm vi và chi phí:** chỉ xét bài thuộc **run vừa lưu bởi lần gọi lệnh hiện tại** (có
+thể có nhiều run), không tự lấy backlog cũ trong DB. Hồ sơ, mô tả tài khoản hay danh sách
+username thuần metadata không được phân loại; `profile`/`search` phải có **bài đăng thật
+trong dữ liệu thu thập** mới có ứng viên. `--jev-limit` đếm **lần thử request HTTP**, không
+phải số kênh, số bài đọc hay số đô la. Cache/tin bị bỏ qua không tiêu tốn request. Cùng
+text/rubric/backend/model yêu cầu đã thành công và tin quá dài có trạng thái terminal
+được bỏ qua; không có cờ recheck trên collector. Các request tuần tự, **không tự retry**.
+
+**Watch:** khi bật `--jev`, worker bất đồng bộ có hàng đợi hữu hạn xử lý HTTP ngoài event
+loop, lưu/phân loại tin mới tăng dần thay vì chờ đến cuối. Dừng êm sẽ drain worker;
+`--watch-once --interval 60` giới hạn thời gian nhận sự kiện, không hứa toàn tiến trình
+thoát đúng giây thứ 60 vì còn chờ worker/request. Một ngân sách `--jev-limit` dùng chung
+cho mọi nguồn và mọi sự kiện **suốt thời gian watch**, không reset mỗi vòng/sự kiện.
+
+**Khi API lỗi:** lỗi đầu tiên được lưu ở `message_classifications` với trạng thái lỗi và
+**nhãn `NULL`**, không giả nhãn bằng heuristic. Circuit mở cho **phần còn lại của lần gọi
+lệnh**: ngừng gọi Jev, vẫn giữ dữ liệu JSON/SQLite và phân tích heuristic; lệnh trả mã
+khác 0 lúc kết thúc. Log lỗi không in key hay thân nội dung nguồn. Kết quả Jev nằm riêng
+trong `message_classifications`, **không nhúng vào JSON gốc, không sửa heuristic hay
+điểm group**. Chỉ văn bản được gửi tới dịch vụ ngoài; không tự tải video/media hoặc bật
+vision. Xác suất của model không được hiệu chuẩn (xem giới hạn dưới đây).
+
+Phần chưa gọi được do hết ngân sách/circuit có thể xử lý sau bằng CLI độc lập, vẫn dùng
+key trong môi trường. Lấy ID bằng `db runs`, thay `N` bằng ID run vừa lưu (nếu có nhiều
+run, chọn từng ID); dùng cùng `--db` và model như lúc thu thập nếu có tuỳ chỉnh:
+
+```bash
+python3 main.py db runs --limit 10
+python3 main.py classify run --run-id N --limit 10
+# Muốn cố ý đánh giá lại cache/trạng thái terminal: chỉ CLI độc lập có --recheck.
+python3 main.py classify run --run-id N --limit 10 --recheck
+```
+
+Kiểm chứng sau tích hợp: **344 test** trên venv API đều đạt; Python hệ thống đạt cùng suite
+với 1 test cần Telethon được bỏ qua. Gồm [32 test runner](<../tests/test_collection_jev.py>)
+và [28 test tích hợp](<../tests/test_collection_integration.py>): 5 collector, ngân sách
+chung, cache, không giữ writer lock khi chờ HTTP, backlog 80+ sự kiện, worker lỗi và Ctrl+C.
+Một smoke CLI → HTTP giả lập loopback → SQLite xác nhận giới hạn 2 request/lần gọi:
+giữ 4 tin gốc và 4 kết quả sau 3 lần thu thập, lần thứ ba không gọi API nhờ cache;
+không dùng dịch vụ thật.
+Không có key hợp lệ trong môi trường kiểm chứng của agent nên **chưa thử tích hợp này
+với API Jev thật**; không suy ra chất lượng hoặc độ chính xác từ test mock/offline.
 
 ### Năm nhãn
 
@@ -162,6 +269,7 @@ Telethon chỉ cần khi dùng backend API như trước.
 
 - Mọi CLI thu thập / tra cứu dùng chung `--db PATH`, biến môi trường `TELEGRAM_DB_PATH`,
   và `--no-db` để tắt lưu DB cho lần chạy đó. `--db` ưu tiên hơn biến môi trường.
+  Ngoại lệ: bật `--jev` bắt buộc lưu SQLite, nên kết hợp `--jev --no-db` bị từ chối.
 - Mặc định là [`data/telegram.sqlite3`](<../data/telegram.sqlite3>), được dựng thành **đường dẫn tuyệt đối từ gốc
   project (`PROJECT_ROOT`)**, không phụ thuộc thư mục đang đứng khi gọi lệnh.
 - Tương tự, đường dẫn mặc định của JSON, cấu hình, phiên và ảnh đại diện đều neo ở gốc
@@ -256,6 +364,7 @@ Chạy qua dispatcher với tên lệnh ở cột mô tả.
 | [`classify_messages.py`](<../src/telegram_demo/cli/classify_messages.py>) | `classify` — CLI văn bản → Jev → SQLite: run / prepare / apply / results. |
 | [`text_classifier.py`](<../src/telegram_demo/text_classifier.py>) | Rubric có phiên bản, chọn ứng viên/cache, lưu bằng chứng và lịch sử phân loại. |
 | [`jev_client.py`](<../src/telegram_demo/jev_client.py>) | HTTP client stdlib cho API TypeSafe; xác thực response và che lỗi nhạy cảm. |
+| [`collection_jev.py`](<../src/telegram_demo/collection_jev.py>) | Hook phân loại theo run cho collector/watch; cache, ngân sách chung, dry-run và ngừng gọi khi lỗi. |
 | [`tests/test_text_classifier.py`](<../tests/test_text_classifier.py>) / [`tests/test_jev_client.py`](<../tests/test_jev_client.py>) | Test classifier, migration/cache/bridge và HTTP offline, không cần key. |
 | [`tests/test_regression.py`](<../tests/test_regression.py>) | Test hồi quy offline; mốc 50 test là số liệu kiểm chứng lịch sử 2026-10-11, không phải tổng hiện tại. |
 | [`tests/test_storage.py`](<../tests/test_storage.py>) | Test SQLite offline: schema, snapshot / identity, import / truy vấn / export / backup và persist từ CLI. |
@@ -525,8 +634,9 @@ python3 -m unittest discover -s tests -v      # không cần mạng, không cầ
 .venv-api/bin/python -m unittest discover -s tests -v
 ```
 
-Sau thêm tải video theo link: **284 test thành công** trong venv API; Python hệ thống chạy cùng
-284 test với 1 test cần Telethon được bỏ qua. Trong đó [19 test bố cục](<../tests/test_layout.py>)
+Mốc sau thêm tải video theo link, **trước tích hợp Jev vào collector**: **284 test thành công**
+trong venv API; Python hệ thống chạy cùng 284 test với 1 test cần Telethon được bỏ qua.
+Đây là số liệu lịch sử, không phải tổng suite sau tích hợp mới. Trong đó [19 test bố cục](<../tests/test_layout.py>)
 kiểm tra launcher, cả chín CLI, import động, thư mục làm việc khác, mặc định DB/JSON/ảnh/
 phiên đăng nhập và cách giữ nguyên đường dẫn tuỳ chỉnh. Các test không gọi API có phí.
 [85 test video](<../tests/test_video_pipeline.py>) bao gồm FFmpeg/Whisper/vision giả lập,

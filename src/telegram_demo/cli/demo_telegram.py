@@ -440,7 +440,7 @@ def _main() -> int:
     p.add_argument("--no-report", action="store_true",
                    help="chỉ IN DANH SÁCH bài đã lấy, không in báo cáo thống kê")
     p.add_argument("--report", metavar="JSON", help="chỉ in báo cáo từ file JSON đã lưu")
-    add_storage_arguments(p)
+    add_storage_arguments(p, collection=True)
     args = p.parse_args()
     configure_storage(args, tool="demo_telegram")
     # Mọi file .json đi vào json_folder/ (trừ khi người dùng ghi đường dẫn có '/')

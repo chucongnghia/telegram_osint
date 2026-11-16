@@ -47,12 +47,12 @@ from datetime import datetime, timezone
 
 # Bộ từ điển + chấm điểm dùng chung cho cả hai backend (chi tiết: analyzer.py)
 from ..analyzer import (NOUN_API, NOUN_WEB, RE_HASHTAG, USERNAME_RE, analyze,
-                      group_summary, json_path, make_profile, normalize,
+                      group_summary, json_path, json_payload, make_profile, normalize,
                       print_group_section, print_history, print_profile, print_report,
                       print_username_payload, print_username_section, resolve_json,
                       username_payload, write_json)
 from ..analyzer import demo_posts as demo_posts_shared
-from ..storage import add_storage_arguments, configure_storage
+from ..storage import add_storage_arguments, configure_storage, persist_payload
 
 # ---------------------------------------------------------------------------
 # 0. Import Telethon (báo lỗi rõ ràng nếu chưa cài)
@@ -808,9 +808,36 @@ async def run_watch(args, api_id: int, api_hash: str, bot: bool = False) -> int:
         os.makedirs(args.media_dir, exist_ok=True)
     collected: list[dict] = []
     targets = list(args.watch or [])
+    incremental = bool(getattr(args, "jev", False))
+    queue = asyncio.Queue(maxsize=64) if incremental else None
+    watch_errors: list[str] = []
+    handlers: set[asyncio.Task] = set()
+    accepting = True
 
-    @client.on(events.NewMessage(chats=targets or None))
-    async def _on_new(event):                                   # pragma: no cover
+    async def _consume():
+        # One sequential writer/inference worker. HTTP runs off the event loop;
+        # queue backpressure and a shared invocation budget bound pending work.
+        while True:
+            rec = await queue.get()
+            try:
+                if rec is None:
+                    return
+                try:
+                    payload = json_payload([rec], "telethon-bot" if bot else "telethon-watch",
+                                           noun=NOUN_API, extra={"watch_incremental": True})
+                    await asyncio.to_thread(persist_payload, payload, source="watch-event",
+                                            classify=not watch_errors)
+                except Exception:
+                    if not watch_errors:
+                        watch_errors.append("Không hoàn tất lưu/phân loại Jev trong watch")
+                        print("[!] Watch/Jev có lỗi; ngừng gọi Jev, vẫn lưu các tin tiếp theo.",
+                              file=sys.stderr)
+            finally:
+                queue.task_done()
+
+    worker = asyncio.create_task(_consume()) if incremental else None
+
+    async def _process_new(event):
         msg = event.message
         try:
             rec = to_record(msg, event.chat)
@@ -834,6 +861,10 @@ async def run_watch(args, api_id: int, api_hash: str, bot: bool = False) -> int:
                         rec["pipeline_status"]["ocr_done"] = True
         rec["analysis"] = analyze(rec, ocr_text=rec.get("ocr_text", ""))
         collected.append(rec)
+        if queue is not None and not worker.done():
+            await queue.put(rec)
+        elif queue is not None and not watch_errors:
+            watch_errors.append("Worker watch/Jev đã dừng bất thường")
         a = rec["analysis"]
         print(f"  [{a['scam_score']:>3}/100 | {a['level']:<10}] "
               f"@{rec['channel']}/{rec['message_id']}  {a['scam_category_vi'] or '—'}")
@@ -844,6 +875,17 @@ async def run_watch(args, api_id: int, api_hash: str, bot: bool = False) -> int:
             print(f"[i] Đã nhận đủ {args.cycles} tin — dừng theo --cycles.")
             asyncio.ensure_future(client.disconnect())
 
+    @client.on(events.NewMessage(chats=targets or None))
+    async def _on_new(event):
+        if not accepting:
+            return
+        task = asyncio.current_task()
+        handlers.add(task)
+        try:
+            await _process_new(event)
+        finally:
+            handlers.discard(task)
+
     print(f"[i] Chế độ: {'BOT' if bot else 'TÀI KHOẢN NGƯỜI DÙNG'}"
           f"{' | phiên ' + os.path.basename(session_path(args.session, bot=bot)) if args.session else ''}")
     if targets:
@@ -852,6 +894,7 @@ async def run_watch(args, api_id: int, api_hash: str, bot: bool = False) -> int:
         print("[i] Không truyền --watch → theo dõi MỌI hội thoại mà tài khoản/bot thấy.")
     if bot:
         print("[!] Bot chỉ nhận tin MỚI trong nhóm bot đã được thêm; không đọc được lịch sử cũ.")
+    interrupted = False
     try:
         if args.watch_once:
             print(f"[i] Chờ tối đa {args.interval}s rồi thoát (--watch-once).")
@@ -862,24 +905,58 @@ async def run_watch(args, api_id: int, api_hash: str, bot: bool = False) -> int:
         else:
             print("[i] Theo dõi liên tục — nhấn Ctrl+C để dừng.")
             await client.run_until_disconnected()
-    except KeyboardInterrupt:
-        print("\n[i] Đã dừng theo dõi (Ctrl+C).")
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        interrupted = True
+        print("\n[i] Đã dừng theo dõi; đang lưu nốt các tin đã nhận.")
     finally:
+        accepting = False
         try:
             await client.disconnect()
         except Exception:
             pass
+        if worker is not None:
+            # Finish accepted callbacks before the sentinel, otherwise a full
+            # queue could strand an event behind an already stopped worker.
+            pending = [task for task in handlers if not task.done()]
+            if pending:
+                callbacks = asyncio.gather(*pending, return_exceptions=True)
+                done, _ = await asyncio.wait((callbacks, worker),
+                                             return_when=asyncio.FIRST_COMPLETED)
+                if worker in done and not callbacks.done():
+                    callbacks.cancel()
+                await asyncio.gather(callbacks, return_exceptions=True)
+            drain = asyncio.create_task(queue.join())
+            done, _ = await asyncio.wait((drain, worker), return_when=asyncio.FIRST_COMPLETED)
+            if worker in done:
+                if not watch_errors:
+                    watch_errors.append("Worker watch/Jev đã dừng bất thường")
+                drain.cancel()
+                await asyncio.gather(drain, return_exceptions=True)
+                # Preserve all collected records in the final snapshot even if
+                # a cancelled/dead worker left queued items unprocessed.
+                while not queue.empty():
+                    queue.get_nowait()
+                    queue.task_done()
+            else:
+                await drain
+                await queue.put(None)
+            result = (await asyncio.gather(worker, return_exceptions=True))[0]
+            if isinstance(result, BaseException) and not watch_errors:
+                watch_errors.append("Worker watch/Jev đã dừng bất thường")
 
     if not collected:
         print("[i] Không nhận được tin nhắn mới nào.")
-        return 0
+        return 130 if interrupted else 0
     out = write_json(args.out, collected, "telethon-bot" if bot else "telethon-watch",
-                     noun=NOUN_API)
+                     noun=NOUN_API, classify=not incremental)
     if args.no_report:
         print_history(out)
     else:
         report(out, [f"theo dõi {', '.join(targets) or 'mọi hội thoại'}"])
-    return 0
+    if watch_errors:
+        print(f"[!] {watch_errors[0]}; JSON/SQLite đã lưu vẫn giữ nguyên.", file=sys.stderr)
+        return 130 if interrupted else 1
+    return 130 if interrupted else 0
 
 
 # ---------------------------------------------------------------------------
@@ -1076,7 +1153,7 @@ def _main() -> int:
     p.add_argument("--no-report", action="store_true",
                    help="chỉ IN DANH SÁCH tin nhắn đã crawl, không in báo cáo thống kê")
     p.add_argument("--report", metavar="JSON", help="chỉ in báo cáo từ file JSON đã lưu")
-    add_storage_arguments(p)
+    add_storage_arguments(p, collection=True)
     args = p.parse_args()
     configure_storage(args, tool="demo_telegram_api")
     # Mọi file .json đi vào json_folder/ (trừ khi người dùng ghi đường dẫn có '/')

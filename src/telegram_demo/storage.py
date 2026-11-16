@@ -23,6 +23,7 @@ APPLICATION_ID = 0x54475343  # TGSC; never mistake a Telethon session for app da
 DEFAULT_DB = DATA_DIR / "telegram.sqlite3"
 _active_path: str | None = None
 _active_tool = ""
+_active_jev = None
 
 CLASSIFICATION_SCHEMA = """
 CREATE TABLE IF NOT EXISTS message_classifications (
@@ -129,29 +130,50 @@ def search_text(text: str) -> str:
     return "".join(c for c in text if unicodedata.category(c) != "Mn")
 
 
-def add_storage_arguments(parser) -> None:
+def add_storage_arguments(parser, *, collection: bool = False) -> None:
     parser.add_argument("--db", default=os.environ.get("TELEGRAM_DB_PATH") or str(DEFAULT_DB),
                         metavar="FILE", help="SQLite database (mặc định data/telegram.sqlite3)")
     parser.add_argument("--no-db", action="store_true", help="không lưu SQLite trong lần chạy này")
+    if collection:
+        from .collection_jev import add_collection_jev_arguments
+        add_collection_jev_arguments(parser)
 
 
 def configure_storage(args, tool: str) -> None:
-    global _active_path, _active_tool
+    global _active_path, _active_tool, _active_jev
+    # Clear previous in-process CLI state before validating a new invocation.
+    _active_path, _active_jev = None, None
+    if getattr(args, "jev", False) and any(
+        getattr(args, name, False) for name in ("report", "login", "login_bot")
+    ):
+        raise RuntimeError("--jev chỉ dùng khi thu thập tin, không dùng với --report/--login")
+    if getattr(args, "jev", False) and getattr(args, "setup_bot", None) is not None:
+        raise RuntimeError("--jev không dùng với --setup-bot")
+    if hasattr(args, "jev"):
+        from .collection_jev import CollectionJev
+        try:
+            _active_jev = CollectionJev.from_args(args)
+        except ValueError as exc:
+            raise RuntimeError(str(exc)) from None
     _active_path = None if getattr(args, "no_db", False) else str(args.db)
     _active_tool = tool
 
 
-def persist_payload(payload: dict | list, source: str = "") -> int | None:
+def persist_payload(payload: dict | list, source: str = "", *, classify: bool = True) -> int | None:
     if _active_path is None:
         return None
     try:
         with Database(_active_path) as db:
             version = "sha256:" + hashlib.sha256(Path(__file__).with_name("analyzer.py").read_bytes()).hexdigest()
             run_id = db.save_payload(payload, tool=_active_tool, source=source, analyzer_version=version)
-        print(f"[i] SQLite: run #{run_id} → {_active_path}")
-        return run_id
     except (sqlite3.Error, OSError, ValueError, TypeError) as exc:
         raise RuntimeError(f"Không lưu được SQLite '{_active_path}': {exc}") from exc
+    print(f"[i] SQLite: run #{run_id} → {_active_path}")
+    # Commit collection first, then release its connection before any paid call.
+    # A Jev failure must never roll back original collection/heuristic evidence.
+    if classify and _active_jev is not None:
+        _active_jev.process_run(_active_path, run_id)
+    return run_id
 
 
 class Database:

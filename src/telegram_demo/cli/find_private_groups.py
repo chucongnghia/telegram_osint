@@ -391,7 +391,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--session", metavar="TEN", help="tên phiên (mặc định: tg_session)")
     p.add_argument("--api-id", type=int, help="api_id (myl.telegram.org)")
     p.add_argument("--api-hash", help="api_hash (my.telegram.org)")
-    add_storage_arguments(p)
+    add_storage_arguments(p, collection=True)
     return p
 
 

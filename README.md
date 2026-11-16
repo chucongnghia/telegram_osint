@@ -2,7 +2,8 @@
 
 Thu thập bài đăng Telegram, tìm username, xem hồ sơ và lưu lịch sử SQLite. Bộ chấm điểm
 heuristic dùng chung cho backend **web công khai** và **Telegram API (Telethon)**;
-phân loại văn bản bằng **Jev** là bước riêng, chỉ chạy khi bạn yêu cầu.
+phân loại văn bản bằng **Jev** chỉ chạy khi bạn bật `--jev` lúc thu thập hoặc gọi lệnh
+`classify` riêng. Mặc định không gửi nội dung tới Jev.
 
 ## Bắt đầu nhanh
 
@@ -43,6 +44,40 @@ Video cục bộ (FFmpeg → Whisper/thị giác → Jev, tuỳ chọn, không t
 **[hướng dẫn video](<docs/VIDEO.md>)**. Không cần API key để inspect/extract;
 vision từ xa cần opt-in riêng, phân loại Jev là bước riêng có thể tính phí.
 
+## Opt-in Jev ngay khi thu thập văn bản
+
+`web`, `api`, `groups`, `search`, `profile` đều nhận `--jev`; cần SQLite, không dùng cùng
+`--no-db`. Các cờ `--jev-*` chỉ hợp lệ khi có `--jev`. Chỉ bài đăng thuộc run vừa lưu
+được xét, không quét backlog hay phân loại metadata hồ sơ/username. Các chế độ
+`--report`, đăng nhập và setup từ chối `--jev`.
+
+```bash
+# Offline: chỉ lập kế hoạch; vẫn thu thập + lưu JSON/SQLite, không cần key:
+# Mỗi lần chạy dùng tên xuất mới, tránh ghi đè fixture/kết quả cũ.
+python3 main.py web --demo --jev --jev-include-demo --jev-dry-run \
+    --out "jev_demo_plan_$(date +%s%N).json"
+
+# Nhập key kín trong terminal, không dán key vào tài liệu/chat/source:
+read -rsp 'TypeSafe API key: ' TYPESAFE_API_KEY; echo
+export TYPESAFE_API_KEY
+python3 main.py web --channel baomoi --channel tintucvtv --limit 20 \
+    --jev --jev-limit 10 --out "jev_channels_$(date +%s%N).json"
+unset TYPESAFE_API_KEY
+```
+
+`--jev-limit` mặc định **10**, tối đa **1000**: giới hạn **số lần thử HTTP của toàn lệnh**,
+không phải mỗi kênh hay mỗi sự kiện watch, và **không phải ngân sách tiền**. Model chọn
+bằng `--jev-model` (mặc định `JEV_MODEL` hoặc `jev-latest`); `--jev-timeout` mặc định 60
+và tối đa 300 giây. Không tự nạp `.env`. Thiếu `TYPESAFE_API_KEY` sẽ lỗi trước thu thập,
+trừ dry-run. API gọi tuần tự, không tự retry; lỗi API đầu tiên mở circuit đến hết lệnh,
+giữ dữ liệu JSON/SQLite/heuristic và trả mã khác 0 khi kết thúc. Kết quả Jev chỉ nằm ở
+`message_classifications`, không chèn vào JSON gốc hay điểm group. Cache bỏ qua kết quả
+thành công cùng text/rubric/backend/model yêu cầu và tin quá dài đã có trạng thái terminal.
+Watch dùng worker bất đồng bộ có hàng đợi hữu hạn, HTTP không chặn event loop; lưu/phân
+loại tin mới tăng dần và drain worker khi dừng êm, không reset ngân sách giữa các sự kiện.
+
+Xem [cờ, watch/group kín và cách xử lý phần còn lại bằng `classify run --run-id N`](<docs/USAGE.md#opt-in-jev-ngay-trong-lệnh-thu-thập>).
+
 ## Tải đúng một video Telegram
 
 Copy **link tin nhắn có video** trong Telegram, rồi chạy (cần phiên đã đăng nhập):
@@ -71,6 +106,7 @@ link bình luận `?comment=...` không được hỗ trợ. Xem [chi tiết](<d
 │   ├── paths.py                  # các đường dẫn mặc định neo ở gốc project
 │   ├── text_classifier.py        # rubric, cache và lịch sử Jev
 │   ├── jev_client.py             # HTTP client TypeSafe
+│   ├── collection_jev.py         # Jev theo run, ngân sách chung và circuit lỗi
 │   ├── video_media.py            # FFmpeg/ffprobe, JPEG/WAV có giới hạn
 │   ├── video_models.py           # Whisper CPU/int8 và vision tuỳ chọn
 │   ├── video_pipeline.py         # evidence, bridge Jev và lịch sử video
@@ -95,12 +131,16 @@ chọn có thư mục vẫn tương đối với **cwd người gọi**; tên JS
 
 - Điểm heuristic và nhãn Jev chỉ hỗ trợ rà soát, **không phải kết luận lừa đảo/pháp lý**;
   confidence không phải độ chính xác đã hiệu chuẩn.
-- Thu thập không tự gọi Jev. API trực tiếp cần **TypeSafe API key riêng**, có thể tốn phí
-  và gửi văn bản tin nhắn đến nhà cung cấp. Bridge công cụ DSH là nguồn kết quả khác,
+- Thu thập chỉ gọi Jev khi bật **`--jev`**; mặc định không gọi. API trực tiếp cần
+  **TypeSafe API key riêng**, có thể tốn phí và gửi **chỉ văn bản** tới dịch vụ bên ngoài,
+  không tự tải media/video hay gọi vision. Bridge công cụ DSH là nguồn kết quả khác,
   được lưu provenance riêng; không phải response HTTP có xác thực.
 - [DB](<data/>) và [JSON](<json_folder/>) có thể chứa dữ liệu cá nhân, không mã hoá.
   Không chia sẻ [credential](<json_folder/tg_api.json>) hay [phiên Telethon](<sessions/>):
   ai có phiên có thể chiếm quyền tài khoản. Chỉ thu thập dữ liệu bạn được phép xử lý.
-- **284 test** thành công trong venv API; Python hệ thống bỏ qua 1 test cần Telethon.
-  Suite không gọi API có phí/tải model. Chất lượng phân loại video thực tế **chưa đo**;
+- **344 test** thành công trong venv API; Python hệ thống chạy cùng suite với 1 test
+  cần Telethon được bỏ qua. Có 60 test mới cho Jev/collector và worker watch.
+  Suite không gọi API có phí/tải model; CLI → HTTP giả lập cục bộ → SQLite đã kiểm chứng,
+  nhưng nhánh thu thập → Jev mới chưa thử với key thật.
+  Chất lượng phân loại video thực tế **chưa đo**;
   xem [kiểm thử](<docs/USAGE.md#chạy-test>) và [smoke video](<docs/VIDEO.md#6-kiểm-chứng-bản-triển-khai>).

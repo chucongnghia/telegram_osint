@@ -291,7 +291,7 @@ def main() -> int:
                    help="in đầy đủ chi tiết từng username (mặc định khi có dữ liệu bài)")
     p.add_argument("--out", metavar="FILE",
                    help="ghi kết quả ra JSON (tên trần ⇒ nằm trong json_folder/)")
-    add_storage_arguments(p)
+    add_storage_arguments(p, collection=True)
     args = p.parse_args()
     try:
         configure_storage(args, tool="keyword_usernames")
