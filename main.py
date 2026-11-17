@@ -24,6 +24,7 @@ COMMANDS = {
     "classify": ("classify_messages", "Phân loại văn bản bằng Jev và lưu SQLite"),
     "video": ("video", "FFmpeg → Whisper/thị giác → Jev → SQLite"),
     "download": ("telegram_download", "Tải đúng một video Telegram theo link bài đăng"),
+    "dashboard": ("dashboard", "Mở dashboard Telegram cục bộ trên trình duyệt"),
 }
 LEGACY_ALIASES = {module + ".py": command for command, (module, _) in COMMANDS.items()}
 
@@ -37,7 +38,7 @@ def main(argv=None) -> int:
         description=description, formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="Dùng: python3 main.py COMMAND --help để xem các tuỳ chọn chi tiết.",
     )
-    parser.add_argument("command", metavar="COMMAND", help="web | api | groups | search | profile | db | classify | video | download")
+    parser.add_argument("command", metavar="COMMAND", help=" | ".join(COMMANDS))
     parser.add_argument("arguments", nargs=argparse.REMAINDER, help=argparse.SUPPRESS)
     if not argv:
         parser.print_help()

@@ -5,13 +5,28 @@ heuristic dùng chung cho backend **web công khai** và **Telegram API (Teletho
 phân loại văn bản bằng **Jev** chỉ chạy khi bạn bật `--jev` lúc thu thập hoặc gọi lệnh
 `classify` riêng. Mặc định không gửi nội dung tới Jev.
 
+## Dashboard trên trình duyệt
+
+```bash
+python3 main.py dashboard --open
+# http://127.0.0.1:8765
+```
+
+**TínTrạm** dùng dữ liệu SQLite thật: xem tin/nguồn/hồ sơ, thu thập và watch, phân loại
+Jev, video và nhật ký tác vụ. Logo máy bay giấy riêng, không phải sản phẩm Telegram.
+Mở trang chỉ đọc dữ liệu; tác vụ mạng/mô hình cần bạn chủ động xác nhận. Server chỉ
+nghe trên máy cục bộ, không cần cài frontend dependencies.
+
+Xem [hướng dẫn dashboard](<docs/DASHBOARD.md>), [thiết kế](<docs/DASHBOARD_DESIGN.md>)
+và [báo cáo QA — Taste còn OPEN, không phải PASS](<docs/DASHBOARD_QA.md>).
+
 ## Bắt đầu nhanh
 
 Chạy từ thư mục gốc project với Python 3.10+. Web/demo và SQLite chỉ cần thư viện chuẩn.
 Tám lệnh mẫu sau gồm cả thao tác offline lẫn thao tác mạng được ghi chú rõ:
 
 ```bash
-# 1. Xem chín nhóm lệnh: web, api, groups, search, profile, db, classify, video, download
+# 1. Xem mười nhóm lệnh, gồm dashboard, web, api, groups, search, profile, db, classify, video, download
 python3 main.py --help
 
 # 2. Demo offline; kết quả mặc định vào json_folder/posts_web.json và SQLite
@@ -100,7 +115,9 @@ link bình luận `?comment=...` không được hỗ trợ. Xem [chi tiết](<d
 .
 ├── main.py                       # dispatcher CLI duy nhất ở gốc
 ├── src/telegram_demo/
-│   ├── cli/                      # 9 CLI; video cục bộ và download theo link
+│   ├── cli/                      # 10 CLI, gồm dashboard và download theo link
+│   ├── dashboard/                # HTML/CSS/JS, logo và font cục bộ
+│   ├── dashboard_service.py      # HTTP loopback, đọc DB và quản lý tác vụ
 │   ├── analyzer.py               # heuristic và xuất báo cáo dùng chung
 │   ├── storage.py                # SQLite, snapshot, truy vấn và sao lưu
 │   ├── paths.py                  # các đường dẫn mặc định neo ở gốc project
@@ -115,6 +132,7 @@ link bình luận `?comment=...` không được hỗ trợ. Xem [chi tiết](<d
 ├── config/requirements-video.txt  # faster-whisper ghim phiên bản, tuỳ chọn
 ├── docs/USAGE.md                  # tài liệu sử dụng chi tiết
 ├── docs/VIDEO.md                  # cài đặt, CLI và giới hạn video
+├── docs/DASHBOARD.md              # vận hành giao diện, quyền riêng tư và giới hạn
 ├── tests/                        # kiểm thử offline
 ├── json_folder/                  # mọi JSON, kể cả tg_api.json nhạy cảm
 ├── data/                         # SQLite và bản sao lưu cục bộ
@@ -138,8 +156,9 @@ chọn có thư mục vẫn tương đối với **cwd người gọi**; tên JS
 - [DB](<data/>) và [JSON](<json_folder/>) có thể chứa dữ liệu cá nhân, không mã hoá.
   Không chia sẻ [credential](<json_folder/tg_api.json>) hay [phiên Telethon](<sessions/>):
   ai có phiên có thể chiếm quyền tài khoản. Chỉ thu thập dữ liệu bạn được phép xử lý.
-- **344 test** thành công trong venv API; Python hệ thống chạy cùng suite với 1 test
-  cần Telethon được bỏ qua. Có 60 test mới cho Jev/collector và worker watch.
+- **369 test** thành công trong venv API; Python hệ thống chạy cùng suite với 1 test
+  cần Telethon được bỏ qua. Gồm 60 test Jev/collector và 25 test dashboard/CLI không tương tác;
+  contract frontend được kiểm tra bằng Node VM.
   Suite không gọi API có phí/tải model; CLI → HTTP giả lập cục bộ → SQLite đã kiểm chứng,
   nhưng nhánh thu thập → Jev mới chưa thử với key thật.
   Chất lượng phân loại video thực tế **chưa đo**;

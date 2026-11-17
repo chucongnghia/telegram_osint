@@ -1,0 +1,68 @@
+# TínTrạm — dashboard cục bộ
+
+Giao diện của project Telegram, không phải sản phẩm chính thức của Telegram. Mở dữ liệu thật trong SQLite; không tạo tin nhắn hay số liệu mẫu để trang trí.
+
+## Mở dashboard
+
+Từ thư mục gốc project:
+
+```bash
+python3 main.py dashboard --open
+# Hoặc tự mở http://127.0.0.1:8765
+```
+
+Không cần cài Node/React/pip để dùng dashboard. Chọn DB khác hoặc cổng khác:
+
+```bash
+python3 main.py dashboard --db data/jev-demo.sqlite3 --port 8766
+```
+
+Server chỉ lắng nghe `127.0.0.1`, không mở ra LAN. Đây là ứng dụng riêng ở cổng 8765, không thay thế giao diện DeepSeek Harness ở cổng 3080. Dừng server bằng Ctrl+C; các tác vụ con do server tạo cũng được dừng. Đóng tab trình duyệt **không** dừng server.
+
+## Các màn hình
+
+| Mục | Dữ liệu và thao tác |
+|---|---|
+| Tổng quan | Số tin/nguồn, nhãn Jev hiện hành, biểu đồ theo dữ liệu đã lưu, tin gần đây và lịch sử run. |
+| Tin nhắn | Tìm kiếm, lọc, phân trang; mở chi tiết nội dung, điểm heuristic và lịch sử Jev. Nhãn cũ sau khi text thay đổi được đánh dấu, không tính như kết quả hiện hành. |
+| Nguồn thu thập | Nguồn và số tin thực tế; mở danh sách tin của nguồn. |
+| Thu thập dữ liệu | Web công khai hoặc Telegram API; giới hạn tin và Jev tuỳ chọn. Watch là một cửa sổ hữu hạn, không chạy vô hạn. |
+| Phân loại Jev | Chọn giới hạn và chủ động gửi batch văn bản. Không tự gọi mô hình khi mở trang. |
+| Phân tích video | Xem/phát video trong `media/`, tải một video theo link Telegram, chạy phân tích và gọi Jev thành các bước riêng. |
+| Tra cứu hồ sơ | Xem hồ sơ đã lưu, lookup hoặc tìm username bằng các CLI hiện có. |
+| Nhật ký tác vụ | Trạng thái thật, log có giới hạn, xem lỗi và dừng tác vụ. Một worker chạy tuần tự. |
+| Cài đặt | Thông tin DB, key Jev tạm trong RAM và sao lưu SQLite. |
+
+DB picker liệt kê DB ứng dụng trong `data/`, bỏ qua bản backup và file không đúng định dạng. DB truyền bằng `--db` được cho phép riêng. Mở/chuyển trang chỉ đọc DB, không tự thu thập hay phân loại. Muốn xem ví dụ Jev văn bản, chọn `jev-demo.sqlite3` rồi mở **Tin nhắn**; bảng heuristic `analyses` không chứa nhãn Jev.
+
+## Telegram, Jev và video
+
+- **Telegram API:** dùng phiên đã đăng nhập bằng CLI; chọn `tg_session` hoặc `tg_session_*`. Dashboard không hỏi OTP, không tạo phiên trắng, không tự tham gia nhóm. Phiên hết hạn cần đăng nhập lại trong terminal.
+- **Jev:** nhập TypeSafe key tại Cài đặt, hoặc export `TYPESAFE_API_KEY` trong đúng terminal khởi động server. Key nhập qua form chỉ giữ trong RAM, không vào DB/JSON/localStorage, không trả lại cho trình duyệt. Xoá key trong form chỉ xoá bản nhập này, không xoá biến môi trường của server. Có key không đồng nghĩa key đã được nhà cung cấp xác thực.
+- **Chi phí:** form xác nhận trước tác vụ mạng/mô hình. Jev mặc định tắt; giới hạn UI tối đa 100 lần thử request, không phải ngân sách tiền. Không tự retry lỗi key/rate limit. Dữ liệu text có thể được gửi ra nhà cung cấp khi bạn bật Jev.
+- **Video:** cần FFmpeg và runtime Whisper riêng đã mô tả trong [VIDEO](<VIDEO.md>). Dashboard không tự tải model. Bản giao diện này hỗ trợ bỏ qua vision hoặc cấu hình vision cục bộ qua môi trường; không tự bật quyền gửi frame tới dịch vụ từ xa. Thiếu âm thanh/thị giác phải hiện rõ; `partial` không phải kết quả kiểm tra đầy đủ.
+- Điểm từ khoá, nhãn Jev và trạng thái xử lý là ba khái niệm riêng. Tin chưa phân loại không đồng nghĩa an toàn; nhãn không phải kết luận pháp lý hay xác suất gian lận đã hiệu chuẩn.
+
+## Giới hạn bản đầu
+
+- Không hỗ trợ đăng nhập Telegram/bot, tìm kiếm username bằng backend web, discover/join nhóm riêng, OCR hoặc cấu hình nâng cao ngay trên form. Các chức năng CLI vẫn giữ nguyên; xem [USAGE](<USAGE.md>).
+- Không upload video từ trình duyệt; chọn file đang có trong `media/` hoặc tải đúng link tin nhắn có video. Không nhận đường dẫn file tuỳ ý ngoài vùng cho phép.
+- Chỉ dành cho một người dùng cục bộ, không có tài khoản đăng nhập/phân quyền nhiều người. Không dùng reverse proxy mở ứng dụng ra Internet.
+- Hàng đợi, key nhập và nhật ký tiến trình là dữ liệu RAM; khởi động lại server sẽ mất phần này. Nội dung/kết quả đã được CLI ghi vào SQLite vẫn còn. Dừng một tác vụ không hoàn tác dữ liệu đã lưu hoặc request đã gửi.
+- Log, hàng đợi, kích thước batch và tham số đều có giới hạn. Các bảng SQLite/JSON chứa dữ liệu cá nhân dạng rõ; không chia sẻ `sessions/`, credential hoặc DB ra ngoài.
+
+## Mã nguồn và kiểm thử
+
+- [HTTP service](<../src/telegram_demo/dashboard_service.py>) dùng Python stdlib, đọc SQLite riêng và tạo argv CLI cố định, không nhận lệnh shell.
+- [UI](<../src/telegram_demo/dashboard/>) dùng HTML/CSS/JavaScript, logo riêng và Geist/Geist Mono tự host. Không có CDN/analytics khi chạy; license font ở [OFL](<../src/telegram_demo/dashboard/assets/fonts/OFL.txt>).
+- Test HTTP, CSRF/Host/Origin, query/filter, job và media trên fixture tạm: [backend tests](<../tests/test_dashboard_service.py>).
+- Test form contract và escaping bằng Node VM, không cần browser/npm: [client tests](<../tests/test_dashboard_client.mjs>).
+- [Launcher](<../tests/test_dashboard_launcher.py>) và [Telegram không tương tác](<../tests/test_dashboard_noninteractive.py>) có regression riêng.
+
+```bash
+python3 -W error::ResourceWarning -m unittest discover -s tests
+.venv-api/bin/python -W error::ResourceWarning -m unittest discover -s tests
+node tests/test_dashboard_client.mjs
+```
+
+Suite không gọi Telegram hay API mô hình thật, không ghi DB/session thật. Đánh giá giao diện và giới hạn bộ kiểm tra Taste được ghi riêng trong [DASHBOARD_QA](<DASHBOARD_QA.md>).

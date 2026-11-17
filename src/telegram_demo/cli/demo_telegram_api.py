@@ -244,6 +244,8 @@ async def open_client(api_id: int, api_hash: str, interactive: bool = True,
                       session: str = "", bot: bool = False):
     """Mở client. Trả (client, None) nếu OK, (None, thông báo lỗi) nếu không."""
     path = session_path(session, bot=bot)
+    if not interactive and not os.path.isfile(path + ".session"):
+        return None, "Phiên chưa có. Đăng nhập bằng CLI trước; chế độ không tương tác không tạo phiên mới."
     if os.path.exists(path + ".session"):
         # Tái sử dụng phiên cũ: nói rõ loại phiên để tránh nhầm bot/người dùng.
         print(f"[i] Dùng lại phiên {os.path.basename(path)}.session "
@@ -790,7 +792,10 @@ async def run_bot_mode(args) -> int:
 
 async def run_watch(args, api_id: int, api_hash: str, bot: bool = False) -> int:
     """--watch: theo dõi tin nhắn MỚI và chấm điểm ngay khi nhận được."""
-    if bot:
+    if getattr(args, "non_interactive", False):
+        client, err = await open_client(api_id, api_hash, interactive=False,
+                                      session=args.session, bot=bot)
+    elif bot:
         token = load_bot_token(args)
         if not token:
             print("[!] Chế độ bot cần token: --bot-token <token> (hoặc TG_BOT_TOKEN).",
@@ -978,7 +983,10 @@ async def run_async(args) -> int:
     if args.watch:
         return await run_watch(args, api_id, api_hash, bot=is_bot)
 
-    if is_bot:
+    if getattr(args, "non_interactive", False):
+        client, err = await open_client(api_id, api_hash, interactive=False,
+                                      session=args.session, bot=is_bot)
+    elif is_bot:
         token = load_bot_token(args)
         if not token:
             print("[!] Chế độ bot cần --bot-token <token>.", file=sys.stderr)
@@ -1117,6 +1125,8 @@ def _main() -> int:
     p.add_argument("--session", metavar="TÊN",
                    help="chọn phiên: bỏ trống → tg_session.session; 'tk-phu' → "
                         "tg_session_tk-phu.session; với bot → tg_bot_<tên>.session")
+    p.add_argument("--non-interactive", action="store_true",
+                   help="chỉ dùng phiên đã đăng nhập; không hỏi OTP hay tạo đăng nhập mới")
     p.add_argument("--api-id", type=int, help="api_id lấy từ my.telegram.org")
     p.add_argument("--api-hash", help="api_hash lấy từ my.telegram.org")
     p.add_argument("--channel", action="append", metavar="@KENH",
@@ -1155,6 +1165,8 @@ def _main() -> int:
     p.add_argument("--report", metavar="JSON", help="chỉ in báo cáo từ file JSON đã lưu")
     add_storage_arguments(p, collection=True)
     args = p.parse_args()
+    if args.non_interactive and (args.login or args.login_bot or args.setup_bot is not None):
+        p.error("--non-interactive không đi cùng --login, --login-bot hay --setup-bot")
     configure_storage(args, tool="demo_telegram_api")
     # Mọi file .json đi vào json_folder/ (trừ khi người dùng ghi đường dẫn có '/')
     args.out = json_path(args.out)

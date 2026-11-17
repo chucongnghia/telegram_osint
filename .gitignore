@@ -42,3 +42,9 @@ json_folder/usernames.json
 json_folder/jev_*.json
 json_folder/video_*.json
 json_folder/video-*.json
+
+# Taste design gate and local preview artifacts
+/.taste*/
+/.motion*/
+/screenshots/
+/json_folder/dashboard_*.json

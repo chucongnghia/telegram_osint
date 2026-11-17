@@ -6,11 +6,12 @@ chung một bộ chấm điểm.
 
 > Bắt đầu nhanh tại [README](<../README.md>). Các lệnh dưới đây chạy từ thư mục gốc
 > project, qua [điểm vào chung](<../main.py>): `web`, `api`, `groups`, `search`,
-> `profile`, `db`, `classify`, `video`, `download`. Dùng [`python3 main.py COMMAND --help`](<../main.py>) để xem cờ.
+> `profile`, `db`, `classify`, `video`, `download`, `dashboard`. Dùng [`python3 main.py COMMAND --help`](<../main.py>) để xem cờ.
 > Không còn script CLI ở thư mục gốc; mã triển khai nằm trong [gói nguồn](<../src/telegram_demo/>).
 
 ## Mục lục
 
+- [Dashboard trình duyệt: `python3 main.py dashboard --open`](<DASHBOARD.md>)
 - [Phân tích video: FFmpeg → Whisper/thị giác → Jev](<VIDEO.md>)
 - [Phân loại văn bản bằng Jev](#bản-đầu-tin-nhắn-văn-bản--jev--sqlite)
   - [Opt-in Jev trong collector: cờ, ngân sách và watch](#opt-in-jev-ngay-trong-lệnh-thu-thập)
@@ -629,6 +630,13 @@ cũ, không phải tuyên bố đã chạy lại CLI hay kiểm chứng live sau
 
 ## Chạy test
 
+Suite hiện tại sau dashboard: **369 test** trong venv API đều đạt; Python hệ thống
+chạy cùng suite và bỏ qua 1 test cần Telethon. Bổ sung 13 test service HTTP, 6 test
+launcher (gồm wrapper Node) và 6 test Telegram không tương tác. Các contract UI
+kiểm cả 9 màn hình, allowlist/bounds của form, escaping, lỗi API và polling.
+Không gọi API có phí hoặc ghi DB/session thật; có smoke worker thực tế trên DB tạm,
+chạy CLI demo offline → SQLite. Xem [dashboard QA và giới hạn Taste](<DASHBOARD_QA.md>).
+
 ```bash
 python3 -m unittest discover -s tests -v      # không cần mạng, không cần Telethon
 .venv-api/bin/python -m unittest discover -s tests -v
@@ -637,7 +645,7 @@ python3 -m unittest discover -s tests -v      # không cần mạng, không cầ
 Mốc sau thêm tải video theo link, **trước tích hợp Jev vào collector**: **284 test thành công**
 trong venv API; Python hệ thống chạy cùng 284 test với 1 test cần Telethon được bỏ qua.
 Đây là số liệu lịch sử, không phải tổng suite sau tích hợp mới. Trong đó [19 test bố cục](<../tests/test_layout.py>)
-kiểm tra launcher, cả chín CLI, import động, thư mục làm việc khác, mặc định DB/JSON/ảnh/
+kiểm tra launcher (hiện gồm mười CLI), import động, thư mục làm việc khác, mặc định DB/JSON/ảnh/
 phiên đăng nhập và cách giữ nguyên đường dẫn tuỳ chỉnh. Các test không gọi API có phí.
 [85 test video](<../tests/test_video_pipeline.py>) bao gồm FFmpeg/Whisper/vision giả lập,
 HTTP loopback cục bộ, migration v1/v2 → v3, cache/partial/error, evidence và bridge.
