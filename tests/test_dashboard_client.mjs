@@ -94,6 +94,7 @@ vm.runInContext(source.replace(/^export (?=(?:async )?function)/gm, '') + `
     renderCollection, renderClassify, renderProfiles, renderVideo, renderImage, ocrDetails, confirmJob, renderJobs,
     renderSettings, externalUrl, mediaUrl, safeMediaUrl, labelBadge, messageRows,
     jobCard, submitForm, schedulePoll, stopPoll, sourceDisplay,
+    syncFormOptions, syncVisionForm, handleAction,
   };`, context, { filename: 'dashboard/app.js' });
 const client = context.clientTest;
 client.state.bootstrap = fixtures.bootstrap;
@@ -137,8 +138,8 @@ const allowedJobFields = {
   lookup: ['username', 'limit', 'backend', 'session'],
   search: ['keyword', 'limit', 'backend', 'session'],
   download: ['url', 'session'],
-  video_analyze: ['path', 'skip_vision', 'language', 'model', 'max_frames', 'ocr', 'ocr_language'],
-  image_analyze: ['path', 'ocr_language', 'vision'],
+  video_analyze: ['path', 'skip_vision', 'language', 'model', 'max_frames', 'ocr', 'ocr_language', 'allow_remote'],
+  image_analyze: ['path', 'ocr_language', 'vision', 'allow_remote'],
   image_classify: ['image_id', 'allow_partial', 'recheck'],
   video_classify: ['analysis_id', 'allow_partial', 'recheck'],
 };
@@ -307,6 +308,199 @@ assert.equal(password.value, '', 'password is cleared even when confirmation is 
 assert.equal(requests.length, requestCount, 'cancelled confirmation sends no key');
 assert(!/\blocalStorage\s*(?:\.\s*(?:setItem|getItem|removeItem|clear)\b|\[)/.test(source), 'client never persists secrets in localStorage');
 console.log('PASS finite watch job payload, confirmation, and cleared password');
+
+// Vision settings: fields, labels, placement, status rows, and provider behavior.
+const visionSettings = rendered.Settings;
+assert(visionSettings.includes('<form data-form="vision">'), 'settings renders a vision form');
+assert(visionSettings.indexOf('Xóa khóa phiên') < visionSettings.indexOf('data-form="vision"'), 'vision panel sits below the Jev key panel');
+assert(visionSettings.indexOf('data-form="vision"') < visionSettings.indexOf('Dữ liệu và sao lưu'), 'vision panel sits above backups');
+assert(control(rendered.Image, 'image-vision').includes('disabled'), 'unconfigured vision checkbox is disabled');
+const visionProviderSelect = visionSettings.match(/<select id="vision-provider"[^>]*>([\s\S]*?)<\/select>/);
+assert(visionProviderSelect, 'vision provider select exists');
+assert.deepEqual([...visionProviderSelect[1].matchAll(/<option value="([^"]+)"/g)].map((match) => match[1]), ['gemini', 'openai']);
+assert(visionProviderSelect[1].includes('value="gemini" selected'), 'gemini is the default provider');
+assert(visionSettings.includes('Gemini API') && visionSettings.includes('OpenAI-compatible / Qwen-VL cục bộ'));
+const visionModelTag = control(visionSettings, 'vision-model');
+assert(visionModelTag.includes('name="vision_model"') && visionModelTag.includes('required'), 'model is required');
+assert(visionModelTag.includes('placeholder="vd: gemini-2.5-flash"'));
+const visionKeyTag = control(visionSettings, 'vision-key');
+assert(visionKeyTag.includes('name="vision_key"') && visionKeyTag.includes('type="password"'));
+assert(visionKeyTag.includes('autocomplete="off"') && visionKeyTag.includes('spellcheck="false"'));
+assert(!visionKeyTag.includes('value='), 'vision key is never prefilled');
+assert(visionSettings.includes('bộ nhớ máy chủ') && visionSettings.includes('Không ghi xuống đĩa'));
+const visionUrlTag = control(visionSettings, 'vision-url');
+assert(visionUrlTag.includes('name="vision_url"'), 'vision url field exists');
+assert(visionUrlTag.includes('placeholder="http://127.0.0.1:11434/v1/chat/completions"'));
+assert(visionUrlTag.includes('disabled'), 'gemini disables the endpoint field');
+assert(visionSettings.includes('loopback') && visionSettings.includes('HTTPS'));
+assert(visionSettings.includes('Lưu cấu hình thị giác'));
+const visionFormHtml = visionSettings.match(/<form data-form="vision">([\s\S]*?)<\/form>/)[1];
+assert.deepEqual([...visionFormHtml.matchAll(/<(?:input|select|textarea)\b[^>]*\bname="([^"]+)"/g)].map((match) => match[1]).sort(),
+  ['vision_key', 'vision_model', 'vision_provider', 'vision_url'], 'vision form sends only settings fields');
+assert(visionSettings.includes('data-action="clear-vision"') && visionSettings.includes('Xóa cấu hình thị giác'));
+assert(visionSettings.includes('không xác thực khóa'), 'panel warns that saving does not validate the key');
+assert(visionSettings.includes('Chưa cấu hình'));
+const baseVisionConfig = client.state.bootstrap.config;
+client.state.bootstrap.config = { ...baseVisionConfig, vision_configured: true, vision_provider: 'gemini', vision_model: 'gemini-2.5-flash', vision_remote: true, vision_key_set: true };
+const remoteGeminiSettings = await client.renderSettings();
+assert(remoteGeminiSettings.includes('Gemini · gemini-2.5-flash'), 'gemini status names the model');
+assert(remoteGeminiSettings.includes('gửi ảnh ra ngoài, có thể tính phí'), 'remote status warns about upload cost');
+assert(remoteGeminiSettings.includes('Đã cấu hình'));
+client.state.bootstrap.config = { ...baseVisionConfig, vision_configured: true, vision_provider: 'openai', vision_model: 'qwen2.5-vl', vision_remote: false, vision_key_set: true, vision_endpoint_set: true };
+const localOpenaiSettings = await client.renderSettings();
+assert(localOpenaiSettings.includes('OpenAI-compatible · qwen2.5-vl'), 'openai status names the model');
+assert(!localOpenaiSettings.includes('gửi ảnh ra ngoài'));
+assert(!control(localOpenaiSettings, 'vision-url').includes('disabled'), 'openai keeps the endpoint field editable');
+client.state.bootstrap.config = baseVisionConfig;
+const providerField = element();
+providerField.value = 'gemini';
+const urlField = element();
+urlField.value = 'http://127.0.0.1:11434/v1/chat/completions';
+urlField.disabled = false;
+const syncableVisionForm = form('vision', [], { '[name="vision_provider"]': providerField, '[name="vision_url"]': urlField });
+client.syncVisionForm(syncableVisionForm);
+assert.equal(urlField.disabled, true, 'gemini disables the url input');
+assert.equal(urlField.value, '', 'gemini clears the url input');
+providerField.value = 'openai';
+client.syncVisionForm(syncableVisionForm);
+assert.equal(urlField.disabled, false, 'openai enables the url input');
+const imageFormNode = document.querySelector('form[data-form="image_analyze"]');
+const imageConsentNode = element();
+const imageVisionNode = { checked: false };
+imageFormNode.querySelector = (selector) => selector === '[name="vision"]' ? imageVisionNode : selector === '[name="allow_remote"]' ? imageConsentNode : null;
+client.syncFormOptions();
+assert.equal(imageConsentNode.disabled, true, 'image consent starts disabled while vision is off');
+imageVisionNode.checked = true;
+client.syncFormOptions();
+assert.equal(imageConsentNode.disabled, false, 'image consent enables with the vision checkbox');
+const videoFormNode = document.querySelector('form[data-form="video_analyze"]');
+const videoConsentNode = element();
+const videoSkipNode = { checked: true };
+videoFormNode.querySelector = (selector) => selector === '[name="skip_vision"]' ? videoSkipNode : selector === '[name="allow_remote"]' ? videoConsentNode : null;
+client.syncFormOptions();
+assert.equal(videoConsentNode.disabled, true, 'video consent is disabled while vision is skipped');
+videoSkipNode.checked = false;
+client.syncFormOptions();
+assert.equal(videoConsentNode.disabled, false, 'video consent enables when vision will run');
+imageFormNode.querySelector = () => null;
+videoFormNode.querySelector = () => null;
+console.log('PASS vision settings fields, labels, provider behavior, and status rows');
+
+// Vision settings POST bodies: gemini and openai variants omit empty fields.
+const lastSettingsPost = () => requests.findLast((request) => request.options.method === 'POST' && request.url.pathname === '/api/settings');
+const geminiKeyValue = 'AIza-fixture-key-0123456789';
+const geminiKeyInput = element();
+geminiKeyInput.value = geminiKeyValue;
+const geminiVision = form('vision', [
+  ['vision_provider', 'gemini'], ['vision_model', ' gemini-2.5-flash '], ['vision_key', ` ${geminiKeyValue} `], ['vision_url', ''],
+], { '[name="vision_key"]': geminiKeyInput });
+confirmed = true;
+const postsBeforeGemini = requests.length;
+await submit(geminiVision);
+const geminiVisionPost = requests.slice(postsBeforeGemini).find((request) => request.options.method === 'POST' && request.url.pathname === '/api/settings');
+assert(geminiVisionPost, 'gemini vision settings are posted');
+assert.equal(geminiKeyInput.value, '', 'vision key input is cleared immediately');
+assert.deepEqual(JSON.parse(geminiVisionPost.options.body), { vision_provider: 'gemini', vision_model: 'gemini-2.5-flash', vision_key: geminiKeyValue });
+assert(!Object.hasOwn(JSON.parse(geminiVisionPost.options.body), 'vision_url'), 'gemini omits the empty url');
+await submit(form('vision', [['vision_provider', 'openai'], ['vision_model', 'qwen2.5-vl'], ['vision_key', ''], ['vision_url', ' http://127.0.0.1:11434/v1/chat/completions ']]));
+const loopbackVisionBody = JSON.parse(lastSettingsPost().options.body);
+assert.deepEqual(loopbackVisionBody, { vision_provider: 'openai', vision_model: 'qwen2.5-vl', vision_url: 'http://127.0.0.1:11434/v1/chat/completions' });
+assert(!Object.hasOwn(loopbackVisionBody, 'vision_key'), 'loopback openai may omit the key');
+await submit(form('vision', [['vision_provider', 'openai'], ['vision_model', 'qwen2.5-vl'], ['vision_key', 'sk-fixture'], ['vision_url', 'https://vision.example.test/v1/chat/completions']]));
+const remoteVisionBody = JSON.parse(lastSettingsPost().options.body);
+assert.equal(remoteVisionBody.vision_key, 'sk-fixture');
+assert.equal(remoteVisionBody.vision_url, 'https://vision.example.test/v1/chat/completions');
+const postsBeforeInvalid = requests.length;
+const geminiNoKey = form('vision', [['vision_provider', 'gemini'], ['vision_model', 'gemini-2.5-flash']]);
+await submit(geminiNoKey);
+assert.equal(requests.length, postsBeforeInvalid, 'gemini without a key is blocked client-side');
+assert(geminiNoKey.querySelector('[data-form-error]').textContent.includes('API key'));
+const openaiNoUrl = form('vision', [['vision_provider', 'openai'], ['vision_model', 'qwen2.5-vl']]);
+await submit(openaiNoUrl);
+assert.equal(requests.length, postsBeforeInvalid, 'openai without a url is blocked client-side');
+assert(openaiNoUrl.querySelector('[data-form-error]').textContent.includes('URL endpoint'));
+const insecureRemote = form('vision', [['vision_provider', 'openai'], ['vision_model', 'qwen2.5-vl'], ['vision_url', 'http://vision.example.test/v1/chat/completions']]);
+await submit(insecureRemote);
+assert.equal(requests.length, postsBeforeInvalid, 'remote HTTP is blocked client-side');
+assert(insecureRemote.querySelector('[data-form-error]').textContent.includes('HTTPS'));
+const cancelKeyInput = element();
+cancelKeyInput.value = 'cancel-secret';
+const cancelVision = form('vision', [['vision_provider', 'gemini'], ['vision_model', 'gemini-2.5-flash'], ['vision_key', 'cancel-secret']], { '[name="vision_key"]': cancelKeyInput });
+confirmed = false;
+const postsBeforeCancel = requests.length;
+await submit(cancelVision);
+assert.equal(cancelKeyInput.value, '', 'vision key is cleared even when confirmation is cancelled');
+assert.equal(requests.length, postsBeforeCancel, 'cancelled vision confirmation sends nothing');
+confirmed = true;
+const rejectedKeyInput = element();
+rejectedKeyInput.value = 'invalid-secret';
+const rejectedVision = form('vision', [['vision_provider', 'gemini'], ['vision_model', 'gemini-2.5-flash'], ['vision_key', 'invalid-secret']], { '[name="vision_key"]': rejectedKeyInput });
+responseStatus = 400;
+responseError = 'Khóa thị giác không hợp lệ.';
+await submit(rejectedVision);
+assert.equal(rejectedKeyInput.value, '', 'vision key is cleared after a server rejection');
+assert(rejectedVision.querySelector('[data-form-error]').textContent.includes('Khóa thị giác không hợp lệ.'));
+responseStatus = 200;
+console.log('PASS vision settings POST groups, trimming, validation, and cleared password');
+
+client.state.bootstrap.config = { ...baseVisionConfig, vision_configured: true, vision_provider: 'gemini', vision_model: 'gemini-2.5-flash', vision_remote: true, vision_key_set: true };
+const configuredSettings = await client.renderSettings();
+assert(!configuredSettings.includes(geminiKeyValue), 'vision key is never rendered');
+assert(!configuredSettings.includes('sk-fixture'), 'remote vision key is never rendered');
+assert(!requests.some((request) => request.url.href.includes(geminiKeyValue)), 'vision key never appears in a URL');
+const remoteImageHtml = await client.renderImage();
+assert(remoteImageHtml.includes('name="allow_remote"'), 'remote image form renders consent');
+assert(remoteImageHtml.includes('Tôi đồng ý gửi ảnh tới model từ xa (có thể tính phí)'));
+assert(control(remoteImageHtml, 'image-allow-remote').includes('disabled'), 'image consent starts disabled');
+const remoteVideoHtml = await client.renderVideo();
+assert(remoteVideoHtml.includes('Tôi đồng ý gửi khung hình tới model từ xa (có thể tính phí)'));
+assert(!control(remoteVideoHtml, 'video-allow-remote').includes('disabled'), 'video consent is enabled when vision runs by default');
+assert(!remoteImageHtml.includes(geminiKeyValue));
+console.log('PASS vision key never rendered and consent controls render for remote models');
+
+mediaCount = mediaPosts().length;
+const imageNeedsConsent = form('image_analyze', [['path', 'poster.png'], ['ocr_language', 'vie+eng'], ['vision', true]]);
+await submit(imageNeedsConsent);
+assert.equal(mediaPosts().length, mediaCount, 'remote image vision requires consent');
+assert(imageNeedsConsent.querySelector('[data-form-error]').textContent.includes('xác nhận'));
+await submit(form('image_analyze', [['path', 'poster.png'], ['ocr_language', 'vie+eng'], ['vision', true], ['allow_remote', true]]));
+assert.equal(mediaPosts().length, ++mediaCount);
+assert.deepEqual(JSON.parse(mediaPosts().at(-1).options.body).params, { path: 'poster.png', ocr_language: 'vie+eng', vision: true, allow_remote: true });
+const imageRemoteParams = JSON.parse(mediaPosts().at(-1).options.body).params;
+assert(!JSON.stringify(imageRemoteParams).includes(geminiKeyValue), 'vision key never enters job params');
+await submit(form('image_analyze', [['path', 'poster.png'], ['ocr_language', 'vie+eng'], ['vision', false], ['allow_remote', true]]));
+assert.equal(mediaPosts().length, ++mediaCount);
+const localImageParams = JSON.parse(mediaPosts().at(-1).options.body).params;
+assert.equal(localImageParams.vision, false);
+assert(!Object.hasOwn(localImageParams, 'allow_remote'), 'consent is dropped when image vision is off');
+const videoNeedsConsent = form('video_analyze', [['path', 'clip.mp4'], ['skip_vision', false], ['language', 'auto'], ['model', 'tiny'], ['max_frames', 6], ['ocr', true], ['ocr_language', 'eng']]);
+await submit(videoNeedsConsent);
+assert.equal(mediaPosts().length, mediaCount, 'remote video vision requires consent');
+assert(videoNeedsConsent.querySelector('[data-form-error]').textContent.includes('xác nhận'));
+await submit(form('video_analyze', [['path', 'clip.mp4'], ['skip_vision', false], ['language', 'auto'], ['model', 'tiny'], ['max_frames', 6], ['ocr', true], ['ocr_language', 'eng'], ['allow_remote', true]]));
+assert.equal(mediaPosts().length, ++mediaCount);
+assert.deepEqual(JSON.parse(mediaPosts().at(-1).options.body).params, { path: 'clip.mp4', skip_vision: false, language: 'auto', model: 'tiny', max_frames: 6, ocr: true, ocr_language: 'eng', allow_remote: true });
+await submit(form('video_analyze', [['path', 'clip.mp4'], ['skip_vision', true], ['language', 'vi'], ['model', 'tiny'], ['max_frames', 6], ['ocr', true], ['ocr_language', 'vie+eng'], ['allow_remote', true]]));
+assert.equal(mediaPosts().length, ++mediaCount);
+assert(!Object.hasOwn(JSON.parse(mediaPosts().at(-1).options.body).params, 'allow_remote'), 'consent is dropped when video skips vision');
+console.log('PASS remote consent gating for image and video jobs');
+
+client.state.view = 'settings';
+const clearVisionTarget = { dataset: { action: 'clear-vision' }, disabled: false, tagName: 'BUTTON' };
+clearVisionTarget.closest = (selector) => selector === '[data-action]' ? clearVisionTarget : null;
+const postsBeforeClear = requests.length;
+confirmed = false;
+await client.handleAction({ target: clearVisionTarget });
+assert.equal(requests.length, postsBeforeClear, 'cancelled clear-vision sends nothing');
+confirmed = true;
+await client.handleAction({ target: clearVisionTarget });
+const clearVisionPost = requests.slice(postsBeforeClear).find((request) => request.options.method === 'POST' && request.options.body.includes('clear_vision'));
+assert(clearVisionPost, 'clear-vision posts to settings');
+assert.deepEqual(JSON.parse(clearVisionPost.options.body), { clear_vision: true });
+assert(requests.slice(requests.indexOf(clearVisionPost)).some((request) => request.options.method === 'GET' && request.url.pathname === '/api/bootstrap'), 'clear-vision refreshes bootstrap');
+client.state.bootstrap.config = baseVisionConfig;
+console.log('PASS clear-vision action posts only clear_vision and refreshes state');
+
 
 client.state.jobs = [{ id: 'active', status: 'running' }];
 client.schedulePoll();

@@ -32,7 +32,7 @@ Server chỉ lắng nghe `127.0.0.1`, không mở ra LAN. Đây là ứng dụng
 | Phân tích ảnh | Chọn PNG/JPEG/WebP trong `media/`, OCR Việt/Anh cục bộ, xem original/evidence, Jev riêng với đồng ý partial/key. |
 | Tra cứu hồ sơ | Xem hồ sơ đã lưu, lookup hoặc tìm username bằng các CLI hiện có. |
 | Nhật ký tác vụ | Trạng thái thật, log có giới hạn, xem lỗi và dừng tác vụ. Một worker chạy tuần tự. |
-| Cài đặt | Thông tin DB, key Jev tạm trong RAM và sao lưu SQLite. |
+| Cài đặt | Thông tin DB, key Jev/thị giác tạm trong RAM và sao lưu SQLite. |
 
 DB picker liệt kê DB ứng dụng trong `data/`, bỏ qua bản backup và file không đúng định dạng. DB truyền bằng `--db` được cho phép riêng. Mở/chuyển trang chỉ đọc DB, không tự thu thập hay phân loại. Muốn xem ví dụ Jev văn bản, chọn `jev-demo.sqlite3` rồi mở **Tin nhắn**; bảng heuristic `analyses` không chứa nhãn Jev.
 
@@ -40,6 +40,7 @@ DB picker liệt kê DB ứng dụng trong `data/`, bỏ qua bản backup và fi
 
 - **Telegram API:** dùng phiên đã đăng nhập bằng CLI; chọn `tg_session` hoặc `tg_session_*`. Dashboard không hỏi OTP, không tạo phiên trắng, không tự tham gia nhóm. Phiên hết hạn cần đăng nhập lại trong terminal.
 - **Jev:** nhập TypeSafe key tại Cài đặt, hoặc export `TYPESAFE_API_KEY` trong đúng terminal khởi động server. Key nhập qua form chỉ giữ trong RAM, không vào DB/JSON/localStorage, không trả lại cho trình duyệt. Xoá key trong form chỉ xoá bản nhập này, không xoá biến môi trường của server. Có key không đồng nghĩa key đã được nhà cung cấp xác thực.
+- **Thị giác:** cùng panel Cài đặt có provider (`gemini` hoặc `openai`), model, key và URL. Key Gemini giữ trong RAM; chọn model cục bộ thì dùng URL loopback và không cần key. Endpoint từ xa cần tick đồng ý gửi ảnh ở **từng lần chạy**; thiếu consent trả `consent_required`. Lưu cấu hình không xác thực key. Chi tiết: [hướng dẫn OCR](<IMAGE_OCR.md>).
 - **Chi phí:** form xác nhận trước tác vụ mạng/mô hình. Jev mặc định tắt; giới hạn UI tối đa 100 lần thử request, không phải ngân sách tiền. Không tự retry lỗi key/rate limit. Dữ liệu text có thể được gửi ra nhà cung cấp khi bạn bật Jev.
 - **Video:** cần FFmpeg và runtime Whisper riêng đã mô tả trong [VIDEO](<VIDEO.md>). Dashboard không tự tải model. Bản giao diện này hỗ trợ bỏ qua vision hoặc cấu hình vision cục bộ qua môi trường; không tự bật quyền gửi frame tới dịch vụ từ xa. Thiếu âm thanh/thị giác phải hiện rõ; `partial` không phải kết quả kiểm tra đầy đủ.
 - Điểm từ khoá, nhãn Jev và trạng thái xử lý là ba khái niệm riêng. Tin chưa phân loại không đồng nghĩa an toàn; nhãn không phải kết luận pháp lý hay xác suất gian lận đã hiệu chuẩn.

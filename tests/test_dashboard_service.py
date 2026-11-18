@@ -497,7 +497,7 @@ class DashboardTest(unittest.TestCase):
                 {"path": "../poster.png"}, {"path": str(image)}, {"path": "clip.mp4"},
                 {"path": "poster.png", "ocr_language": "--help"}, {"path": "poster.png", "ocr_language": ["eng"]},
                 {"path": "poster.png", "vision": "true"}, {"path": "poster.png", "vision": True},
-                {"path": "poster.png", "tesseract": "/bin/sh"}, {"path": "poster.png", "allow_remote": True},
+                {"path": "poster.png", "tesseract": "/bin/sh"}, {"path": "poster.png", "allow_remote": "yes"},
                 {"path": "poster.png", "ocr_timeout": 10000}, {"path": "poster.png", "language": "eng"},
             ]
             for suffix in ("gif", "bmp", "tiff"):
@@ -532,6 +532,134 @@ class DashboardTest(unittest.TestCase):
             for params in ({"path": "clip.mp4", "ocr": 1}, {"path": "clip.mp4", "ocr_language": "auto"}, {"path": "clip.mp4", "language": "eng"}):
                 with self.assertRaises(ds.DashboardError):
                     self.app.build_job("video_analyze", None, params, "fixture")
+
+    def test_vision_settings_validation_and_job_consent(self):
+        self.image_fixture()
+        clip = self.root / "media" / "clip.mp4"
+        clip.write_bytes(b"fixture")
+        (self.root / ".venv-video" / "bin").mkdir(parents=True)
+        (self.root / ".venv-video" / "bin" / "python").write_text("fixture, never executed")
+        with patch.dict(os.environ, {}, clear=True):
+            # Nothing configured: vision jobs are refused, OCR-only jobs still build.
+            with self.assertRaises(ds.DashboardError) as missing:
+                self.app.build_job("image_analyze", None, {"path": "poster.png", "vision": True}, "fixture")
+            self.assertEqual(missing.exception.code, "configuration")
+            argv, _, _ = self.app.build_job("image_analyze", None, {"path": "poster.png"}, "fixture")
+            self.assertNotIn("--vision", argv)
+            self.assertFalse(self.app.config()["vision_configured"])
+
+            # Incomplete or contradictory configurations are rejected before any state changes.
+            for payload in (
+                {"vision_provider": "gemini", "vision_model": "gemini-2.5-flash"},
+                {"vision_provider": "openai", "vision_model": "qwen2.5vl:3b"},
+                {"vision_provider": "openai", "vision_model": "qwen2.5vl:3b", "vision_url": "https://api.example/v1", "vision_key": ""},
+                {"vision_provider": "other", "vision_model": "m", "vision_key": "k"},
+                {"vision_provider": "openai", "vision_model": "m", "vision_url": "http://8.8.8.8/v1"},
+                {"vision_provider": "openai", "vision_model": "m", "vision_url": "http://127.0.0.1:1/v1?key=secret"},
+                {"vision_provider": "openai", "vision_model": "m", "vision_url": "http://user:pw@127.0.0.1:1/v1"},
+                {"vision_model": "m", "jev_key": "k"},
+                {"clear_vision": "yes"},
+            ):
+                with self.subTest(payload=payload), self.assertRaises(ds.DashboardError):
+                    self.app.settings(payload)
+            self.assertFalse(self.app.config()["vision_configured"])
+
+            # Gemini: model + key; remote by definition and the key never leaves memory.
+            self.app.settings({"vision_provider": "gemini", "vision_model": "gemini-2.5-flash", "vision_key": "gemini-memory-key"})
+            config = self.app.config()
+            self.assertTrue(config["vision_configured"])
+            self.assertEqual(config["vision_provider"], "gemini")
+            self.assertEqual(config["vision_model"], "gemini-2.5-flash")
+            self.assertTrue(config["vision_remote"])
+            self.assertTrue(config["vision_key_set"])
+            self.assertNotIn("gemini-memory-key", json.dumps(self.app.config()))
+            self.assertNotIn("gemini-memory-key", json.dumps(self.app.bootstrap("token")))
+            with self.assertRaises(ds.DashboardError) as consent:
+                self.app.build_job("image_analyze", None, {"path": "poster.png", "vision": True}, "fixture")
+            self.assertEqual(consent.exception.code, "consent_required")
+            argv, params, _ = self.app.build_job("image_analyze", None,
+                                                 {"path": "poster.png", "vision": True, "allow_remote": True}, "fixture")
+            for flag, value in (("--vision-provider", "gemini"), ("--vision-model", "gemini-2.5-flash")):
+                self.assertEqual(argv[argv.index(flag) + 1], value)
+            self.assertIn("--vision", argv)
+            self.assertIn("--allow-remote", argv)
+            self.assertEqual(argv.count("--allow-remote"), 1)
+            self.assertNotIn("gemini-memory-key", " ".join(argv))
+            self.assertTrue(params["allow_remote"])
+            with self.assertRaises(ds.DashboardError):  # consent is a real boolean, not truthy text
+                self.app.build_job("image_analyze", None, {"path": "poster.png", "vision": True, "allow_remote": "yes"}, "fixture")
+            with self.assertRaises(ds.DashboardError) as video_consent:
+                self.app.build_job("video_analyze", None, {"path": "clip.mp4", "skip_vision": False}, "fixture")
+            self.assertEqual(video_consent.exception.code, "consent_required")
+            argv, _, _ = self.app.build_job("video_analyze", None,
+                                            {"path": "clip.mp4", "skip_vision": False, "allow_remote": True, "ocr": False}, "fixture")
+            self.assertNotIn("--skip-vision", argv)
+            self.assertIn("--allow-remote", argv)
+            argv, _, _ = self.app.build_job("video_analyze", None, {"path": "clip.mp4", "skip_vision": True}, "fixture")
+            self.assertIn("--skip-vision", argv)
+            self.assertNotIn("--allow-remote", argv)
+
+            # Local OpenAI-compatible endpoint: loopback HTTP is allowed without a key or consent.
+            self.app.settings({"clear_vision": True})
+            self.assertFalse(self.app.config()["vision_configured"])
+            self.app.settings({"vision_provider": "openai", "vision_model": "qwen2.5vl:3b",
+                               "vision_url": "http://127.0.0.1:11434/v1/chat/completions"})
+            config = self.app.config()
+            self.assertTrue(config["vision_configured"])
+            self.assertFalse(config["vision_remote"])
+            self.assertFalse(config["vision_key_set"])
+            argv, _, _ = self.app.build_job("image_analyze", None, {"path": "poster.png", "vision": True}, "fixture")
+            self.assertEqual(argv[argv.index("--vision-url") + 1], "http://127.0.0.1:11434/v1/chat/completions")
+            self.assertEqual(argv[argv.index("--vision-provider") + 1], "openai")
+            self.assertNotIn("--allow-remote", argv)
+
+            # Switching provider drops a stale OpenAI-compatible URL instead of failing on it.
+            self.app.settings({"vision_provider": "gemini", "vision_model": "gemini-2.5-flash", "vision_key": "gemini-second-key"})
+            config = self.app.config()
+            self.assertTrue(config["vision_configured"])
+            self.assertTrue(config["vision_remote"])
+            self.assertFalse(config["vision_endpoint_set"])
+
+            # Remote OpenAI-compatible provider: key required, consent still per job, key never in argv.
+            self.app.settings({"vision_provider": "openai", "vision_model": "gpt-4o-mini",
+                               "vision_url": "https://api.example.com/v1/chat/completions", "vision_key": "openai-remote-key"})
+            self.assertTrue(self.app.config()["vision_remote"])
+            with self.assertRaises(ds.DashboardError) as remote_consent:
+                self.app.build_job("image_analyze", None, {"path": "poster.png", "vision": True}, "fixture")
+            self.assertEqual(remote_consent.exception.code, "consent_required")
+            argv, _, _ = self.app.build_job("image_analyze", None,
+                                            {"path": "poster.png", "vision": True, "allow_remote": True}, "fixture")
+            self.assertIn("--allow-remote", argv)
+            self.assertEqual(argv[argv.index("--vision-url") + 1], "https://api.example.com/v1/chat/completions")
+            self.assertNotIn("openai-remote-key", " ".join(argv))
+
+    def test_worker_injects_vision_key_only_into_child_environment(self):
+        class FakeProcess:
+            pid = 999999999
+            def __init__(self, *args, **kwargs):
+                self.stdout = io.BufferedReader(io.BytesIO(b"ok\n"))
+                self.returncode = None
+            def wait(self, timeout=None):
+                self.returncode = 0
+                return 0
+            def poll(self):
+                return self.returncode
+        self.image_fixture()
+        with patch.dict(os.environ, {}, clear=True):
+            self.app.settings({"vision_provider": "gemini", "vision_model": "gemini-2.5-flash", "vision_key": "gemini-child-key"})
+            with patch.object(ds.subprocess, "Popen", side_effect=[FakeProcess()]) as popen:
+                job = self.app.submit({"kind": "image_analyze",
+                                       "params": {"path": "poster.png", "vision": True, "allow_remote": True}})
+                self.app._queue.join()
+            self.assertEqual(self.app.job(job["id"])["status"], "succeeded")
+            kwargs = popen.call_args.kwargs
+            self.assertEqual(kwargs["env"]["GEMINI_API_KEY"], "gemini-child-key")
+            self.assertNotIn("VISION_API_KEY", kwargs["env"])
+            self.assertNotIn("gemini-child-key", " ".join(kwargs.get("args") or popen.call_args.args[0]))
+            self.assertNotIn("gemini-child-key", json.dumps(self.app.jobs()))
+            self.assertNotIn("gemini-child-key", json.dumps(self.app.job(job["id"])))
+            self.assertIn("gemini-child-key", self.app._redactions)
+            self.assertEqual(self.app._sanitize("key=gemini-child-key"), "key=[đã ẩn]")
 
     def test_worker_mocked_child_redaction_bounded_logs_failure_drain_and_backup(self):
         class FakeProcess:

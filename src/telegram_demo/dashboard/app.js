@@ -223,6 +223,7 @@ async function loadView({ quiet = false } = {}) {
     root.innerHTML = html;
     root.dataset.view = state.view;
     syncFormOptions();
+    syncVisionForm();
     schedulePoll();
   } catch (error) { if (revision === state.revision) showPageError(error); }
   finally { if (revision === state.revision) root.removeAttribute('aria-busy'); }
@@ -281,7 +282,7 @@ function field(id, label, input, hint = '', full = false) {
   return `<div class="field${full ? ' field--full' : ''}"><label for="${esc(id)}">${esc(label)}</label>${input}${hint ? `<p class="hint" id="${esc(id)}-hint">${esc(hint)}</p>` : ''}</div>`;
 }
 function textInput(id, name, value = '', attrs = '') { return `<input id="${esc(id)}" name="${esc(name)}" value="${esc(value)}" ${attrs}>`; }
-function check(id, name, label, checked = false) { return `<label class="toggle-row" for="${esc(id)}"><span>${esc(label)}</span><input class="check-input" type="checkbox" id="${esc(id)}" name="${esc(name)}"${checked ? ' checked' : ''}></label>`; }
+function check(id, name, label, checked = false, extra = '') { return `<label class="toggle-row" for="${esc(id)}"><span>${esc(label)}</span><input class="check-input" type="checkbox" id="${esc(id)}" name="${esc(name)}"${checked ? ' checked' : ''}${extra ? ` ${extra}` : ''}></label>`; }
 function formEnd(label, hint = '', primary = true) {
   return `<div class="form-actions"><button class="btn ${primary ? 'btn--primary' : 'btn--secondary'}" type="submit">${esc(label)}</button>${hint ? `<span class="hint">${esc(hint)}</span>` : ''}</div><p class="field-error" data-form-error role="alert" hidden></p><p class="inline-status" data-form-status role="status"></p>`;
 }
@@ -377,7 +378,7 @@ async function renderImage(signal) {
   const preview = selected && mediaUrl(selected.path) ? `<img class="image-preview" src="${esc(mediaUrl(selected.path))}" alt="Ảnh cục bộ ${esc(selected.name)}">` : empty('Chưa có ảnh cục bộ', 'Đặt ảnh có quyền xử lý vào thư mục media rồi làm mới. Không nhận đường dẫn ngoài thư mục này.');
   const savedPreview = analysis && safeMediaUrl(analysis.source_url) ? `<img class="image-preview" src="${esc(safeMediaUrl(analysis.source_url))}" alt="Ảnh của bản phân tích #${esc(analysis.id)}" loading="lazy">` : '';
   const details = analysis ? `<div class="detail-grid"><div class="detail-block"><h3>Bản phân tích #${esc(analysis.id)}</h3>${statusBadge(analysis.status)}<p>${esc(analysis.source_path || 'Không có media được phép')}</p>${savedPreview}<p class="hint">${esc(date(analysis.created_at))}</p><dl class="meta-list"><dt>SHA-256</dt><dd class="mono">${esc(analysis.source_sha256 || 'Chưa có')}</dd></dl>${analysis.error_code ? `<p class="field-error">${esc(analysis.error_code)}</p>` : ''}</div><div class="detail-block"><h3>Jev · đánh giá bằng chứng</h3>${mediaClassifications('image', analysis, data.classifications)}</div></div>${ocrDetails(analysis.ocr)}<div class="detail-block"><h3>Thị giác ngữ nghĩa · riêng với OCR</h3><pre class="detail-text">${esc(pretty(analysis.vision))}</pre></div><div class="detail-block"><h3>Bằng chứng và khoảng trống</h3><pre class="detail-text">${esc(pretty({ media: analysis.media, evidence: analysis.evidence }))}</pre></div>` : empty('Chưa có phân tích ảnh', 'Chạy OCR cục bộ để lưu chữ nhận diện và khoảng trống bằng chứng.');
-  return `<div class="section-stack">${keyWarning()}${info('OCR mặc định chỉ dùng Tesseract trên máy, không gọi mô hình. Bỏ qua thị giác ngữ nghĩa tạo kết quả thiếu một phần. Không có chữ nhận diện không có nghĩa ảnh an toàn.')}${!config.tesseract_available ? info('Chưa tìm thấy Tesseract trên PATH máy chủ. Nếu thiếu engine hoặc gói ngôn ngữ, tác vụ sẽ ghi lỗi rõ ràng; không tự tải gói.') : ''}<div class="split-grid">${panel('Thư viện ảnh', 'Quét tối đa 200 mục media, bỏ qua liên kết tượng trưng.', `${field('image-file-select', 'Ảnh cục bộ', `<select id="image-file-select" data-action="select-image">${selectOptions(files.length ? files.map((f) => [f.path, f.path]) : [['', 'Chưa có ảnh']], state.selectedImage)}</select>`)}${preview}`)}${panel('Đọc ảnh bằng OCR', 'PNG, JPEG, WebP · Việt + Anh mặc định · OCR 30 giây.', `<form data-form="image_analyze"><div class="form-grid">${field('image-analysis-path', 'Ảnh cần phân tích', `<select id="image-analysis-path" name="path" required>${selectOptions(files.length ? files.map((f) => [f.path, f.path]) : [['', 'Chưa có ảnh']], state.selectedImage)}</select>`)}${ocrLanguageField('image')}${check('image-vision', 'vision', 'Bật thêm thị giác ngữ nghĩa · endpoint cục bộ đã cấu hình')}</div>${!config.vision_configured ? '<p class="hint">Chưa cấu hình thị giác. Để tùy chọn tắt nếu chỉ đọc chữ.</p>' : ''}${formEnd('Chạy OCR ảnh', 'Không tự tải mô hình, không cấp quyền endpoint từ xa.')}</form>`)}</div>${panel('Phân tích ảnh đã lưu', `${number(analyses.length)} bản ghi gần đây`, `${analyses.length ? field('saved-image-analysis', 'Chọn bản phân tích', `<select id="saved-image-analysis">${selectOptions(analyses.map((a) => [a.id, `#${a.id} · ${a.source_path || 'Media không khả dụng'}`]), selectedId)}</select>`) : ''}${details}`)}${panel('Phân loại ảnh · hành động riêng', 'Jev nhận bằng chứng đã lưu; không tự gửi khi chạy OCR.', mediaClassificationForm('image', analyses))}</div>`;
+  return `<div class="section-stack">${keyWarning()}${info('OCR mặc định chỉ dùng Tesseract trên máy, không gọi mô hình. Bỏ qua thị giác ngữ nghĩa tạo kết quả thiếu một phần. Không có chữ nhận diện không có nghĩa ảnh an toàn.')}${!config.tesseract_available ? info('Chưa tìm thấy Tesseract trên PATH máy chủ. Nếu thiếu engine hoặc gói ngôn ngữ, tác vụ sẽ ghi lỗi rõ ràng; không tự tải gói.') : ''}<div class="split-grid">${panel('Thư viện ảnh', 'Quét tối đa 200 mục media, bỏ qua liên kết tượng trưng.', `${field('image-file-select', 'Ảnh cục bộ', `<select id="image-file-select" data-action="select-image">${selectOptions(files.length ? files.map((f) => [f.path, f.path]) : [['', 'Chưa có ảnh']], state.selectedImage)}</select>`)}${preview}`)}${panel('Đọc ảnh bằng OCR', 'PNG, JPEG, WebP · Việt + Anh mặc định · OCR 30 giây.', `<form data-form="image_analyze"><div class="form-grid">${field('image-analysis-path', 'Ảnh cần phân tích', `<select id="image-analysis-path" name="path" required>${selectOptions(files.length ? files.map((f) => [f.path, f.path]) : [['', 'Chưa có ảnh']], state.selectedImage)}</select>`)}${ocrLanguageField('image')}${check('image-vision', 'vision', 'Bật thêm thị giác ngữ nghĩa · theo cấu hình thị giác đã lưu', false, config.vision_configured ? '' : 'disabled')}${config.vision_remote ? check('image-allow-remote', 'allow_remote', 'Tôi đồng ý gửi ảnh tới model từ xa (có thể tính phí)', false, 'disabled') : ''}</div>${!config.vision_configured ? '<p class="hint">Chưa cấu hình thị giác. Để tùy chọn tắt nếu chỉ đọc chữ.</p>' : ''}${config.vision_remote ? info('Mô hình thị giác đang ở xa: ảnh sẽ rời máy này và có thể phát sinh chi phí. Cần tự xác nhận đồng ý cho từng tác vụ.') : ''}${formEnd('Chạy OCR ảnh', 'Không tự tải mô hình; quyền gửi ảnh tới endpoint từ xa phải được xác nhận riêng.')}</form>`)}</div>${panel('Phân tích ảnh đã lưu', `${number(analyses.length)} bản ghi gần đây`, `${analyses.length ? field('saved-image-analysis', 'Chọn bản phân tích', `<select id="saved-image-analysis">${selectOptions(analyses.map((a) => [a.id, `#${a.id} · ${a.source_path || 'Media không khả dụng'}`]), selectedId)}</select>`) : ''}${details}`)}${panel('Phân loại ảnh · hành động riêng', 'Jev nhận bằng chứng đã lưu; không tự gửi khi chạy OCR.', mediaClassificationForm('image', analyses))}</div>`;
 }
 function videoDetails(analysis, classifications) {
   const frames = list(analysis.frames).map((frame) => {
@@ -399,7 +400,7 @@ async function renderVideo(signal) {
   const fileOptions = files.map((file) => [file.path, file.name || file.path]);
   const player = selected && mediaUrl(selected.path) ? `<video class="video-thumb" controls playsinline preload="metadata" src="${esc(mediaUrl(selected.path))}" aria-label="Xem video ${esc(selected.name)}"></video><div class="source-meta">${esc(selected.name)} · ${number(selected.size)} byte · ${esc(date(selected.modified))}</div>` : empty('Chưa có video cục bộ', 'Tải một video từ đường dẫn tin nhắn Telegram để bắt đầu.');
   const config = state.bootstrap?.config || {};
-  return `<div class="section-stack">${keyWarning()}${!config.whisper_available ? info('Whisper chưa sẵn sàng trong môi trường máy chủ. Phân tích giọng nói có thể báo lỗi hoặc thiếu bước.') : ''}${!config.vision_configured ? info('Chưa có cấu hình mô hình thị giác. Bạn có thể bỏ qua; kết quả phải ghi nhận khoảng trống này ngay cả khi OCR thành công.') : ''}<div class="split-grid">${panel('Thư viện video', `${number(files.length)} file trong thư mục media được máy chủ cho phép`, `${field('video-file-select', 'Video cục bộ', `<select id="video-file-select" data-action="select-video">${selectOptions(fileOptions.length ? fileOptions : [['', 'Chưa có video']], state.selectedVideo)}</select>`)}<div id="video-player">${player}</div>`)}${panel('Tải video từ Telegram', 'Một liên kết tin nhắn, sử dụng phiên đã đăng nhập.', `<form data-form="download"><div class="form-grid">${field('video-download-url', 'Liên kết tin nhắn chứa video', textInput('video-download-url', 'url', '', 'type="url" required placeholder="https://t.me/kenh/123"'), 'Chỉ một video, không tải playlist.', true)}${sessionField('video-download')}</div>${formEnd('Tải video', 'Dùng mạng; có thể tải file dung lượng lớn.', false)}</form>`)}</div>${panel('Phân tích lời nói và khung hình', 'Chọn file đã lưu. Tối đa 12 khung hình, không tự tải model.', `<form data-form="video_analyze"><div class="form-grid">${field('video-analysis-path', 'File cần phân tích', `<select id="video-analysis-path" name="path" required>${selectOptions(fileOptions.length ? fileOptions : [['', 'Chưa có video']], state.selectedVideo)}</select>`)}${field('video-language', 'Ngôn ngữ lời nói', `<select id="video-language" name="language" required>${selectOptions([['vi', 'Tiếng Việt'], ['en', 'Tiếng Anh'], ['auto', 'Tự nhận diện']])}</select>`)}${field('video-whisper-model', 'Mô hình Whisper cục bộ', `<select id="video-whisper-model" name="model">${selectOptions([['tiny', 'Whisper tiny'], ['base', 'Whisper base']])}</select>`)}${field('video-max-frames', 'Ngân sách khung hình tối đa', textInput('video-max-frames', 'max_frames', 12, 'type="number" min="1" max="12" required'), 'Mỗi khung hình có thể tạo một yêu cầu thị giác. Chi phí tùy nhà cung cấp.')}${check('video-ocr', 'ocr', 'Đọc chữ trong khung hình bằng Tesseract cục bộ', true)}${ocrLanguageField('video')}${check('video-skip-vision', 'skip_vision', 'Bỏ qua thị giác ngữ nghĩa · kết quả thiếu một phần', !config.vision_configured)}</div>${formEnd('Phân tích video', 'OCR mặc định bật tại dashboard; không hiểu cảnh hoặc thay thế thị giác ngữ nghĩa.')}</form>`)}<div class="split-grid">${panel('Phân loại một bản phân tích', 'Chỉ dùng analysis ID đã lưu, không gán nhãn từ tên file.', mediaClassificationForm('video', analyses))}${panel('Phạm vi bằng chứng', 'Một kết quả mô hình không xác nhận danh tính hay hành vi.', `<div class="pipeline-strip"><div class="pipeline-step">Video đã lưu</div><div class="pipeline-step">Lời nói / khung hình</div><div class="pipeline-step">Bằng chứng</div><div class="pipeline-step">Nhãn Jev</div></div><p class="hint">Kiểm tra trạng thái từng bước, lỗi và phần chưa được quan sát trước khi đọc nhãn. Nội dung ngoài các khung lấy mẫu vẫn chưa được kiểm chứng.</p>`)}</div>${panel('Bản phân tích đã lưu', `${number(analyses.length)} bản phân tích · ${number(list(data.classifications).length)} kết quả phân loại`, `${analyses.length ? field('saved-video-analysis', 'Xem bản phân tích', `<select id="saved-video-analysis" data-action="select-analysis">${selectOptions(analyses.map((analysis) => [analysis.id, `#${analysis.id} · ${analysis.source_path || ''} · ${STATUS_NAMES[analysis.status] || analysis.status}`]), selectedAnalysisId)}</select>`) : ''}${selectedAnalysis ? videoDetails(selectedAnalysis, data.classifications) : empty('Chưa có phân tích video', 'Phân tích một file trong thư viện để xem bằng chứng và trạng thái tại đây.')}`)}</div>`;
+  return `<div class="section-stack">${keyWarning()}${!config.whisper_available ? info('Whisper chưa sẵn sàng trong môi trường máy chủ. Phân tích giọng nói có thể báo lỗi hoặc thiếu bước.') : ''}${!config.vision_configured ? info('Chưa có cấu hình mô hình thị giác. Bạn có thể bỏ qua; kết quả phải ghi nhận khoảng trống này ngay cả khi OCR thành công.') : ''}${config.vision_remote ? info('Mô hình thị giác đang ở xa: khung hình sẽ rời máy này và có thể phát sinh chi phí. Cần tự xác nhận đồng ý cho từng tác vụ.') : ''}<div class="split-grid">${panel('Thư viện video', `${number(files.length)} file trong thư mục media được máy chủ cho phép`, `${field('video-file-select', 'Video cục bộ', `<select id="video-file-select" data-action="select-video">${selectOptions(fileOptions.length ? fileOptions : [['', 'Chưa có video']], state.selectedVideo)}</select>`)}<div id="video-player">${player}</div>`)}${panel('Tải video từ Telegram', 'Một liên kết tin nhắn, sử dụng phiên đã đăng nhập.', `<form data-form="download"><div class="form-grid">${field('video-download-url', 'Liên kết tin nhắn chứa video', textInput('video-download-url', 'url', '', 'type="url" required placeholder="https://t.me/kenh/123"'), 'Chỉ một video, không tải playlist.', true)}${sessionField('video-download')}</div>${formEnd('Tải video', 'Dùng mạng; có thể tải file dung lượng lớn.', false)}</form>`)}</div>${panel('Phân tích lời nói và khung hình', 'Chọn file đã lưu. Tối đa 12 khung hình, không tự tải model.', `<form data-form="video_analyze"><div class="form-grid">${field('video-analysis-path', 'File cần phân tích', `<select id="video-analysis-path" name="path" required>${selectOptions(fileOptions.length ? fileOptions : [['', 'Chưa có video']], state.selectedVideo)}</select>`)}${field('video-language', 'Ngôn ngữ lời nói', `<select id="video-language" name="language" required>${selectOptions([['vi', 'Tiếng Việt'], ['en', 'Tiếng Anh'], ['auto', 'Tự nhận diện']])}</select>`)}${field('video-whisper-model', 'Mô hình Whisper cục bộ', `<select id="video-whisper-model" name="model">${selectOptions([['tiny', 'Whisper tiny'], ['base', 'Whisper base']])}</select>`)}${field('video-max-frames', 'Ngân sách khung hình tối đa', textInput('video-max-frames', 'max_frames', 12, 'type="number" min="1" max="12" required'), 'Mỗi khung hình có thể tạo một yêu cầu thị giác. Chi phí tùy nhà cung cấp.')}${check('video-ocr', 'ocr', 'Đọc chữ trong khung hình bằng Tesseract cục bộ', true)}${ocrLanguageField('video')}${check('video-skip-vision', 'skip_vision', 'Bỏ qua thị giác ngữ nghĩa · kết quả thiếu một phần', !config.vision_configured)}${config.vision_remote ? check('video-allow-remote', 'allow_remote', 'Tôi đồng ý gửi khung hình tới model từ xa (có thể tính phí)', false, config.vision_configured ? '' : 'disabled') : ''}</div>${formEnd('Phân tích video', 'OCR mặc định bật tại dashboard; không hiểu cảnh hoặc thay thế thị giác ngữ nghĩa.')}</form>`)}<div class="split-grid">${panel('Phân loại một bản phân tích', 'Chỉ dùng analysis ID đã lưu, không gán nhãn từ tên file.', mediaClassificationForm('video', analyses))}${panel('Phạm vi bằng chứng', 'Một kết quả mô hình không xác nhận danh tính hay hành vi.', `<div class="pipeline-strip"><div class="pipeline-step">Video đã lưu</div><div class="pipeline-step">Lời nói / khung hình</div><div class="pipeline-step">Bằng chứng</div><div class="pipeline-step">Nhãn Jev</div></div><p class="hint">Kiểm tra trạng thái từng bước, lỗi và phần chưa được quan sát trước khi đọc nhãn. Nội dung ngoài các khung lấy mẫu vẫn chưa được kiểm chứng.</p>`)}</div>${panel('Bản phân tích đã lưu', `${number(analyses.length)} bản phân tích · ${number(list(data.classifications).length)} kết quả phân loại`, `${analyses.length ? field('saved-video-analysis', 'Xem bản phân tích', `<select id="saved-video-analysis" data-action="select-analysis">${selectOptions(analyses.map((analysis) => [analysis.id, `#${analysis.id} · ${analysis.source_path || ''} · ${STATUS_NAMES[analysis.status] || analysis.status}`]), selectedAnalysisId)}</select>`) : ''}${selectedAnalysis ? videoDetails(selectedAnalysis, data.classifications) : empty('Chưa có phân tích video', 'Phân tích một file trong thư viện để xem bằng chứng và trạng thái tại đây.')}`)}</div>`;
 }
 function activeJob(job) { return ['queued', 'pending', 'running', 'cancelling'].includes(job.status); }
 function jobCard(job) {
@@ -417,9 +418,22 @@ function jobsMarkup() {
   const running = state.jobs.filter(activeJob).length;
   return `<div class="section-stack">${info(running ? `${running} tác vụ đang chờ hoặc đang chạy. Cập nhật mỗi 2 giây khi tab đang hiển thị.` : 'Không có tác vụ đang chạy. Trạng thái và mã thoát dưới đây là kết quả từ máy chủ.')}<div class="activity-list">${state.jobs.length ? state.jobs.map(jobCard).join('') : panel('Lịch sử tác vụ', '', empty('Chưa có tác vụ', 'Bắt đầu một lần thu thập hoặc phân loại để xem tiến trình tại đây.', button('Thu thập dữ liệu', 'collect')))}</div></div>`;
 }
+function visionStatusMeta(config) {
+  if (!config.vision_configured) return '<div class="source-meta">Chưa cấu hình. Nhập khóa và model bên dưới hoặc dùng biến môi trường máy chủ.</div>';
+  const label = config.vision_provider === 'openai' ? 'OpenAI-compatible' : 'Gemini';
+  const model = typeof config.vision_model === 'string' && config.vision_model ? config.vision_model : 'chưa có model';
+  const scope = config.vision_remote ? 'gửi ảnh ra ngoài, có thể tính phí' : 'endpoint cục bộ, ảnh không rời máy này';
+  return `<div class="source-meta">${esc(`${label} · ${model}`)} · ${esc(scope)}</div>`;
+}
+function visionSettingsPanel(config) {
+  const provider = config.vision_provider === 'openai' ? 'openai' : 'gemini';
+  const model = typeof config.vision_model === 'string' ? config.vision_model : '';
+  const urlAttrs = `maxlength="400" placeholder="http://127.0.0.1:11434/v1/chat/completions"${provider === 'gemini' ? ' disabled' : ''}`;
+  return panel('Đặt khóa thị giác (Gemini / OpenAI-compatible)', 'Khóa chỉ được gửi khi bạn xác nhận. Không lưu vào localStorage; máy chủ chỉ giữ trong bộ nhớ.', `<form data-form="vision"><div class="form-grid">${field('vision-provider', 'Nhà cung cấp thị giác', `<select id="vision-provider" name="vision_provider">${selectOptions([['gemini', 'Gemini API'], ['openai', 'OpenAI-compatible / Qwen-VL cục bộ']], provider)}</select>`)}${field('vision-model', 'Tên model', textInput('vision-model', 'vision_model', model, 'required maxlength="200" placeholder="vd: gemini-2.5-flash"'))}${field('vision-key', 'Khóa API thị giác (chỉ giữ trong bộ nhớ máy chủ)', '<input id="vision-key" name="vision_key" type="password" autocomplete="off" spellcheck="false" maxlength="512">', 'Không ghi xuống đĩa và không hiển thị lại sau khi gửi. Để trống nếu endpoint loopback không cần khóa.', true)}${field('vision-url', 'URL endpoint (OpenAI-compatible)', textInput('vision-url', 'vision_url', '', urlAttrs), 'Chỉ dùng HTTP cho loopback (127.0.0.1, localhost, ::1); endpoint từ xa phải dùng HTTPS và cần khóa.', true)}</div>${formEnd('Lưu cấu hình thị giác', 'Lưu cấu hình không xác thực khóa; chỉ lần chạy thật mới cho biết khóa hợp lệ và có thể bị tính phí.')}</form><div class="divider"></div>${button('Xóa cấu hình thị giác', 'clear-vision')}`);
+}
 async function renderSettings() {
   const config = state.bootstrap?.config || {};
-  return `<div class="section-stack">${panel('Kết nối mô hình', 'Dashboard chỉ hiển thị trạng thái; không đọc hoặc hiển thị lại khóa đã lưu.', `<div class="activity-list"><div class="activity-row">${icon('key')}<div><div class="source-name">Jev</div><div class="source-meta">Khóa được giữ trong bộ nhớ tiến trình, không ghi xuống đĩa.</div></div>${badge(config.jev_configured ? 'Đã cấu hình' : 'Chưa cấu hình', config.jev_configured ? 'success' : 'warning')}</div><div class="activity-row">${icon('scan')}<div><div class="source-name">Mô hình thị giác</div><div class="source-meta">Cấu hình tại môi trường máy chủ.</div></div>${badge(config.vision_configured ? 'Đã cấu hình' : 'Chưa cấu hình', config.vision_configured ? 'success' : 'neutral')}</div><div class="activity-row">${icon('message')}<div><div class="source-name">Whisper cục bộ</div><div class="source-meta">Không tự động tải trọng số từ giao diện này.</div></div>${badge(config.whisper_available ? 'Sẵn sàng' : 'Chưa sẵn sàng', config.whisper_available ? 'success' : 'neutral')}</div></div>`)}<div class="split-grid">${panel('Đặt khóa Jev cho phiên này', 'Khóa chỉ được gửi khi bạn xác nhận. Không lưu vào localStorage.', `<form data-form="settings"><div class="form-grid">${field('settings-jev-key', 'Khóa API Jev', '<input id="settings-jev-key" name="jev_key" type="password" autocomplete="off" spellcheck="false" required>', 'Trường khóa được xóa ngay sau khi gửi.', true)}</div>${formEnd('Đặt khóa Jev', 'Cấu hình không đồng nghĩa khóa đã được nhà cung cấp xác thực.')}</form><div class="divider"></div>${button('Xóa khóa phiên', 'clear-key')}`)}${panel('Dữ liệu và sao lưu', 'Bản sao lưu tạo bằng tác vụ backend, không sửa dữ liệu gốc.', `<dl class="meta-list"><dt>Cơ sở dữ liệu đang dùng</dt><dd>${esc(state.db || 'Chưa có')}</dd><dt>Phiên bản dashboard</dt><dd>${esc(state.bootstrap?.version || 'Chưa cung cấp')}</dd><dt>Phiên Telegram có sẵn</dt><dd>${number(list(config.sessions).length)}</dd></dl>${button('Tạo bản sao lưu', 'backup')}<p class="hint">Bạn sẽ xác nhận trước khi ghi một file sao lưu mới. Tên và kết quả thực tế được ghi trong nhật ký tác vụ.</p>`)}</div>${info('Đăng nhập Telegram bằng CLI hiện có trước khi dùng tác vụ API. Dashboard không hỏi mã OTP, mật khẩu Telegram hay thông tin đăng nhập tương tác.')}</div>`;
+  return `<div class="section-stack">${panel('Kết nối mô hình', 'Dashboard chỉ hiển thị trạng thái; không đọc hoặc hiển thị lại khóa đã lưu.', `<div class="activity-list"><div class="activity-row">${icon('key')}<div><div class="source-name">Jev</div><div class="source-meta">Khóa được giữ trong bộ nhớ tiến trình, không ghi xuống đĩa.</div></div>${badge(config.jev_configured ? 'Đã cấu hình' : 'Chưa cấu hình', config.jev_configured ? 'success' : 'warning')}</div><div class="activity-row">${icon('scan')}<div><div class="source-name">Mô hình thị giác</div>${visionStatusMeta(config)}</div>${badge(config.vision_configured ? 'Đã cấu hình' : 'Chưa cấu hình', config.vision_configured ? 'success' : 'neutral')}</div><div class="activity-row">${icon('message')}<div><div class="source-name">Whisper cục bộ</div><div class="source-meta">Không tự động tải trọng số từ giao diện này.</div></div>${badge(config.whisper_available ? 'Sẵn sàng' : 'Chưa sẵn sàng', config.whisper_available ? 'success' : 'neutral')}</div></div>`)}<div class="split-grid">${panel('Đặt khóa Jev cho phiên này', 'Khóa chỉ được gửi khi bạn xác nhận. Không lưu vào localStorage.', `<form data-form="settings"><div class="form-grid">${field('settings-jev-key', 'Khóa API Jev', '<input id="settings-jev-key" name="jev_key" type="password" autocomplete="off" spellcheck="false" required>', 'Trường khóa được xóa ngay sau khi gửi.', true)}</div>${formEnd('Đặt khóa Jev', 'Cấu hình không đồng nghĩa khóa đã được nhà cung cấp xác thực.')}</form><div class="divider"></div>${button('Xóa khóa phiên', 'clear-key')}`)}${visionSettingsPanel(config)}</div>${panel('Dữ liệu và sao lưu', 'Bản sao lưu tạo bằng tác vụ backend, không sửa dữ liệu gốc.', `<dl class="meta-list"><dt>Cơ sở dữ liệu đang dùng</dt><dd>${esc(state.db || 'Chưa có')}</dd><dt>Phiên bản dashboard</dt><dd>${esc(state.bootstrap?.version || 'Chưa cung cấp')}</dd><dt>Phiên Telegram có sẵn</dt><dd>${number(list(config.sessions).length)}</dd></dl>${button('Tạo bản sao lưu', 'backup')}<p class="hint">Bạn sẽ xác nhận trước khi ghi một file sao lưu mới. Tên và kết quả thực tế được ghi trong nhật ký tác vụ.</p>`)}${info('Đăng nhập Telegram bằng CLI hiện có trước khi dùng tác vụ API. Dashboard không hỏi mã OTP, mật khẩu Telegram hay thông tin đăng nhập tương tác.')}</div>`;
 }
 function updateJobs(jobs) {
   const previous = new Map(state.jobs.map((job) => [String(job.id), job.status]));
@@ -506,7 +520,7 @@ function confirmJob(kind, params) {
   if (kind === 'image_analyze' && params.vision) budget = '\nNgân sách thị giác: 1 ảnh.';
   const network = ['collect', 'watch', 'lookup', 'search', 'download'].includes(kind);
   if (!costs && !network && kind !== 'db_backup') return true;
-  return window.confirm(`${JOB_NAMES[kind] || 'Bắt đầu tác vụ'}?\n${kind === 'db_backup' ? 'Máy chủ sẽ tạo một file sao lưu mới của cơ sở dữ liệu đang chọn.' : network ? 'Tác vụ sẽ truy cập mạng và ghi kết quả vào dữ liệu cục bộ.' : 'Nội dung đã lưu sẽ được gửi đến nhà cung cấp mô hình.'}${costs ? ['video_analyze', 'image_analyze'].includes(kind) ? '\nKhung hình chỉ được gửi đến endpoint thị giác cục bộ đã cấu hình; backend không cho phép endpoint từ xa. Dịch vụ mô hình vẫn có thể tính phí.' : '\nNội dung có thể được gửi đến mô hình bên ngoài và có thể phát sinh chi phí.' : ''}${budget}\nChỉ tiếp tục nếu bạn có quyền xử lý dữ liệu này.`);
+  return window.confirm(`${JOB_NAMES[kind] || 'Bắt đầu tác vụ'}?\n${kind === 'db_backup' ? 'Máy chủ sẽ tạo một file sao lưu mới của cơ sở dữ liệu đang chọn.' : network ? 'Tác vụ sẽ truy cập mạng và ghi kết quả vào dữ liệu cục bộ.' : 'Nội dung đã lưu sẽ được gửi đến nhà cung cấp mô hình.'}${costs ? ['video_analyze', 'image_analyze'].includes(kind) ? '\nẢnh hoặc khung hình sẽ được gửi tới endpoint thị giác đã cấu hình (có thể ở xa) và có thể phát sinh chi phí.' : '\nNội dung có thể được gửi đến mô hình bên ngoài và có thể phát sinh chi phí.' : ''}${budget}\nChỉ tiếp tục nếu bạn có quyền xử lý dữ liệu này.`);
 }
 async function createJob(kind, params) {
   const response = await api('jobs', { method: 'POST', db: false, body: { kind, db: state.db, params } });
@@ -529,6 +543,8 @@ async function submitForm(event) {
   }
   const errorNode = $('[data-form-error]', form);
   if (errorNode) { errorNode.hidden = true; errorNode.textContent = ''; }
+  const config = state.bootstrap?.config || {};
+  let visionBody = null;
   if (kind === 'settings') {
     const input = $('[name="jev_key"]', form);
     const key = String(params.jev_key || '').trim();
@@ -536,6 +552,30 @@ async function submitForm(event) {
     input.value = '';
     if (!window.confirm('Gửi khóa Jev đến máy chủ dashboard cục bộ cho phiên này? Khóa được giữ trong bộ nhớ, không lưu xuống đĩa.')) return;
     params.jev_key = key;
+  } else if (kind === 'vision') {
+    const provider = String(params.vision_provider || '').trim() === 'openai' ? 'openai' : 'gemini';
+    const model = String(params.vision_model || '').trim();
+    const key = String(params.vision_key || '').trim();
+    const url = String(params.vision_url || '').trim();
+    const keyInput = $('[name="vision_key"]', form);
+    if (keyInput) keyInput.value = '';
+    if (!model) { formError(form, 'Nhập tên model thị giác.'); return; }
+    if (provider === 'gemini' && !key) { formError(form, 'Gemini cần API key; khóa chỉ được giữ trong bộ nhớ máy chủ.'); return; }
+    if (provider === 'openai' && !url) { formError(form, 'Provider openai cần URL endpoint: loopback cho Qwen-VL cục bộ, hoặc HTTPS từ xa.'); return; }
+    if (provider === 'openai') {
+      let endpoint;
+      try { endpoint = new URL(url); } catch { formError(form, 'URL endpoint không hợp lệ.'); return; }
+      const host = endpoint.hostname.replace(/^\[|\]$/g, '');
+      const loopback = host === '127.0.0.1' || host === 'localhost' || host === '::1' || host.startsWith('127.');
+      if (!['http:', 'https:'].includes(endpoint.protocol) || endpoint.username || endpoint.password || endpoint.search || endpoint.hash) {
+        formError(form, 'Endpoint phải là http(s)://host/đường-dẫn, không kèm thông tin đăng nhập, query hay fragment.'); return;
+      }
+      if (endpoint.protocol === 'http:' && !loopback) { formError(form, 'Chỉ dùng HTTP cho loopback (127.0.0.1, localhost, ::1); endpoint từ xa phải dùng HTTPS.'); return; }
+    }
+    if (!window.confirm('Gửi cấu hình thị giác đến máy chủ dashboard cục bộ? Khóa được giữ trong bộ nhớ, không lưu xuống đĩa. Lưu cấu hình chưa xác thực khóa với nhà cung cấp.')) return;
+    visionBody = { vision_provider: provider, vision_model: model };
+    if (key) visionBody.vision_key = key;
+    if (provider === 'openai' && url) visionBody.vision_url = url;
   } else {
     if (['collect', 'watch'].includes(kind)) {
       params.channels = String(params.channels || '').trim();
@@ -556,6 +596,20 @@ async function submitForm(event) {
       if (!analysis) { formError(form, 'Chọn một bản phân tích đã lưu.'); return; }
       if (!['ready', 'success'].includes(analysis.status) && !params.allow_partial) { formError(form, 'Bằng chứng chưa đầy đủ. Cần chủ động chấp nhận phân loại thiếu một phần.'); return; }
     }
+    if (kind === 'image_analyze') {
+      params.vision = params.vision === true;
+      if (params.vision && !config.vision_configured) { formError(form, 'Chưa cấu hình thị giác. Mở Cài đặt để đặt khóa và model, hoặc tắt tùy chọn.'); return; }
+      if (params.vision && config.vision_remote && params.allow_remote !== true) { formError(form, 'Cần tự xác nhận đồng ý gửi ảnh tới model từ xa; tác vụ có thể bị tính phí.'); return; }
+      params.allow_remote = Boolean(params.allow_remote);
+      if (!params.vision || !config.vision_remote) delete params.allow_remote;
+    }
+    if (kind === 'video_analyze') {
+      params.skip_vision = params.skip_vision === true;
+      if (!params.skip_vision && !config.vision_configured) { formError(form, 'Chưa cấu hình thị giác. Chọn bỏ qua thị giác để chạy với kết quả thiếu một phần.'); return; }
+      if (!params.skip_vision && config.vision_remote && params.allow_remote !== true) { formError(form, 'Cần tự xác nhận đồng ý gửi khung hình tới model từ xa; tác vụ có thể bị tính phí.'); return; }
+      params.allow_remote = Boolean(params.allow_remote);
+      if (params.skip_vision || !config.vision_remote) delete params.allow_remote;
+    }
     if (!confirmJob(kind, params)) return;
   }
   form.dataset.busy = 'true';
@@ -570,8 +624,20 @@ async function submitForm(event) {
       await bootstrap();
       toast('Máy chủ đã tiếp nhận cấu hình khóa cho phiên này. Chưa kiểm tra hiệu lực với nhà cung cấp.');
       await loadView();
-    } else await createJob(kind, params);
-  } catch (error) { params.jev_key = ''; formError(form, error.message); if (status) status.textContent = ''; toast(error.message, true); }
+    } else if (kind === 'vision') {
+      await api('settings', { method: 'POST', db: false, body: visionBody });
+      await bootstrap();
+      toast('Máy chủ đã tiếp nhận cấu hình thị giác. Khóa chưa được xác thực với nhà cung cấp; chỉ lần chạy thật mới cho biết hợp lệ và có thể bị tính phí.');
+      await loadView();
+    } else {
+      await createJob(kind, params);
+    }
+  } catch (error) {
+    params.jev_key = '';
+    const visionKeyInput = $('[name="vision_key"]', form);
+    if (visionKeyInput) visionKeyInput.value = '';
+    formError(form, error.message); if (status) status.textContent = ''; toast(error.message, true);
+  }
   finally { delete form.dataset.busy; if (submit) { submit.disabled = false; submit.removeAttribute('aria-busy'); } }
 }
 function syncFormOptions() {
@@ -589,6 +655,24 @@ function syncFormOptions() {
     const note = $(`[data-budget="${prefix}"]`, form);
     if (note) note.textContent = enabled ? `Ngân sách Jev: tối đa ${number(budget)} yêu cầu trong lần chạy này. Có thể phát sinh chi phí.` : 'Jev đang tắt. Không gửi yêu cầu phân loại mô hình trong tác vụ này.';
   }
+  const imageForm = $('form[data-form="image_analyze"]');
+  if (imageForm) {
+    const consent = $('[name="allow_remote"]', imageForm);
+    if (consent) consent.disabled = !$('[name="vision"]', imageForm)?.checked;
+  }
+  const videoForm = $('form[data-form="video_analyze"]');
+  if (videoForm) {
+    const consent = $('[name="allow_remote"]', videoForm);
+    if (consent) consent.disabled = $('[name="skip_vision"]', videoForm)?.checked !== false;
+  }
+}
+function syncVisionForm(form = $('form[data-form="vision"]')) {
+  if (!form) return;
+  const provider = $('[name="vision_provider"]', form)?.value === 'openai' ? 'openai' : 'gemini';
+  const urlInput = $('[name="vision_url"]', form);
+  if (!urlInput) return;
+  urlInput.disabled = provider === 'gemini';
+  if (provider === 'gemini') urlInput.value = '';
 }
 async function handleAction(event) {
   const nav = event.target.closest('[data-view]');
@@ -627,6 +711,11 @@ async function handleAction(event) {
       await api('settings', { method: 'POST', db: false, body: { clear_jev: true } });
       await bootstrap(); await loadView(); toast('Máy chủ đã xử lý yêu cầu xóa khóa phiên.'); return;
     }
+    if (action === 'clear-vision') {
+      if (!window.confirm('Xóa cấu hình thị giác của phiên dashboard hiện tại? Biến môi trường máy chủ, nếu có, vẫn do máy chủ quyết định.')) return;
+      await api('settings', { method: 'POST', db: false, body: { clear_vision: true } });
+      await bootstrap(); await loadView(); toast('Máy chủ đã xóa cấu hình thị giác của phiên.'); return;
+    }
     if (action === 'backup' && confirmJob('db_backup', {})) { await createJob('db_backup', {}); }
   } catch (error) { target.disabled = false; toast(error.message, true); }
 }
@@ -638,6 +727,8 @@ function bindShell() {
   document.addEventListener('change', (event) => {
     const target = event.target;
     if (target.closest('form[data-form="collect"],form[data-form="watch"]')) syncFormOptions();
+    if (target.closest('form[data-form="image_analyze"],form[data-form="video_analyze"]')) syncFormOptions();
+    if (target.closest('form[data-form="vision"]')) syncVisionForm(target.closest('form[data-form="vision"]'));
     if (target.id === 'image-file-select') { state.selectedImage = target.value; loadView({ quiet: true }); }
     if (target.id === 'saved-image-analysis') navigate('image', { analysis: target.value });
     if (target.id === 'video-file-select') { state.selectedVideo = target.value; loadView({ quiet: true }); }

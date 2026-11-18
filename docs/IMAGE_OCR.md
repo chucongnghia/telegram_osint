@@ -113,9 +113,21 @@ Chạy `python3 main.py dashboard --open`, chọn đúng DB trên thanh đầu t
 
 - **Ảnh:** chọn file PNG/JPEG/WebP đã có trong `media`, chạy OCR, xem original và evidence; Jev là nút riêng có xác nhận key/partial.
 - **Video:** bật OCR frame, chọn `vie`/`eng`/`vie+eng`; ngôn ngữ lời nói có `auto`.
+- **Cài đặt:** panel "Kết nối mô hình" có ô nhập key Gemini (và provider OpenAI-compatible), xem bên dưới.
 - Điều hướng chỉ đọc DB; tác vụ OCR/video cần xác nhận chạy, không tự scan toàn ổ đĩa.
 
-UI không nhận đường dẫn tuỳ ý ngoài `media`, không upload file từ trình duyệt, không tự tải model hoặc cấp quyền API thị giác từ xa. Cấu hình remote nâng cao dùng CLI có `--allow-remote`. Xem [dashboard](<DASHBOARD.md>).
+### Nhập key Gemini ngay trong dashboard
+
+Panel **Cài đặt → Kết nối mô hình**: chọn provider `gemini`, nhập model (ví dụ `gemini-2.5-flash`) và key, bấm **Lưu cấu hình**. Với model cục bộ kiểu Qwen-VL chọn `openai`, nhập model và URL loopback (ví dụ `http://127.0.0.1:11434/v1/chat/completions`) — không cần key. Nút **Xoá cấu hình** quên cấu hình đang giữ.
+
+- Cấu hình chỉ nằm trong **RAM của tiến trình dashboard**: không ghi file/DB, không trả lại qua API, không vào argv hay log; tắt server là mất.
+- Model từ xa (Gemini hoặc endpoint HTTPS) **bắt buộc tick "cho phép gửi ảnh ra ngoài"** ở từng lần chạy; thiếu consent server trả `consent_required` trước khi gọi mạng.
+- Lưu thành công **không chứng minh key hợp lệ**: dashboard chỉ kiểm tra định dạng cấu hình. Sai key sẽ hiện lỗi trong log job và lưu `status=error`, nhãn NULL.
+- Ô key để trống nghĩa là **giữ key đang có** (RAM hoặc biến môi trường); muốn xoá hẳn dùng **Xoá cấu hình thị giác**.
+- Nếu server đã có env `VISION_MODEL`, `VISION_API_URL`, `GEMINI_API_KEY`/`VISION_API_KEY` thì panel hiện trạng thái đó và vẫn cho ghi đè bằng RAM.
+- Khởi động lại dashboard bằng env vẫn dùng được nếu không muốn nhập trong UI.
+
+UI không nhận đường dẫn tuỳ ý ngoài `media`, không upload file từ trình duyệt, không tự tải model hoặc cấp quyền API thị giác từ xa. Xem [dashboard](<DASHBOARD.md>).
 
 ## Giới hạn và lưu trữ
 
@@ -132,4 +144,5 @@ UI không nhận đường dẫn tuỳ ý ngoài `media`, không upload file t�
 - Video Telegram đã tải dài 22,13 giây: FFmpeg 5 frame (0/5/10/15/20 giây), Tesseract thật đọc được một phần `A sky ladder ... 60-storey building` và `CHINADAILY`; nhiều chữ nhiễu. Whisper thật trả `Thank you.`. OCR thành công nhưng analysis **partial** vì chưa có model hiểu cảnh.
 - Bằng chứng thật ở DB riêng [ocr-verification.sqlite3](<../data/ocr-verification.sqlite3>), không chèn dữ liệu test vào DB production. Không tạo nhãn Jev giả; không gọi lại plugin đang lỗi 401. Vision API/Gemini chưa chạy thật do chưa có cấu hình/key.
 - Dashboard chạy thật qua worker CLI: `image_analyze` trả `succeeded`/exit 0, OCR Tesseract thật và `/api/images` đọc được text; `video_analyze` (OCR + Whisper auto, skip vision) cũng `succeeded`/exit 0 và lưu `partial`. Lần chạy đầu phát hiện lệch cờ `--ocr-timeout` (CLI chỉ có `--timeout`), đã sửa và thêm test đưa argv dashboard qua parser `image` thật.
+- Cấu hình vision qua HTTP: provider OpenAI-compatible loopback (fixture `127.0.0.1:18765`) → `image_analyze` với `vision: true` trả `succeeded`, analysis `ready`, có `description`/`ocr_text`; **không cần key**. Lưu Gemini (key giả) → 200, `vision_remote true`; job thiếu consent bị chặn `409 consent_required`; `clear_vision` xoá cấu hình. Không có request nào tới Google, không dùng key thật.
 - Toàn bộ suite: **452 test** đạt trong venv API; Python hệ thống bỏ qua 1 test Telethon. Test gồm mock subprocess/HTTP, migration cũ, frame/hash/EXIF, giới hạn, lỗi giữ evidence, batch prevalidation, collector nonblocking và dashboard. Node kiểm tra 10 route/forms/escaping/consent; không đo chất lượng OCR/ASR/vision/Jev.

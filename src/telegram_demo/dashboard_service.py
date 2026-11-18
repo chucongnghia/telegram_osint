@@ -75,6 +75,39 @@ def _boolean(value, name):
     return value
 
 
+_LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
+
+
+def _is_loopback_host(host):
+    host = (host or "").lower().strip("[]")
+    return host in _LOOPBACK_HOSTS or host.startswith("127.")
+
+
+def _vision_endpoint(raw):
+    text = _text(raw, "vision endpoint", 400, True)
+    parsed = urlsplit(text)
+    if (parsed.scheme not in ("http", "https") or not parsed.hostname
+            or parsed.username or parsed.password or parsed.query or parsed.fragment):
+        raise DashboardError("Endpoint thị giác phải là http(s)://host/đường-dẫn, không kèm userinfo, query hay fragment.")
+    if parsed.scheme == "http" and not _is_loopback_host(parsed.hostname):
+        raise DashboardError("Chỉ dùng HTTP cho endpoint loopback; endpoint thị giác từ xa phải dùng HTTPS.")
+    return text
+
+
+def _vision_model_name(raw):
+    text = _text(raw, "vision model", 200, True)
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}", text):
+        raise DashboardError("Tên model thị giác chứa ký tự không hợp lệ.")
+    return text
+
+
+def _secret_key(raw, name):
+    key = _text(raw, name, 512, True)
+    if any(not 33 <= ord(c) <= 126 for c in key):
+        raise DashboardError(f"{name} chỉ nhận ký tự ASCII hiển thị.")
+    return key
+
+
 def _json(raw, fallback=None):
     if not isinstance(raw, str) or len(raw) > 2 * 1024 * 1024:
         return fallback
@@ -121,6 +154,10 @@ class DashboardApp:
         self._worker = None
         self._closed = False
         self._jev_key = None
+        self._vision_key = None
+        self._vision_model = None
+        self._vision_provider = None
+        self._vision_url = None
         self._redactions = set()
         self._processes = {}
         self._cancelled = set()
@@ -412,6 +449,37 @@ class DashboardApp:
             classifications = [dict(r) for r in conn.execute("SELECT id,video_analysis_id,status,label,model,error_code FROM video_classifications ORDER BY id DESC LIMIT 100")]
         return {"files": files, "analyses": analyses, "classifications": classifications}
 
+    def _vision(self):
+        """Merged, non-secret view of vision configuration; the key stays in memory."""
+        provider = self._vision_provider or os.environ.get("VISION_PROVIDER") or "gemini"
+        model = self._vision_model or os.environ.get("VISION_MODEL")
+        url = self._vision_url or os.environ.get("VISION_API_URL")
+        key = self._vision_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("VISION_API_KEY")
+        remote = provider == "gemini" or bool(url and not _is_loopback_host(urlsplit(url).hostname))
+        if provider == "gemini":
+            ready = bool(model) and bool(key)
+        else:
+            ready = bool(model and url) and (bool(key) or not remote)
+        return {"provider": provider, "model": model, "url": url, "key": key, "remote": remote, "ready": ready}
+
+    def _vision_argv(self, consent):
+        """Vision flags for a child job, or a clear refusal; never a silent downgrade."""
+        state = self._vision()
+        if not state["ready"]:
+            raise DashboardError(
+                "Chưa cấu hình thị giác. Mở Cài đặt để nhập key Gemini và tên model, "
+                "hoặc chọn bỏ qua thị giác (kết quả sẽ thiếu một phần).", "configuration", 409)
+        if state["remote"] and not consent:
+            raise DashboardError(
+                "Mô hình thị giác từ xa sẽ gửi ảnh/khung hình ra ngoài và có thể tính phí. "
+                "Cần tự xác nhận đồng ý trước khi chạy.", "consent_required", 409)
+        args = ["--vision", "--vision-provider", state["provider"], "--vision-model", state["model"]]
+        if state["url"]:
+            args += ["--vision-url", state["url"]]
+        if state["remote"]:
+            args.append("--allow-remote")
+        return args
+
     def config(self):
         sessions = []
         if SESSIONS_DIR.is_dir():
@@ -419,8 +487,14 @@ class DashboardApp:
         whisper = importlib.util.find_spec("faster_whisper") is not None
         if not whisper:
             whisper = any((PROJECT_ROOT / ".venv-video" / "lib").glob("python*/site-packages/faster_whisper/__init__.py"))
+        vision = self._vision()
         return {"jev_configured": bool(self._jev_key or os.environ.get("TYPESAFE_API_KEY")),
-                "vision_configured": bool(os.environ.get("VISION_MODEL") and (os.environ.get("VISION_API_URL") or os.environ.get("VISION_API_KEY"))),
+                "vision_configured": vision["ready"],
+                "vision_provider": vision["provider"],
+                "vision_model": vision["model"],
+                "vision_remote": vision["remote"],
+                "vision_key_set": bool(vision["key"]),
+                "vision_endpoint_set": bool(vision["url"]),
                 "whisper_available": whisper, "tesseract_available": bool(shutil.which("tesseract")), "sessions": sessions}
 
     def bootstrap(self, token):
@@ -428,21 +502,72 @@ class DashboardApp:
                 "active_database": self.db_path.name, "config": self.config(), "version": "1.0", "jobs": self.jobs()}
 
     def settings(self, data):
-        if not isinstance(data, dict) or not data or set(data) - {"jev_key", "clear_jev"} or len(data) != 1:
-            raise DashboardError("Chỉ gửi jev_key hoặc clear_jev.")
+        if not isinstance(data, dict) or not data:
+            raise DashboardError("Thiếu cấu hình cần lưu.")
+        jev = set(data) & {"jev_key", "clear_jev"}
+        vision_fields = set(data) & {"vision_key", "vision_model", "vision_provider", "vision_url", "clear_vision"}
+        if jev and vision_fields:
+            raise DashboardError("Gửi riêng cấu hình Jev hoặc thị giác trong mỗi lần.")
+        if jev:
+            if set(data) - {"jev_key", "clear_jev"} or len(data) != 1:
+                raise DashboardError("Chỉ gửi jev_key hoặc clear_jev.")
+            with self._lock:
+                if "jev_key" in data:
+                    key = _secret_key(data["jev_key"], "Jev key")
+                    if len(self._redactions) >= 40:
+                        raise DashboardError("Đã thay key nhiều lần; hãy khởi động lại dashboard.", "settings_limit", 409)
+                    self._jev_key = key
+                    self._redactions.add(key)
+                elif data["clear_jev"] is True:
+                    self._jev_key = None
+                else:
+                    raise DashboardError("clear_jev phải là true.")
+            return {"config": self.config()}
+        if set(data) - vision_fields:
+            raise DashboardError("Chỉ nhận vision_key, vision_model, vision_provider, vision_url hoặc clear_vision.")
+        if "clear_vision" in data:
+            if set(data) != {"clear_vision"} or data["clear_vision"] is not True:
+                raise DashboardError("clear_vision phải là true và gửi riêng.")
+            with self._lock:
+                self._vision_key = None
+                self._vision_model = None
+                self._vision_provider = None
+                self._vision_url = None
+            return {"config": self.config()}
+        # Validate the whole prospective configuration before changing anything.
         with self._lock:
-            if "jev_key" in data:
-                key = _text(data["jev_key"], "Jev key", 512, True)
-                if any(not 33 <= ord(c) <= 126 for c in key):
-                    raise DashboardError("Jev key chỉ nhận ký tự ASCII hiển thị.")
-                if len(self._redactions) >= 40:
-                    raise DashboardError("Đã thay key nhiều lần; hãy khởi động lại dashboard.", "settings_limit", 409)
-                self._jev_key = key
+            provider = _text(data["vision_provider"], "vision provider", 20, True) if "vision_provider" in data else self._vision_provider
+            provider = provider or (os.environ.get("VISION_PROVIDER") or "gemini")
+            if provider not in ("gemini", "openai"):
+                raise DashboardError("vision_provider chỉ nhận gemini hoặc openai.")
+            model = _vision_model_name(data["vision_model"]) if "vision_model" in data else self._vision_model
+            model = model or os.environ.get("VISION_MODEL")
+            url = _vision_endpoint(data["vision_url"]) if "vision_url" in data else self._vision_url
+            url = url or os.environ.get("VISION_API_URL")
+            key = _secret_key(data["vision_key"], "Khóa thị giác") if "vision_key" in data else None
+            key = key or self._vision_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("VISION_API_KEY")
+            if provider == "gemini":
+                # Gemini uses its official endpoint; never keep a stale OpenAI-compatible URL.
+                url = None
+            if provider == "openai" and not url:
+                raise DashboardError("Với provider openai cần URL endpoint (loopback cho Qwen-VL cục bộ, hoặc HTTPS từ xa).")
+            remote = provider == "gemini" or bool(url and not _is_loopback_host(urlsplit(url).hostname))
+            ready = (bool(model) and bool(key)) if provider == "gemini" else bool(model and url) and (bool(key) or not remote)
+            if not ready:
+                raise DashboardError(
+                    "Cần đủ model và API key" + ("" if provider == "gemini" else " (endpoint từ xa cũng cần key)")
+                    + " để bật thị giác; nếu chưa có, hãy để trống và chọn bỏ qua thị giác.",
+                    "configuration", 409)
+            if key and len(self._redactions) >= 40:
+                raise DashboardError("Đã thay key nhiều lần; hãy khởi động lại dashboard.", "settings_limit", 409)
+            if "vision_provider" in data:
+                self._vision_provider = provider
+            if "vision_model" in data:
+                self._vision_model = model
+            self._vision_url = url
+            if key:
+                self._vision_key = key
                 self._redactions.add(key)
-            elif data["clear_jev"] is True:
-                self._jev_key = None
-            else:
-                raise DashboardError("clear_jev phải là true.")
         return {"config": self.config()}
 
     def _session(self, raw):
@@ -473,8 +598,8 @@ class DashboardApp:
             "lookup": {"username", "limit", "backend", "session"},
             "search": {"keyword", "limit", "backend", "session"},
             "download": {"url", "session"},
-            "video_analyze": {"path", "skip_vision", "language", "model", "max_frames", "ocr", "ocr_language"},
-            "image_analyze": {"path", "ocr_language", "vision"},
+            "video_analyze": {"path", "skip_vision", "language", "model", "max_frames", "ocr", "ocr_language", "allow_remote"},
+            "image_analyze": {"path", "ocr_language", "vision", "allow_remote"},
             "image_classify": {"image_id", "allow_partial", "recheck"},
             "video_classify": {"analysis_id", "allow_partial", "recheck"},
             "db_backup": set(),
@@ -568,11 +693,10 @@ class DashboardApp:
             path = self.media_path(p.get("path", ""), IMAGE_OCR_TYPES)
             p["ocr_language"] = self._ocr_language(p.get("ocr_language", "vie+eng"))
             p["vision"] = _boolean(p.get("vision", False), "vision")
-            if p["vision"] and not self.config()["vision_configured"]:
-                raise DashboardError("Chưa cấu hình thị giác; OCR cục bộ không cần vision.", "configuration", 409)
+            p["allow_remote"] = _boolean(p.get("allow_remote", False), "allow_remote")
             argv = ["image", *dbflag, "analyze", str(path), "--ocr-language", p["ocr_language"], "--timeout", "30"]
             if p["vision"]:
-                argv += ["--vision"]
+                argv += self._vision_argv(p["allow_remote"])
         elif kind == "image_classify":
             self._require_jev()
             p["image_id"] = _integer(p.get("image_id"), "image_id", 1, 2147483647)
@@ -591,9 +715,8 @@ class DashboardApp:
             if p["language"] not in ("vi", "en", "auto") or p["model"] not in ("tiny", "base"):
                 raise DashboardError("Chỉ hỗ trợ ngôn ngữ vi/en/auto và Whisper tiny/base.")
             p["max_frames"] = _integer(p.get("max_frames", 6), "max_frames", 1, 12)
+            p["allow_remote"] = _boolean(p.get("allow_remote", False), "allow_remote")
             p["skip_vision"] = _boolean(p.get("skip_vision", not self.config()["vision_configured"]), "skip_vision")
-            if not p["skip_vision"] and not self.config()["vision_configured"]:
-                raise DashboardError("Chưa cấu hình thị giác; chọn bỏ qua vision.", "configuration", 409)
             candidate = PROJECT_ROOT / ".venv-video" / "bin" / "python"
             if not candidate.is_file():
                 raise DashboardError("Thiếu Python .venv-video.", "dependency", 409)
@@ -601,11 +724,13 @@ class DashboardApp:
             argv = ["video", *dbflag, "analyze", str(path), "--whisper-model", p["model"], "--language", p["language"], "--max-frames", str(p["max_frames"])]
             if p["skip_vision"]:
                 argv += ["--skip-vision"]
+            else:
+                argv += self._vision_argv(p["allow_remote"])
             p["ocr"] = _boolean(p.get("ocr", True), "ocr")
             p["ocr_language"] = self._ocr_language(p.get("ocr_language", "vie+eng"))
             if p["ocr"]:
                 argv += ["--ocr", "--ocr-language", p["ocr_language"]]
-            # No --allow-model-download or --allow-remote: never implicit transfers.
+            # No --allow-model-download: whisper weights are never fetched implicitly.
         elif kind == "video_classify":
             self._require_jev()
             p["analysis_id"] = _integer(p.get("analysis_id"), "analysis_id", 1, 2147483647)
@@ -728,6 +853,10 @@ class DashboardApp:
                     with self._lock:
                         if self._jev_key:
                             env["TYPESAFE_API_KEY"] = self._jev_key
+                        vision = self._vision()
+                    if vision["key"]:
+                        # Keys travel only in the child environment, never in argv or logs.
+                        env["GEMINI_API_KEY" if vision["provider"] == "gemini" else "VISION_API_KEY"] = vision["key"]
                     env["PYTHONUNBUFFERED"] = "1"
                     process = subprocess.Popen(job["_argv"], cwd=str(PROJECT_ROOT), env=env, stdin=subprocess.DEVNULL,
                                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
@@ -838,6 +967,10 @@ class DashboardApp:
             self._worker.join(timeout=8)
         with self._lock:
             self._jev_key = None
+            self._vision_key = None
+            self._vision_model = None
+            self._vision_provider = None
+            self._vision_url = None
             self._redactions.clear()
 
     def create_server(self, port=8765):
