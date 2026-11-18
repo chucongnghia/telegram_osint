@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import stat
 import sys
 import tempfile
 import threading
@@ -660,6 +661,55 @@ class DashboardTest(unittest.TestCase):
             self.assertNotIn("gemini-child-key", json.dumps(self.app.job(job["id"])))
             self.assertIn("gemini-child-key", self.app._redactions)
             self.assertEqual(self.app._sanitize("key=gemini-child-key"), "key=[đã ẩn]")
+
+    def test_entered_keys_persist_privately_across_restart(self):
+        secrets_file = self.root / "json_folder" / "dashboard_secrets.json"
+        self.app.settings({"jev_key": "jev-persist-key"})
+        self.app.settings({"vision_provider": "gemini", "vision_model": "gemini-2.5-flash", "vision_key": "gemini-persist-key"})
+        self.assertTrue(secrets_file.is_file())
+        self.assertEqual(stat.S_IMODE(secrets_file.stat().st_mode), 0o600)
+        self.assertEqual(secrets_file.stat().st_size, len(secrets_file.read_bytes()))
+        stored = secrets_file.read_text(encoding="utf-8")
+        self.assertIn("gemini-persist-key", stored)  # plaintext by design, mode 0600
+        self.assertEqual([p.name for p in secrets_file.parent.iterdir()], ["dashboard_secrets.json"])
+        for payload in (self.app.config(), self.app.bootstrap("token")):
+            self.assertNotIn("gemini-persist-key", json.dumps(payload))
+            self.assertNotIn("jev-persist-key", json.dumps(payload))
+
+        self.image_fixture()
+        restarted = ds.DashboardApp(self.dbpath)
+        try:
+            config = restarted.config()
+            self.assertEqual(config["vision_provider"], "gemini")
+            self.assertEqual(config["vision_model"], "gemini-2.5-flash")
+            self.assertTrue(config["vision_configured"])
+            self.assertTrue(config["vision_key_set"])
+            self.assertTrue(config["jev_configured"])
+            argv, _, _ = restarted.build_job("image_analyze", None,
+                                             {"path": "poster.png", "vision": True, "allow_remote": True}, "fixture")
+            self.assertNotIn("gemini-persist-key", " ".join(argv))
+        finally:
+            restarted.close()
+
+        # Clearing vision keeps the Jev key; clearing both removes the file entirely.
+        restarted = ds.DashboardApp(self.dbpath)
+        try:
+            restarted.settings({"clear_vision": True})
+            self.assertFalse(restarted.config()["vision_configured"])
+            self.assertTrue(restarted.config()["jev_configured"])
+            restarted.settings({"clear_jev": True})
+        finally:
+            restarted.close()
+        self.assertFalse(secrets_file.exists())
+
+        # A corrupt file is ignored, not deleted, and the dashboard still starts.
+        secrets_file.write_text("{not json", encoding="utf-8")
+        broken = ds.DashboardApp(self.dbpath)
+        try:
+            self.assertFalse(broken.config()["vision_configured"])
+        finally:
+            broken.close()
+        self.assertTrue(secrets_file.exists())
 
     def test_worker_mocked_child_redaction_bounded_logs_failure_drain_and_backup(self):
         class FakeProcess:

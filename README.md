@@ -74,7 +74,7 @@ python3 main.py image --db data/image-check.sqlite3 analyze media/anh-can-kiem-t
 ```
 
 Dashboard có trang **Ảnh**, OCR mặc định bật trong form video, evidence và nút Jev riêng.
-Model thị giác khai báo tại **Cài đặt → Kết nối mô hình**: key Gemini giữ trong RAM,
+Model thị giác khai báo tại **Cài đặt → Kết nối mô hình**: key Gemini lưu file cục bộ 0600,
 hoặc URL loopback cho model cục bộ (không cần key).
 Xem [cài đặt, lệnh phân loại và giới hạn OCR](<docs/IMAGE_OCR.md>).
 

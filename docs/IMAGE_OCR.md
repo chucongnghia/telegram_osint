@@ -53,7 +53,7 @@ Nếu chỉ OCR, trạng thái là `partial` với gap `semantic_visual_understa
 
 ### Gọi Jev sau OCR
 
-Nhập key trong terminal hoặc dùng ô key RAM trong dashboard; không dán key vào source/chat:
+Nhập key trong terminal hoặc dùng ô key trong dashboard (lưu file cục bộ 0600); không dán key vào source/chat:
 
 ```bash
 read -rsp 'TypeSafe API key: ' TYPESAFE_API_KEY; echo
@@ -120,11 +120,11 @@ Chạy `python3 main.py dashboard --open`, chọn đúng DB trên thanh đầu t
 
 Panel **Cài đặt → Kết nối mô hình**: chọn provider `gemini`, nhập model (ví dụ `gemini-2.5-flash`) và key, bấm **Lưu cấu hình**. Với model cục bộ kiểu Qwen-VL chọn `openai`, nhập model và URL loopback (ví dụ `http://127.0.0.1:11434/v1/chat/completions`) — không cần key. Nút **Xoá cấu hình** quên cấu hình đang giữ.
 
-- Cấu hình chỉ nằm trong **RAM của tiến trình dashboard**: không ghi file/DB, không trả lại qua API, không vào argv hay log; tắt server là mất.
+- Cấu hình được lưu vào **`json_folder/dashboard_secrets.json`** (quyền 0600, git-ignored) để mở lại dashboard không phải nhập key. File là **plaintext, không mã hoá** — cùng mức bảo vệ như `json_folder/tg_api.json`; ai đọc được tài khoản máy này thì đọc được key.
 - Model từ xa (Gemini hoặc endpoint HTTPS) **bắt buộc tick "cho phép gửi ảnh ra ngoài"** ở từng lần chạy; thiếu consent server trả `consent_required` trước khi gọi mạng.
 - Lưu thành công **không chứng minh key hợp lệ**: dashboard chỉ kiểm tra định dạng cấu hình. Sai key sẽ hiện lỗi trong log job và lưu `status=error`, nhãn NULL.
-- Ô key để trống nghĩa là **giữ key đang có** (RAM hoặc biến môi trường); muốn xoá hẳn dùng **Xoá cấu hình thị giác**.
-- Nếu server đã có env `VISION_MODEL`, `VISION_API_URL`, `GEMINI_API_KEY`/`VISION_API_KEY` thì panel hiện trạng thái đó và vẫn cho ghi đè bằng RAM.
+- Ô key để trống nghĩa là **giữ key đang có** (file đã lưu hoặc biến môi trường); muốn xoá hẳn dùng **Xoá cấu hình thị giác** (xoá cả phần trong file).
+- Nếu server đã có env `VISION_MODEL`, `VISION_API_URL`, `GEMINI_API_KEY`/`VISION_API_KEY` thì panel hiện trạng thái đó và vẫn cho ghi đè bằng file cục bộ.
 - Khởi động lại dashboard bằng env vẫn dùng được nếu không muốn nhập trong UI.
 
 UI không nhận đường dẫn tuỳ ý ngoài `media`, không upload file từ trình duyệt, không tự tải model hoặc cấp quyền API thị giác từ xa. Xem [dashboard](<DASHBOARD.md>).

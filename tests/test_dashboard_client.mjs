@@ -327,7 +327,7 @@ const visionKeyTag = control(visionSettings, 'vision-key');
 assert(visionKeyTag.includes('name="vision_key"') && visionKeyTag.includes('type="password"'));
 assert(visionKeyTag.includes('autocomplete="off"') && visionKeyTag.includes('spellcheck="false"'));
 assert(!visionKeyTag.includes('value='), 'vision key is never prefilled');
-assert(visionSettings.includes('bộ nhớ máy chủ') && visionSettings.includes('Không ghi xuống đĩa'));
+assert(visionSettings.includes('file cục bộ 0600') && visionSettings.includes('dashboard_secrets.json'));
 const visionUrlTag = control(visionSettings, 'vision-url');
 assert(visionUrlTag.includes('name="vision_url"'), 'vision url field exists');
 assert(visionUrlTag.includes('placeholder="http://127.0.0.1:11434/v1/chat/completions"'));

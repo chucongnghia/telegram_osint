@@ -145,6 +145,11 @@ def _public_value(value, depth=0):
     return None
 
 
+def _secrets_path():
+    """Private local file holding dashboard-entered keys (0600, git-ignored, plaintext)."""
+    return JSON_DIR / "dashboard_secrets.json"
+
+
 class DashboardApp:
     def __init__(self, db_path=DEFAULT_DB):
         self.db_path = Path(db_path).expanduser().absolute()
@@ -161,6 +166,74 @@ class DashboardApp:
         self._redactions = set()
         self._processes = {}
         self._cancelled = set()
+        self._load_secrets()
+
+    def _load_secrets(self):
+        """Restore keys saved by `settings`; a malformed file is ignored, never deleted."""
+        try:
+            data = json.loads(_secrets_path().read_text(encoding="utf-8"))
+        except (OSError, ValueError, UnicodeDecodeError):
+            return
+        if not isinstance(data, dict):
+            return
+        try:
+            self._jev_key = _secret_key(data.get("jev_key"), "jev")
+        except DashboardError:
+            pass
+        vision = data.get("vision")
+        if not isinstance(vision, dict):
+            return
+        if vision.get("provider") in ("gemini", "openai"):
+            self._vision_provider = vision["provider"]
+        try:
+            self._vision_model = _vision_model_name(vision["model"])
+        except (KeyError, DashboardError):
+            pass
+        if self._vision_provider != "gemini":
+            try:
+                self._vision_url = _vision_endpoint(vision["url"])
+            except (KeyError, DashboardError):
+                pass
+        try:
+            key = _secret_key(vision["key"], "Khóa thị giác")
+        except (KeyError, DashboardError):
+            key = None
+        if key:
+            self._vision_key = key
+            self._redactions.add(key)
+
+    def _save_secrets(self):
+        """Persist the current keys so restarting the dashboard keeps them.
+
+        The file is plaintext, mode 0600, inside `json_folder/` (git-ignored) — same
+        practical model as `json_folder/tg_api.json`, not encryption at rest.
+        """
+        payload = {}
+        if self._jev_key:
+            payload["jev_key"] = self._jev_key
+        vision = {"provider": self._vision_provider, "model": self._vision_model,
+                  "url": None if self._vision_provider == "gemini" else self._vision_url,
+                  "key": self._vision_key}
+        vision = {name: value for name, value in vision.items() if value}
+        if vision:
+            payload["vision"] = vision
+        path = _secrets_path()
+        if not payload:
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                raise DashboardError(f"Không xoá được file cấu hình cục bộ: {exc.strerror or 'lỗi IO'}") from None
+            return
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = path.with_name(path.name + ".tmp")
+            with os.fdopen(os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w", encoding="utf-8") as fh:
+                json.dump(payload, fh, ensure_ascii=False)
+            os.replace(temporary, path)
+        except OSError as exc:
+            raise DashboardError(f"Không ghi được file cấu hình cục bộ: {exc.strerror or 'lỗi IO'}") from None
 
     @staticmethod
     def _is_database(path):
@@ -522,6 +595,7 @@ class DashboardApp:
                     self._jev_key = None
                 else:
                     raise DashboardError("clear_jev phải là true.")
+                self._save_secrets()
             return {"config": self.config()}
         if set(data) - vision_fields:
             raise DashboardError("Chỉ nhận vision_key, vision_model, vision_provider, vision_url hoặc clear_vision.")
@@ -533,6 +607,7 @@ class DashboardApp:
                 self._vision_model = None
                 self._vision_provider = None
                 self._vision_url = None
+                self._save_secrets()
             return {"config": self.config()}
         # Validate the whole prospective configuration before changing anything.
         with self._lock:
@@ -568,6 +643,7 @@ class DashboardApp:
             if key:
                 self._vision_key = key
                 self._redactions.add(key)
+            self._save_secrets()
         return {"config": self.config()}
 
     def _session(self, raw):
