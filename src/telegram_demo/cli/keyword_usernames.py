@@ -75,7 +75,7 @@ def records_from_json(path: str) -> list[dict]:
     if not records:
         raise RuntimeError(f"File {path} không có bài đăng nào (khóa 'posts').")
     for rec in records:
-        rec["analysis"] = analyze(rec)      # chấm lại bằng code hiện tại
+        rec["analysis"] = analyze(rec, ocr_text=rec.get("ocr_text", ""))  # giữ đóng góp OCR
     return records
 
 

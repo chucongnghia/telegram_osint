@@ -28,7 +28,8 @@ Server chỉ lắng nghe `127.0.0.1`, không mở ra LAN. Đây là ứng dụng
 | Nguồn thu thập | Nguồn và số tin thực tế; mở danh sách tin của nguồn. |
 | Thu thập dữ liệu | Web công khai hoặc Telegram API; giới hạn tin và Jev tuỳ chọn. Watch là một cửa sổ hữu hạn, không chạy vô hạn. |
 | Phân loại Jev | Chọn giới hạn và chủ động gửi batch văn bản. Không tự gọi mô hình khi mở trang. |
-| Phân tích video | Xem/phát video trong `media/`, tải một video theo link Telegram, chạy phân tích và gọi Jev thành các bước riêng. |
+| Phân tích video | Xem/phát video trong `media/`, tải theo link, Whisper + OCR frame (mặc định bật), chọn ngôn ngữ auto; gọi Jev riêng. |
+| Phân tích ảnh | Chọn PNG/JPEG/WebP trong `media/`, OCR Việt/Anh cục bộ, xem original/evidence, Jev riêng với đồng ý partial/key. |
 | Tra cứu hồ sơ | Xem hồ sơ đã lưu, lookup hoặc tìm username bằng các CLI hiện có. |
 | Nhật ký tác vụ | Trạng thái thật, log có giới hạn, xem lỗi và dừng tác vụ. Một worker chạy tuần tự. |
 | Cài đặt | Thông tin DB, key Jev tạm trong RAM và sao lưu SQLite. |
@@ -45,7 +46,7 @@ DB picker liệt kê DB ứng dụng trong `data/`, bỏ qua bản backup và fi
 
 ## Giới hạn bản đầu
 
-- Không hỗ trợ đăng nhập Telegram/bot, tìm kiếm username bằng backend web, discover/join nhóm riêng, OCR hoặc cấu hình nâng cao ngay trên form. Các chức năng CLI vẫn giữ nguyên; xem [USAGE](<USAGE.md>).
+- Không hỗ trợ đăng nhập Telegram/bot, tìm kiếm username bằng backend web, discover/join nhóm riêng hoặc cấu hình nâng cao ngay trên form. OCR ảnh/frame video cục bộ đã có; đọc [hướng dẫn OCR](<IMAGE_OCR.md>). Các chức năng CLI vẫn giữ nguyên; xem [USAGE](<USAGE.md>).
 - Không upload video từ trình duyệt; chọn file đang có trong `media/` hoặc tải đúng link tin nhắn có video. Không nhận đường dẫn file tuỳ ý ngoài vùng cho phép.
 - Chỉ dành cho một người dùng cục bộ, không có tài khoản đăng nhập/phân quyền nhiều người. Không dùng reverse proxy mở ứng dụng ra Internet.
 - Hàng đợi, key nhập và nhật ký tiến trình là dữ liệu RAM; khởi động lại server sẽ mất phần này. Nội dung/kết quả đã được CLI ghi vào SQLite vẫn còn. Dừng một tác vụ không hoàn tác dữ liệu đã lưu hoặc request đã gửi.

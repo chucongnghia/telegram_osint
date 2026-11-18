@@ -3,7 +3,8 @@
 """
 
 Công cụ dùng: **Telethon** (thư viện chuẩn thức của Telegram cho Python) + tuỳ chọn
-**pytesseract** (OCR) và **Pillow** (mở ảnh). Tất cả đều là thư viện ngoài, cài bằng pip.
+OCR cục bộ dùng **Tesseract** + **FFmpeg/FFprobe** và dữ liệu ngôn ngữ vie+eng
+đã cài trên máy; không tự tải model hay chuyển sang dịch vụ bên ngoài.
 
 Chuẩn bị (một lần)
 -----------------
@@ -41,6 +42,7 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import sys
 from collections import Counter
 from datetime import datetime, timezone
@@ -132,47 +134,53 @@ def session_kind(path: str) -> str:
 _OCR_ENGINE = None
 
 
+def _ocr_engine():
+    """Load the shared, local-only OCR implementation only when requested."""
+    global _OCR_ENGINE
+    if _OCR_ENGINE is None:
+        from ..image_ocr import LocalOCR
+        _OCR_ENGINE = LocalOCR()
+    return _OCR_ENGINE
+
+
+def _ocr_error_code(exc: Exception) -> str:
+    from ..image_ocr import OCRError
+    code = exc.code if isinstance(exc, OCRError) else "ocr_error"
+    return re.sub(r"[^a-z0-9_]", "_", str(code).lower())[:64] or "ocr_error"
+
+
 def ocr_available() -> bool:
+    """Check executables AND requested local language data, without downloads."""
     try:
-        import PIL  # noqa: F401
-        try:
-            import pytesseract  # noqa: F401
-            return True
-        except ImportError:
-            import easyocr  # noqa: F401
-            return True
-    except ImportError:
+        _ocr_engine().preflight()
+        return True
+    except Exception:
         return False
 
 
 def ocr_image(path: str) -> str:
-    """Đọc chữ trong ảnh. Trả chuỗi rỗng nếu thiếu thư viện (không làm sập chương trình)."""
-    global _OCR_ENGINE
+    """Compatibility wrapper: raw OCR text, with typed shared OCR failures."""
+    return _ocr_engine().recognize(path)["text"]
+
+
+def apply_ocr_record(rec: dict, path: str) -> None:
+    """Attach bounded local OCR evidence without replacing the original message."""
+    pipeline = rec.setdefault("pipeline_status", {})
     try:
-        from PIL import Image
-    except ImportError:
-        print("    ! Bỏ qua OCR: chưa có Pillow (pip install pillow)")
-        return ""
-    try:
-        import pytesseract
-        return normalize(pytesseract.image_to_string(Image.open(path), lang="vie+eng"))
-    except ImportError:
-        pass
-    except Exception as exc:                       # thiếu binary tesseract, ảnh lỗi...
-        print(f"    ! pytesseract lỗi ({type(exc).__name__}), thử easyocr...")
-    try:
-        import easyocr
-        if _OCR_ENGINE is None:
-            _OCR_ENGINE = easyocr.Reader(["vi", "en"], gpu=False, verbose=False)
-        lines = _OCR_ENGINE.readtext(path, detail=0)
-        return normalize(" ".join(lines))
-    except ImportError:
-        print("    ! Bỏ qua OCR: cài `pip install pytesseract pillow` (kèm apt install tesseract-ocr) "
-              "hoặc `pip install easyocr`")
-        return ""
+        result = _ocr_engine().recognize(path)
     except Exception as exc:
-        print(f"    ! OCR lỗi: {type(exc).__name__}: {exc}")
-        return ""
+        code = _ocr_error_code(exc)
+        rec["ocr"] = {"status": "error", "text": "", "words": [],
+                      "provider": "tesseract", "error_code": code}
+        pipeline["ocr_done"] = False
+        print(f"    ! OCR không hoàn tất ({code}); giữ nguyên nội dung gốc.")
+    else:
+        # Keep full shared result provenance (version, languages, source hash,
+        # preprocessing and limitations), not just a normalized text projection.
+        rec["ocr"] = {**result, "status": "success", "error_code": None}
+        rec["ocr_text"] = result["text"]
+        pipeline["ocr_done"] = True       # an empty successful scan is still done
+    rec["analysis"] = analyze(rec, ocr_text=rec.get("ocr_text", ""))
 
 
 # ---------------------------------------------------------------------------
@@ -678,12 +686,8 @@ async def download_media(client, records: list[dict], media_dir: str, do_ocr: bo
         rec["pipeline_status"]["downloaded"] = True
         print(f"    ↓ {os.path.basename(path)}")
         if do_ocr and path.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
-            txt = ocr_image(path)
-            if txt:
-                rec["ocr_text"] = txt
-                rec["pipeline_status"]["ocr_done"] = True
-                rec["analysis"] = analyze(rec, ocr_text=txt)   # chấm lại điểm có OCR
-                print(f"      OCR: {txt[:70]}")
+            # Sequential batch processing bounds both workers and local subprocesses.
+            await asyncio.to_thread(apply_ocr_record, rec, path)
     print(f"  [media] tải được {ok} file, lỗi {fail} → {media_dir}")
 
 
@@ -817,6 +821,7 @@ async def run_watch(args, api_id: int, api_hash: str, bot: bool = False) -> int:
     queue = asyncio.Queue(maxsize=64) if incremental else None
     watch_errors: list[str] = []
     handlers: set[asyncio.Task] = set()
+    ocr_slots = asyncio.Semaphore(2)    # per invocation, shared by all event callbacks
     accepting = True
 
     async def _consume():
@@ -860,10 +865,15 @@ async def run_watch(args, api_id: int, api_hash: str, bot: bool = False) -> int:
                 rec["media_path"] = path
                 rec["pipeline_status"]["downloaded"] = True
                 if args.ocr and path.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
-                    txt = ocr_image(path)
-                    if txt:
-                        rec["ocr_text"] = txt
-                        rec["pipeline_status"]["ocr_done"] = True
+                    async with ocr_slots:
+                        task = asyncio.create_task(asyncio.to_thread(apply_ocr_record, rec, path))
+                        try:
+                            await asyncio.shield(task)
+                        except asyncio.CancelledError:
+                            # Cancelling an await cannot stop a running thread.
+                            # Keep its slot until completion, including shutdown.
+                            await task
+                            raise
         rec["analysis"] = analyze(rec, ocr_text=rec.get("ocr_text", ""))
         collected.append(rec)
         if queue is not None and not worker.done():
@@ -948,6 +958,11 @@ async def run_watch(args, api_id: int, api_hash: str, bot: bool = False) -> int:
             result = (await asyncio.gather(worker, return_exceptions=True))[0]
             if isinstance(result, BaseException) and not watch_errors:
                 watch_errors.append("Worker watch/Jev đã dừng bất thường")
+        else:
+            # OCR callbacks may still be finishing after the Telegram disconnect.
+            pending = [task for task in handlers if not task.done()]
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
 
     if not collected:
         print("[i] Không nhận được tin nhắn mới nào.")
@@ -1142,7 +1157,8 @@ def _main() -> int:
     p.add_argument("--media-dir", metavar="DIR",
                    help="tải ảnh/video về thư mục này")
     p.add_argument("--ocr", action="store_true",
-                   help="đọc chữ trong ảnh (cần pytesseract + Pillow), chấm lại điểm")
+                   help="OCR cục bộ ảnh đã tải (cần --media-dir, Tesseract vie+eng và "
+                        "FFmpeg/FFprobe); không tự tải model, chấm lại điểm")
     p.add_argument("--watch", action="append", metavar="@KENH/NHOM",
                    help="theo dõi tin nhắn MỚI (lặp lại được; bỏ trống = mọi hội thoại)")
     p.add_argument("--watch-once", action="store_true",
@@ -1167,6 +1183,20 @@ def _main() -> int:
     args = p.parse_args()
     if args.non_interactive and (args.login or args.login_bot or args.setup_bot is not None):
         p.error("--non-interactive không đi cùng --login, --login-bot hay --setup-bot")
+    if args.ocr:
+        if not args.media_dir:
+            p.error("--ocr cần --media-dir để OCR ảnh đã tải")
+        if args.demo or args.report or args.login or args.login_bot or args.setup_bot is not None:
+            p.error("--ocr không đi cùng --demo, --report, --login, --login-bot hay --setup-bot")
+        if not any((args.channel, args.user, args.search, args.watch)):
+            p.error("--ocr cần nguồn tin nhắn: --channel, --user, --search hoặc --watch")
+        try:
+            _ocr_engine().preflight()
+        except Exception as exc:
+            print(f"[!] OCR cục bộ chưa sẵn sàng ({_ocr_error_code(exc)}). "
+                  "Cần Tesseract, dữ liệu vie+eng và FFmpeg/FFprobe đã cài trên máy; "
+                  "không tự tải hay dùng OCR thay thế.", file=sys.stderr)
+            return 2
     configure_storage(args, tool="demo_telegram_api")
     # Mọi file .json đi vào json_folder/ (trừ khi người dùng ghi đường dẫn có '/')
     args.out = json_path(args.out)

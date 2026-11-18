@@ -22,7 +22,8 @@ COMMANDS = {
     "profile": ("username_info", "Tra hồ sơ theo username"),
     "db": ("database", "Quản lý SQLite và nhập/xuất JSON"),
     "classify": ("classify_messages", "Phân loại văn bản bằng Jev và lưu SQLite"),
-    "video": ("video", "FFmpeg → Whisper/thị giác → Jev → SQLite"),
+    "video": ("video", "FFmpeg → Whisper/OCR/thị giác → Jev → SQLite"),
+    "image": ("image", "Ảnh → OCR/thị giác → Jev → SQLite"),
     "download": ("telegram_download", "Tải đúng một video Telegram theo link bài đăng"),
     "dashboard": ("dashboard", "Mở dashboard Telegram cục bộ trên trình duyệt"),
 }

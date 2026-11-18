@@ -29,7 +29,7 @@ def analyze(store, args):
     from ..video_media import FFmpegMedia
     from ..video_models import WhisperTranscriber, VisionClient
     media = FFmpegMedia(ffmpeg=args.ffmpeg, ffprobe=args.ffprobe, timeout=args.timeout)
-    whisper = vision = None
+    whisper = vision = ocr = None
     extract_only = args.command == 'extract'
     if not extract_only:
         # All opt-in/config checks occur before any paid call or expensive ASR.
@@ -38,14 +38,21 @@ def analyze(store, args):
                                   endpoint=args.vision_url, timeout=args.timeout,
                                   allow_remote=args.allow_remote)
             vision.preflight()
+        if getattr(args, 'ocr', False):
+            from ..image_ocr import LocalOCR
+            ocr = LocalOCR(languages=args.ocr_language, timeout=args.ocr_timeout,
+                           tesseract=args.tesseract, ffmpeg=args.ffmpeg, ffprobe=args.ffprobe)
+            ocr.preflight()
         if not args.skip_transcript:
-            whisper = WhisperTranscriber(model=args.whisper_model, language=args.language,
+            whisper = WhisperTranscriber(model=args.whisper_model,
+                                          language=None if args.language == 'auto' else args.language,
                                          download_root=str(PROJECT_ROOT / '.cache' / 'whisper'),
                                          allow_download=args.allow_model_download, threads=args.threads)
             whisper.preflight()
     options = {
         'interval': args.interval, 'max_frames': args.max_frames,
         'max_duration': args.max_duration, 'extract_only': extract_only,
+        'local_ocr': None if ocr is None else {'provider': 'tesseract', 'languages': args.ocr_language},
         'vision': None if vision is None else vision.provenance,
         'whisper': None if whisper is None else {'model': args.whisper_model, 'language': args.language,
                                                 'compute_type': 'int8', 'device': 'cpu'},
@@ -53,7 +60,7 @@ def analyze(store, args):
     artifact_parent = MEDIA_DIR / 'video'
     artifact_parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     artifact_dir = artifact_parent / str(uuid.uuid4())
-    aid = process_video(store, args.file, artifact_dir, media=media, whisper=whisper, vision=vision,
+    aid = process_video(store, args.file, artifact_dir, media=media, whisper=whisper, vision=vision, ocr=ocr,
                         extract_only=extract_only, interval=args.interval, max_frames=args.max_frames,
                         max_duration=args.max_duration, message_row_id=args.message_id, options=options)
     row = store.analysis(aid)
@@ -138,7 +145,11 @@ def main(argv=None):
             sub.add_argument('--skip-transcript', action='store_true')
             sub.add_argument('--skip-vision', action='store_true')
             sub.add_argument('--whisper-model', default='tiny', help='tên model multilingual hoặc đường dẫn local')
-            sub.add_argument('--language', default='vi')
+            sub.add_argument('--language', default='vi', help='mã ngôn ngữ Whisper; auto tự nhận dạng')
+            sub.add_argument('--ocr', action='store_true', help='đọc chữ trong khung hình bằng Tesseract cục bộ')
+            sub.add_argument('--ocr-language', default='vie+eng', help='ngôn ngữ Tesseract, ví dụ vie+eng')
+            sub.add_argument('--ocr-timeout', type=finite_positive, default=30)
+            sub.add_argument('--tesseract', default=None, help='binary Tesseract; mặc định TESSERACT_COMMAND hoặc PATH')
             sub.add_argument('--threads', type=positive, default=2)
             sub.add_argument('--allow-model-download', action='store_true', help='cho phép tải weights Whisper lần đầu')
             sub.add_argument('--vision-provider', choices=('openai', 'gemini'), default='openai')

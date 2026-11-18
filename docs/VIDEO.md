@@ -2,8 +2,9 @@
 
 Lệnh `video` nhận **file video có sẵn trên máy**, không tải URL/video Telegram,
 không tự thu thập và không tự gọi API có phí khi chạy các lệnh thu thập khác.
-Pipeline: FFmpeg tách audio/khung hình → Whisper phiên âm + model thị giác mô tả/OCR
-→ Jev phân loại bằng chứng văn bản → lưu lịch sử riêng trong SQLite.
+Pipeline: FFmpeg tách audio/khung hình → Whisper phiên âm + Tesseract OCR cục bộ
+(`--ocr`) + model thị giác tuỳ chọn → Jev phân loại evidence văn bản → SQLite.
+OCR không thay hiểu cảnh; xem [ảnh/OCR, cài runtime và smoke thật](<IMAGE_OCR.md>).
 `analyze` **chưa gọi Jev**; phân loại văn bản Telegram vẫn là lệnh `classify` riêng.
 
 ## Tải video Telegram theo link

@@ -255,12 +255,12 @@ class VideoPipelineTests(unittest.TestCase):
     def test_legacy_v1_v2_migrations_preserve_every_table(self):
         for version in (1, 2):
             path = self.root / f'legacy{version}.sqlite3'
-            schema = storage.SCHEMA.replace(storage.VIDEO_SCHEMA, '')
+            schema = storage.SCHEMA.replace(storage.VIDEO_SCHEMA, '').replace(storage.IMAGE_SCHEMA, '')
             if version == 1: schema = schema.replace(storage.CLASSIFICATION_SCHEMA, '')
             with closing(sqlite3.connect(path)) as conn:
                 conn.executescript(schema + f'PRAGMA user_version={version}; PRAGMA application_id={storage.APPLICATION_ID};')
             with Database(path) as migrated:
-                self.assertEqual(migrated.conn.execute('PRAGMA user_version').fetchone()[0], 3)
+                self.assertEqual(migrated.conn.execute('PRAGMA user_version').fetchone()[0], storage.SCHEMA_VERSION)
                 migrated.save_payload({'backend': 'web', 'posts': [{'channel': 'news', 'message_id': 2, 'text': 'immutable'}]})
                 if version == 2:
                     from telegram_demo.text_classifier import ClassifierStore

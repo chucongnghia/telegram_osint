@@ -319,7 +319,7 @@ nhờ SHA256, không tạo bản run trùng và **không chấm lại điểm l�
 
 ### Hiểu dữ liệu đã lưu
 
-[`storage.py`](<../src/telegram_demo/storage.py>) quản lý `Database` schema v3; [`database.py`](<../src/telegram_demo/cli/database.py>) là CLI
+[`storage.py`](<../src/telegram_demo/storage.py>) quản lý `Database` schema v4; [`database.py`](<../src/telegram_demo/cli/database.py>) là CLI
 quản trị. Mỗi `run` giữ **snapshot JSON gốc bất biến**. Bảng `messages` là quan sát mới
 nhất, duy nhất theo `(entity_id, message_id)`; trạng thái cũ đầy đủ vẫn lấy được bằng
 `export RUN_ID`. Phân tích được giữ **theo từng run / message**, có nguồn gốc và phiên bản
@@ -360,7 +360,7 @@ Chạy qua dispatcher với tên lệnh ở cột mô tả.
 | [`demo_telegram.py`](<../src/telegram_demo/cli/demo_telegram.py>) | `web` — Backend **web**: đọc trang công khai `https://t.me/s/<kênh>` (và `https://t.me/<username>` cho `--user`). **Chỉ thư viện chuẩn** — không cần cài gì, không cần API key, không cần đăng nhập. |
 | [`demo_telegram_api.py`](<../src/telegram_demo/cli/demo_telegram_api.py>) | `api` — Backend **Telegram API (Telethon)**: group kín, tìm kiếm toàn cục, tra cứu username/ID, tìm chat theo từ khoá, tải media, OCR, chế độ bot, `--watch`. |
 | [`find_private_groups.py`](<../src/telegram_demo/cli/find_private_groups.py>) | `groups` — Tìm & đọc **group kín** qua link mời, chia 3 bước `--discover` / `--join` / `--crawl`. |
-| [`storage.py`](<../src/telegram_demo/storage.py>) | `Database` schema v3: snapshot run, thực thể / alias, message, phân tích và kết quả tra cứu. |
+| [`storage.py`](<../src/telegram_demo/storage.py>) | `Database` schema v4: snapshot run, thực thể / alias, message, phân tích và kết quả tra cứu. |
 | [`database.py`](<../src/telegram_demo/cli/database.py>) | `db` — CLI SQLite: init, import JSON, thống kê, truy vấn, export run và backup. |
 | [`classify_messages.py`](<../src/telegram_demo/cli/classify_messages.py>) | `classify` — CLI văn bản → Jev → SQLite: run / prepare / apply / results. |
 | [`text_classifier.py`](<../src/telegram_demo/text_classifier.py>) | Rubric có phiên bản, chọn ứng viên/cache, lưu bằng chứng và lịch sử phân loại. |
@@ -429,8 +429,10 @@ python3 -m venv .venv-api && .venv-api/bin/pip install telethon
 > Đây là cách venv cục bộ từng được dựng (Python 3.13.12 + Telethon 1.45.0);
 > không phải yêu cầu pin phiên bản cho mọi máy. Chỉ chạy script cài đặt từ nguồn bạn tin cậy.
 
-OCR (`--ocr`) cần thêm **Pillow**, **pytesseract** (pip) và **tesseract** (gói hệ thống,
-ví dụ `sudo apt install tesseract-ocr`); thiếu thì `--ocr` tự bỏ qua chứ không sập.
+OCR dùng **Tesseract + vie/eng + FFmpeg/ffprobe** cục bộ, không cần Pillow/pytesseract,
+không tự đổi engine/tải weights. `api --ocr` cần `--media-dir` và nguồn thật; thiếu runtime
+báo lỗi preflight thay vì bỏ qua ngầm. Có lệnh `image` riêng và `video analyze --ocr`.
+Xem [hướng dẫn ảnh/OCR, dashboard và kiểm chứng](<IMAGE_OCR.md>).
 
 ## Chạy bản web (không cần đăng nhập)
 
@@ -630,10 +632,11 @@ cũ, không phải tuyên bố đã chạy lại CLI hay kiểm chứng live sau
 
 ## Chạy test
 
-Suite hiện tại sau dashboard: **369 test** trong venv API đều đạt; Python hệ thống
-chạy cùng suite và bỏ qua 1 test cần Telethon. Bổ sung 13 test service HTTP, 6 test
-launcher (gồm wrapper Node) và 6 test Telegram không tương tác. Các contract UI
-kiểm cả 9 màn hình, allowlist/bounds của form, escaping, lỗi API và polling.
+Suite hiện tại sau ảnh/OCR/video: **452 test** trong venv API đều đạt; Python hệ thống
+chạy cùng suite và bỏ qua 1 test cần Telethon. Bổ sung 83 test cho ảnh/OCR/video/collector/
+dashboard: 31 OCR, 23 image pipeline, 9 video OCR/migration, 16 collector OCR và các test
+HTTP dashboard (kể cả ca argv thật qua parser `image`). Các contract UI
+kiểm cả 10 màn hình, allowlist/bounds của form, OCR/partial consent, escaping, lỗi API và polling.
 Không gọi API có phí hoặc ghi DB/session thật; có smoke worker thực tế trên DB tạm,
 chạy CLI demo offline → SQLite. Xem [dashboard QA và giới hạn Taste](<DASHBOARD_QA.md>).
 
@@ -645,7 +648,7 @@ python3 -m unittest discover -s tests -v      # không cần mạng, không cầ
 Mốc sau thêm tải video theo link, **trước tích hợp Jev vào collector**: **284 test thành công**
 trong venv API; Python hệ thống chạy cùng 284 test với 1 test cần Telethon được bỏ qua.
 Đây là số liệu lịch sử, không phải tổng suite sau tích hợp mới. Trong đó [19 test bố cục](<../tests/test_layout.py>)
-kiểm tra launcher (hiện gồm mười CLI), import động, thư mục làm việc khác, mặc định DB/JSON/ảnh/
+kiểm tra launcher (hiện gồm 11 CLI), import động, thư mục làm việc khác, mặc định DB/JSON/ảnh/
 phiên đăng nhập và cách giữ nguyên đường dẫn tuỳ chỉnh. Các test không gọi API có phí.
 [85 test video](<../tests/test_video_pipeline.py>) bao gồm FFmpeg/Whisper/vision giả lập,
 HTTP loopback cục bộ, migration v1/v2 → v3, cache/partial/error, evidence và bridge.
@@ -664,7 +667,7 @@ demo + nhóm thật 1000 bài; các báo động giả nổi tiếng không còn
 đọc lại được.
 
 Các test bổ sung trong [`tests/test_storage.py`](<../tests/test_storage.py>) dùng DB tạm và
-nguồn giả lập, không dùng phiên Telegram / DB thật: schema v3, WAL / khóa ngoại / quyền
+nguồn giả lập, không dùng phiên Telegram / DB thật: schema v4, WAL / khóa ngoại / quyền
 `0600`, snapshot roundtrip, dedupe / lịch sử điểm, demo tách dữ liệu thật, ID ổn định /
 alias / nâng cấp username web, hồ sơ / nhóm chung / kết quả / link mời, tìm kiếm Unicode
 an toàn với SQL, rollback, import idempotent không chấm lại, từ chối credential / DB lạ /
@@ -832,8 +835,10 @@ Hỗ trợ cả link mời mới (`t.me/+hash`) và cũ (`t.me/joinchat/hash`).
 
 - Trang `/s/` chỉ có ~20 bài mỗi trang và **chỉ kênh công khai**; group riêng tư hoặc kênh
   tắt preview thì không lấy được (script báo lỗi rõ ràng, không sập).
-- Tìm kiếm toàn cục, group kín, tải media, OCR, `--watch` đã có ở backend API; các bước
-  **audio → Whisper STT → OCR frame video** vẫn để trống trong `pipeline_status`.
+- Tìm kiếm toàn cục, group kín, tải media, OCR, `--watch` đã có ở backend API.
+  **Ảnh → OCR** và **video → Whisper + OCR frame** có pipeline/evidence riêng, không
+  tự bật khi thu thập hoặc ghi đè `pipeline_status` lịch sử. Hiểu cảnh cần model thị giác
+  được cấu hình; OCR không thay vision. Xem [IMAGE_OCR](<IMAGE_OCR.md>).
 - Điểm số là heuristic theo từ khoá: bài tin tức thật vẫn có thể bị gắn cờ (chấm lại 1000
   bài của [`nhom1.json`](<../json_folder/nhom1.json>) bằng code hiện tại còn **1 bài**, id 157495, 30 điểm Suspicious do
   `công an` + link + forward) — luôn đọc `signals`/`reasons` để rà soát thủ công.

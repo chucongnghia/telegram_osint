@@ -17,8 +17,9 @@ from pathlib import Path
 
 from .paths import DATA_DIR
 from .video_schema import VIDEO_SCHEMA
+from .image_schema import IMAGE_SCHEMA
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 APPLICATION_ID = 0x54475343  # TGSC; never mistake a Telethon session for app data
 DEFAULT_DB = DATA_DIR / "telegram.sqlite3"
 _active_path: str | None = None
@@ -114,7 +115,7 @@ CREATE TABLE IF NOT EXISTS invite_links (
 CREATE INDEX IF NOT EXISTS idx_messages_time ON messages(posted_at);
 CREATE INDEX IF NOT EXISTS idx_analyses_score ON analyses(score);
 CREATE INDEX IF NOT EXISTS idx_entities_username ON entities(username COLLATE NOCASE);
-""" + CLASSIFICATION_SCHEMA + VIDEO_SCHEMA
+""" + CLASSIFICATION_SCHEMA + VIDEO_SCHEMA + IMAGE_SCHEMA
 
 
 def now() -> str:
@@ -194,7 +195,7 @@ class Database:
             self.conn.execute("PRAGMA foreign_keys=ON")
             version = self.conn.execute("PRAGMA user_version").fetchone()[0]
             app_id = self.conn.execute("PRAGMA application_id").fetchone()[0]
-            if version not in (0, 1, 2, SCHEMA_VERSION):
+            if version not in (0, 1, 2, 3, SCHEMA_VERSION):
                 raise ValueError(f"Schema version {version} chưa được hỗ trợ (cần {SCHEMA_VERSION})")
             if version != 0 and app_id != APPLICATION_ID:
                 raise ValueError("Database không thuộc ứng dụng Telegram scanner")
@@ -206,9 +207,10 @@ class Database:
                     raise ValueError("Không khởi tạo trên database không thuộc ứng dụng (ví dụ session Telethon)")
                 self.conn.executescript("BEGIN;\n" + SCHEMA +
                                         f"\nPRAGMA user_version={SCHEMA_VERSION};\nPRAGMA application_id={APPLICATION_ID};\nCOMMIT;")
-            if version in (1, 2):
-                # Additive migration: no historical runs/scores are rewritten.
-                additions = (CLASSIFICATION_SCHEMA if version == 1 else "") + VIDEO_SCHEMA
+            if version in (1, 2, 3):
+                # Additive migration: no historical runs/scores/evidence are rewritten.
+                additions = ((CLASSIFICATION_SCHEMA if version == 1 else "") +
+                             (VIDEO_SCHEMA if version < 3 else "") + IMAGE_SCHEMA)
                 self.conn.executescript("BEGIN IMMEDIATE;\n" + additions +
                                         f"\nPRAGMA user_version={SCHEMA_VERSION};\nCOMMIT;")
             self.conn.execute("PRAGMA journal_mode=WAL")
@@ -257,6 +259,8 @@ class Database:
             self.conn.execute("UPDATE message_classifications SET message_row_id=? WHERE message_row_id=?",
                               (dest, msg["id"]))
             self.conn.execute("UPDATE video_analyses SET message_row_id=? WHERE message_row_id=?",
+                              (dest, msg["id"]))
+            self.conn.execute("UPDATE image_analyses SET message_row_id=? WHERE message_row_id=?",
                               (dest, msg["id"]))
             self.conn.execute("DELETE FROM messages WHERE id=?", (msg["id"],))
         for table, fields in (
@@ -427,7 +431,7 @@ class Database:
     def stats(self) -> dict:
         tables = ("runs", "entities", "messages", "analyses", "profile_snapshots", "common_groups",
                   "group_summaries", "search_results", "invite_links", "message_classifications",
-                  "video_analyses", "video_classifications")
+                  "video_analyses", "video_classifications", "image_analyses", "image_classifications")
         return {t: self.conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in tables}
 
     def runs(self, limit: int = 20) -> list[dict]:

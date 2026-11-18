@@ -20,6 +20,7 @@ import queue
 import re
 import secrets
 import signal
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -37,6 +38,7 @@ STATIC_DIR = Path(__file__).with_name("dashboard")
 MAX_BODY = 65536
 IMAGE_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".gif": "image/gif"}
 VIDEO_TYPES = {".mp4": "video/mp4", ".m4v": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime", ".mkv": "video/x-matroska", ".avi": "video/x-msvideo", ".mpeg": "video/mpeg", ".mpg": "video/mpeg", ".3gp": "video/3gpp", ".ts": "video/mp2t"}
+IMAGE_OCR_TYPES = {ext: IMAGE_TYPES[ext] for ext in (".jpg", ".jpeg", ".png", ".webp")}
 MEDIA_TYPES = {**IMAGE_TYPES, **VIDEO_TYPES}
 TERMINAL = {"succeeded", "failed", "cancelled"}
 CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; media-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
@@ -265,6 +267,7 @@ class DashboardApp:
         counts["classified"] = sum(r["count"] for r in labels)
         counts["scam_indicators"] = sum(r["count"] for r in labels if r["label"] == "scam_indicators")
         counts["flagged"] = conn.execute("SELECT COUNT(*) FROM analyses a WHERE a.score>=25 AND a.run_id=(SELECT MAX(a2.run_id) FROM analyses a2 WHERE a2.message_id=a.message_id)").fetchone()[0]
+        counts["image_analyses"] = conn.execute("SELECT COUNT(*) FROM image_analyses").fetchone()[0] if "image_analyses" in tables else 0
         counts["video_analyses"] = conn.execute("SELECT COUNT(*) FROM video_analyses").fetchone()[0] if "video_analyses" in tables else 0
         daily_rows = conn.execute("SELECT date(COALESCE(posted_at,collected_at)) AS day,COUNT(*) AS count FROM messages WHERE date(COALESCE(posted_at,collected_at)) IS NOT NULL GROUP BY day ORDER BY day DESC LIMIT 14").fetchall()
         daily = []
@@ -330,10 +333,10 @@ class DashboardApp:
             items.append(item)
         return {"items": items, "total": len(items)}
 
-    def videos(self, conn):
+    def _media_files(self, allowed):
         files = []
-        if MEDIA_DIR.is_dir():
-            # At most 200 examined entries, including directories/non-video files;
+        if MEDIA_DIR.is_dir() and not MEDIA_DIR.is_symlink():
+            # At most 200 examined entries, including directories/non-media files;
             # unlike os.walk/sorted(glob), this never materializes an unbounded directory.
             pending, inspected = [MEDIA_DIR], 0
             while pending and inspected < 200:
@@ -350,17 +353,40 @@ class DashboardApp:
                                 pending.append(Path(entry.path))
                                 continue
                             p = Path(entry.path)
-                            if p.suffix.lower() not in VIDEO_TYPES:
+                            if p.suffix.lower() not in allowed:
                                 continue
                             try:
                                 relative = p.relative_to(MEDIA_DIR).as_posix()
-                                valid = self.media_path(relative, VIDEO_TYPES)
+                                valid = self.media_path(relative, allowed)
                                 st = valid.stat()
                                 files.append({"path": relative, "name": p.name, "size": st.st_size, "modified": datetime.fromtimestamp(st.st_mtime, timezone.utc).isoformat()})
                             except (OSError, DashboardError):
                                 continue
                 except OSError:
                     continue
+        return sorted(files, key=lambda item: item["path"])
+
+    def images(self, conn):
+        analyses, classifications = [], []
+        tables = self._tables(conn)
+        if "image_analyses" in tables:
+            for row in conn.execute("SELECT id,status,source_path,image_sha256,created_at,error_code,media_json,ocr_json,vision_json,evidence_json FROM image_analyses ORDER BY id DESC LIMIT 20"):
+                raw = dict(row)
+                source_ref = self._media_ref(raw["source_path"], IMAGE_TYPES)
+                item = {key: raw[key] for key in ("id", "status", "created_at", "error_code")}
+                item.update(source_path=unquote(source_ref.split("path=", 1)[1]) if source_ref else None,
+                            source_url=source_ref, source_sha256=raw["image_sha256"],
+                            media=_public_value(_json(raw["media_json"], {})),
+                            ocr=_public_value(_json(raw["ocr_json"], {})),
+                            vision=_public_value(_json(raw["vision_json"], {})),
+                            evidence=_public_value(_json(raw["evidence_json"], {})))
+                analyses.append(item)
+        if "image_classifications" in tables:
+            classifications = [dict(row) for row in conn.execute("SELECT id,image_analysis_id,status,label,model,error_code FROM image_classifications ORDER BY id DESC LIMIT 100")]
+        return {"files": self._media_files(IMAGE_OCR_TYPES), "analyses": analyses, "classifications": classifications}
+
+    def videos(self, conn):
+        files = self._media_files(VIDEO_TYPES)
         tables = self._tables(conn)
         analyses, classifications = [], []
         if "video_analyses" in tables:
@@ -374,6 +400,7 @@ class DashboardApp:
                 item.update(source_path=source_path, source_sha256=raw["video_sha256"], transcript=_public_value(_json(raw["transcript_json"], {})),
                             vision=_public_value(_json(raw["vision_json"], {})), evidence=_public_value(evidence),
                             sampling=_public_value(evidence.get("sampling")) if isinstance(evidence, dict) else None, frames=[])
+                item["local_ocr"] = _public_value(media.get("local_ocr")) if isinstance(media, dict) else None
                 if isinstance(media, dict) and isinstance(media.get("frames"), list):
                     for frame in media["frames"][:60]:
                         if isinstance(frame, dict):
@@ -394,7 +421,7 @@ class DashboardApp:
             whisper = any((PROJECT_ROOT / ".venv-video" / "lib").glob("python*/site-packages/faster_whisper/__init__.py"))
         return {"jev_configured": bool(self._jev_key or os.environ.get("TYPESAFE_API_KEY")),
                 "vision_configured": bool(os.environ.get("VISION_MODEL") and (os.environ.get("VISION_API_URL") or os.environ.get("VISION_API_KEY"))),
-                "whisper_available": whisper, "sessions": sessions}
+                "whisper_available": whisper, "tesseract_available": bool(shutil.which("tesseract")), "sessions": sessions}
 
     def bootstrap(self, token):
         return {"token": token, "databases": [{"name": name, "label": name} for name in self.databases()],
@@ -446,7 +473,9 @@ class DashboardApp:
             "lookup": {"username", "limit", "backend", "session"},
             "search": {"keyword", "limit", "backend", "session"},
             "download": {"url", "session"},
-            "video_analyze": {"path", "skip_vision", "language", "model", "max_frames"},
+            "video_analyze": {"path", "skip_vision", "language", "model", "max_frames", "ocr", "ocr_language"},
+            "image_analyze": {"path", "ocr_language", "vision"},
+            "image_classify": {"image_id", "allow_partial", "recheck"},
             "video_classify": {"analysis_id", "allow_partial", "recheck"},
             "db_backup": set(),
         }
@@ -535,12 +564,32 @@ class DashboardApp:
             if not Path(interpreter).is_file():
                 raise DashboardError("Thiếu Python .venv-api.", "dependency", 409)
             argv = ["download", p["url"], "--session", p["session"], "--output-dir", str(MEDIA_DIR / "telegram_downloads")]
+        elif kind == "image_analyze":
+            path = self.media_path(p.get("path", ""), IMAGE_OCR_TYPES)
+            p["ocr_language"] = self._ocr_language(p.get("ocr_language", "vie+eng"))
+            p["vision"] = _boolean(p.get("vision", False), "vision")
+            if p["vision"] and not self.config()["vision_configured"]:
+                raise DashboardError("Chưa cấu hình thị giác; OCR cục bộ không cần vision.", "configuration", 409)
+            argv = ["image", *dbflag, "analyze", str(path), "--ocr-language", p["ocr_language"], "--timeout", "30"]
+            if p["vision"]:
+                argv += ["--vision"]
+        elif kind == "image_classify":
+            self._require_jev()
+            p["image_id"] = _integer(p.get("image_id"), "image_id", 1, 2147483647)
+            with self.read_db(db.name) as conn:
+                if "image_analyses" not in self._tables(conn) or not conn.execute("SELECT 1 FROM image_analyses WHERE id=?", (p["image_id"],)).fetchone():
+                    raise DashboardError("Không tìm thấy phân tích ảnh.", "not_found", 404)
+            argv = ["image", *dbflag, "classify", str(p["image_id"])]
+            for key in ("allow_partial", "recheck"):
+                p[key] = _boolean(p.get(key, False), key)
+                if p[key]:
+                    argv += ["--" + key.replace("_", "-")]
         elif kind == "video_analyze":
             path = self.media_path(p.get("path", ""), VIDEO_TYPES)
             p["language"] = p.get("language", "vi")
             p["model"] = p.get("model", "tiny")
-            if p["language"] not in ("vi", "en") or p["model"] not in ("tiny", "base"):
-                raise DashboardError("Chỉ hỗ trợ ngôn ngữ vi/en và Whisper tiny/base.")
+            if p["language"] not in ("vi", "en", "auto") or p["model"] not in ("tiny", "base"):
+                raise DashboardError("Chỉ hỗ trợ ngôn ngữ vi/en/auto và Whisper tiny/base.")
             p["max_frames"] = _integer(p.get("max_frames", 6), "max_frames", 1, 12)
             p["skip_vision"] = _boolean(p.get("skip_vision", not self.config()["vision_configured"]), "skip_vision")
             if not p["skip_vision"] and not self.config()["vision_configured"]:
@@ -552,6 +601,10 @@ class DashboardApp:
             argv = ["video", *dbflag, "analyze", str(path), "--whisper-model", p["model"], "--language", p["language"], "--max-frames", str(p["max_frames"])]
             if p["skip_vision"]:
                 argv += ["--skip-vision"]
+            p["ocr"] = _boolean(p.get("ocr", True), "ocr")
+            p["ocr_language"] = self._ocr_language(p.get("ocr_language", "vie+eng"))
+            if p["ocr"]:
+                argv += ["--ocr", "--ocr-language", p["ocr_language"]]
             # No --allow-model-download or --allow-remote: never implicit transfers.
         elif kind == "video_classify":
             self._require_jev()
@@ -567,6 +620,12 @@ class DashboardApp:
         if kind in ("collect", "watch") and p["backend"] == "api":
             argv += ["--non-interactive"]
         return ([interpreter, str(PROJECT_ROOT / "main.py"), *argv] if kind != "db_backup" else None), p, db
+
+    @staticmethod
+    def _ocr_language(value):
+        if value not in ("vie+eng", "eng", "vie"):
+            raise DashboardError("OCR chỉ hỗ trợ vie+eng, eng hoặc vie.")
+        return value
 
     def _require_jev(self):
         if not self.config()["jev_configured"]:
@@ -906,6 +965,10 @@ class DashboardApp:
                             result = {"items": app.runs(conn), "total": conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0]}
                         elif route == "/api/profiles":
                             result = app.profiles(conn, q.get("query", ""))
+                        elif route == "/api/images":
+                            if q:
+                                raise DashboardError("Ảnh chỉ nhận tên cơ sở dữ liệu; quét và bản ghi luôn có giới hạn.")
+                            result = app.images(conn)
                         elif route == "/api/videos":
                             result = app.videos(conn)
                         else:

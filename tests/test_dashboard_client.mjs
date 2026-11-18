@@ -52,9 +52,19 @@ const fixtures = {
   messages: { items: [message], total: 1, offset: 0 },
   sources: { items: [{ title: hostile, username: 'fixture', kind: hostile, message_count: 1 }], total: 1 },
   profiles: { items: [{ title: hostile, bio: hostile, common_groups: [hostile], phone: hostile }], total: 1 },
+  images: {
+    files: [{ path: 'poster.png', name: hostile, size: 10 }],
+    analyses: [{ id: 1, status: 'partial', source_path: hostile, source_sha256: hostile,
+      source_url: 'https://evil.invalid/api/media?path=x',
+      ocr: { status: 'success', provider: 'tesseract', version: hostile, languages: ['vie', 'eng'], text: hostile,
+        words: [{ text: hostile, confidence: 91.2, bbox: { left: 2, top: 3, width: 4, height: 5 } }], limitations: [hostile] },
+      vision: { status: 'skipped' }, evidence: { gaps: ['vision_skipped', hostile] } }],
+    classifications: [{ id: 2, image_analysis_id: 1, status: 'error', error_code: hostile }],
+  },
   videos: {
     files: [{ path: 'clip.mp4', name: hostile, size: 1 }],
     analyses: [{ id: 1, status: 'partial', source_path: hostile, transcript: null, vision: null,
+      local_ocr: { status: 'success', provider: 'tesseract', text: hostile, frames: [{ timestamp: 1.2, text: hostile, words: [{ text: hostile }] }] },
       evidence: hostile, frames: [{ url: 'https://evil.invalid/api/media?path=x', timestamp: hostile }] }],
     classifications: [{ id: 2, video_analysis_id: 1, status: 'error', error_code: hostile }],
   },
@@ -81,7 +91,7 @@ const context = vm.createContext({
 vm.runInContext(source.replace(/^export (?=(?:async )?function)/gm, '') + `
   globalThis.clientTest = {
     state, api, showPageError, renderOverview, renderMessages, renderSources,
-    renderCollection, renderClassify, renderProfiles, renderVideo, renderJobs,
+    renderCollection, renderClassify, renderProfiles, renderVideo, renderImage, ocrDetails, confirmJob, renderJobs,
     renderSettings, externalUrl, mediaUrl, safeMediaUrl, labelBadge, messageRows,
     jobCard, submitForm, schedulePoll, stopPoll, sourceDisplay,
   };`, context, { filename: 'dashboard/app.js' });
@@ -90,7 +100,7 @@ client.state.bootstrap = fixtures.bootstrap;
 client.state.db = 'fixture.db';
 
 const rendered = {};
-for (const name of ['Overview', 'Messages', 'Sources', 'Collection', 'Classify', 'Profiles', 'Video', 'Jobs', 'Settings']) {
+for (const name of ['Overview', 'Messages', 'Sources', 'Collection', 'Classify', 'Profiles', 'Video', 'Image', 'Jobs', 'Settings']) {
   const html = await client[`render${name}`]();
   rendered[name] = html;
   assert.equal(typeof html, 'string', `${name} renders HTML`);
@@ -127,7 +137,9 @@ const allowedJobFields = {
   lookup: ['username', 'limit', 'backend', 'session'],
   search: ['keyword', 'limit', 'backend', 'session'],
   download: ['url', 'session'],
-  video_analyze: ['path', 'skip_vision', 'language', 'model', 'max_frames'],
+  video_analyze: ['path', 'skip_vision', 'language', 'model', 'max_frames', 'ocr', 'ocr_language'],
+  image_analyze: ['path', 'ocr_language', 'vision'],
+  image_classify: ['image_id', 'allow_partial', 'recheck'],
   video_classify: ['analysis_id', 'allow_partial', 'recheck'],
 };
 for (const html of Object.values(rendered)) {
@@ -157,8 +169,23 @@ for (const [view, id] of [['Messages', 'messages-query'], ['Classify', 'classify
 }
 const language = rendered.Video.match(/<select id="video-language"[^>]*>([\s\S]*?)<\/select>/);
 assert(language, 'language uses constrained native select');
-assert.deepEqual([...language[1].matchAll(/<option value="([^"]+)"/g)].map(match => match[1]), ['vi', 'en']);
-console.log('PASS actual form field allowlists, numeric/text bounds, username placeholders, and language options');
+assert.deepEqual([...language[1].matchAll(/<option value="([^"]+)"/g)].map(match => match[1]), ['vi', 'en', 'auto']);
+for (const [view, prefix] of [['Image', 'image'], ['Video', 'video']]) {
+  const ocrLanguage = rendered[view].match(new RegExp(`<select id="${prefix}-ocr-language"[^>]*>([\\s\\S]*?)<\\/select>`));
+  assert(ocrLanguage, `${view} has an OCR language select`);
+  assert.deepEqual([...ocrLanguage[1].matchAll(/<option value="([^"]+)"/g)].map(match => match[1]), ['vie+eng', 'vie', 'eng']);
+  assert(ocrLanguage[1].includes('value="vie+eng" selected'), 'bilingual OCR is default');
+}
+assert(control(rendered.Video, 'video-ocr').includes('checked'), 'new dashboard video jobs default OCR ON');
+assert(!control(rendered.Image, 'image-vision').includes('checked'), 'semantic image vision remains explicit opt-in');
+assert(rendered.Image.includes('class="image-preview"'));
+assert(rendered.Image.includes('91.2'));
+assert(rendered.Image.includes('Tesseract chỉ nhận diện chữ'));
+assert(rendered.Image.includes('vision_skipped'));
+assert(rendered.Video.includes('Khung hình tại 1.2 giây'));
+assert(client.ocrDetails(null).includes('không đồng nghĩa nội dung an toàn'));
+assert(client.ocrDetails({ status: 'success', text: '', words: [] }).includes('không có chữ hay nội dung an toàn'));
+console.log('PASS image/video OCR details, partial gaps, defaults, field allowlists, and constrained languages');
 assert(client.messageRows([message]).includes('&lt;script id=pwn&gt;'));
 assert(client.messageRows([message]).includes('Kết quả cũ'));
 assert(!client.messageRows([message]).includes('Có dấu hiệu lừa đảo'));
@@ -237,6 +264,39 @@ assert(!Object.hasOwn(body.params, 'backend'), 'watch lets backend choose API in
 for (const name of Object.keys(body.params)) assert(allowedJobFields.watch.includes(name), `watch payload supports ${name}`);
 assert.equal(body.params.cycles, 3, 'cycles remains max-new-message cap');
 assert(confirmations > 0, 'network job requires browser confirmation');
+const mediaPosts = () => requests.filter((request) => request.options.method === 'POST' && /"kind":"(?:image|video)_/.test(request.options.body));
+const submit = (item) => client.submitForm({ target: item, preventDefault() {} });
+let mediaCount = mediaPosts().length;
+const localOcr = form('image_analyze', [['path', 'poster.png'], ['ocr_language', 'vie+eng'], ['vision', false]]);
+const confirmsBeforeOcr = confirmations;
+await submit(localOcr);
+assert.equal(mediaPosts().length, ++mediaCount);
+assert.equal(confirmations, confirmsBeforeOcr, 'local OCR does not trigger remote-model confirmation');
+assert.deepEqual(JSON.parse(mediaPosts().at(-1).options.body).params, { path: 'poster.png', ocr_language: 'vie+eng', vision: false });
+await submit(form('image_classify', [['image_id', '1'], ['allow_partial', true], ['recheck', false]]));
+assert.equal(mediaPosts().length, mediaCount, 'missing Jev key blocks classification before send');
+client.state.bootstrap.config.jev_configured = true;
+const partial = form('image_classify', [['image_id', '1'], ['allow_partial', false], ['recheck', false]]);
+await submit(partial);
+assert.equal(mediaPosts().length, mediaCount, 'partial evidence requires explicit consent');
+assert(partial.querySelector('[data-form-error]').textContent.includes('chấp nhận'));
+confirmed = false;
+await submit(form('image_classify', [['image_id', '1'], ['allow_partial', true], ['recheck', false]]));
+assert.equal(mediaPosts().length, mediaCount, 'cancelled model confirmation sends no classification');
+confirmed = true;
+await submit(form('image_classify', [['image_id', '1'], ['allow_partial', true], ['recheck', false]]));
+assert.equal(mediaPosts().length, ++mediaCount);
+assert.deepEqual(JSON.parse(mediaPosts().at(-1).options.body).params, { image_id: 1, allow_partial: true, recheck: false });
+await submit(form('video_analyze', [['path', 'clip.mp4'], ['language', 'auto'], ['model', 'tiny'], ['max_frames', 6], ['skip_vision', true], ['ocr', true], ['ocr_language', 'eng']]));
+assert.equal(mediaPosts().length, ++mediaCount);
+assert.equal(JSON.parse(mediaPosts().at(-1).options.body).params.ocr, true);
+assert.equal(JSON.parse(mediaPosts().at(-1).options.body).params.language, 'auto');
+fixtures.images.analyses[0].status = 'ready';
+await submit(form('image_classify', [['image_id', '1'], ['allow_partial', false], ['recheck', false]]));
+assert.equal(mediaPosts().length, ++mediaCount, 'complete ready evidence does not require partial consent');
+fixtures.images.analyses[0].status = 'partial';
+client.state.bootstrap.config.jev_configured = false;
+console.log('PASS local image OCR payload and separate keyed/consented/confirmed Jev and video OCR jobs');
 const password = element();
 password.value = 'fixture-secret';
 const keyForm = form('settings', [['jev_key', 'fixture-secret']], { '[name="jev_key"]': password });

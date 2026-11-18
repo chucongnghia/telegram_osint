@@ -15,7 +15,7 @@ from pathlib import Path
 from .storage import Database, dumps, now
 from .text_classifier import LABELS, QUESTIONS as TEXT_QUESTIONS, tool_backend
 
-PIPELINE_VERSION = 'video-v1'
+PIPELINE_VERSION = 'video-v2'
 MAX_EVIDENCE_CHARS = 48000
 REQUEST_FORMAT = 'telegram-video-jev-requests-v1'
 RESULT_FORMAT = 'telegram-video-jev-results-v1'
@@ -31,13 +31,15 @@ QUESTIONS['classification']['instructions'] = (
     'Chỉ chọn scam_indicators khi có bằng chứng cụ thể; tín hiệu mâu thuẫn hoặc thiếu '
     'bối cảnh cần thiết thì insufficient_information. Không coi thiếu tiếng nói hay '
     'không có dấu hiệu trong vài khung hình là bảo đảm an toàn. '
+    'Trường local_ocr là chữ nhận dạng cục bộ, KHÔNG phải hiểu cảnh/hành động; '
+    'confidence OCR không phải xác suất lừa đảo và chữ có thể nhận sai. '
     'Trường gaps ghi rõ bước đã bỏ qua; xem xét giới hạn này khi chọn nhãn.'
 )
 QUESTIONS['classification']['criteria']['insufficient_information'] = (
     'Lời nói, chữ/mô tả hình ảnh quá mơ hồ, thiếu bước xử lý quan trọng, hoặc bằng chứng '
     'mâu thuẫn/chủ yếu phụ thuộc phần video chưa được lấy mẫu; chưa đủ để chọn nhóm khác.'
 )
-RUBRIC_VERSION = 'video-v1:sha256:' + hashlib.sha256(dumps(QUESTIONS).encode()).hexdigest()
+RUBRIC_VERSION = 'video-v2:sha256:' + hashlib.sha256(dumps(QUESTIONS).encode()).hexdigest()
 
 
 def sha_json(value):
@@ -63,7 +65,7 @@ def build_evidence(extraction, transcript, vision):
         gaps.append('speech_transcription_failed')
     if vision.get('status') == 'error':
         gaps.append('visual_understanding_failed')
-    return {
+    result = {
         'video_sha256': media['sha256'], 'duration_seconds': media['duration'],
         'has_audio': media['has_audio'],
         'sampling': extraction['sampling'],
@@ -77,6 +79,18 @@ def build_evidence(extraction, transcript, vision):
                         'Sampled frames do not cover every moment',
                         'No identity verification or legal conclusion'],
     }
+    if 'local_ocr' in extraction:
+        local = extraction['local_ocr']
+        # Keep all boxes in media_json, not in the model's bounded evidence projection.
+        result['local_ocr'] = {k: v for k, v in local.items()
+                               if k in ('status', 'reason', 'provider', 'version', 'languages', 'limitations')}
+        result['local_ocr']['frames'] = [
+            {k: v for k, v in frame.items() if k in ('timestamp', 'sha256', 'text')}
+            for frame in local.get('frames', [])]
+        result['local_ocr']['word_boxes'] = 'retained_in_media_json_not_sent_to_Jev'
+        if local.get('status') == 'error':
+            gaps.append('local_frame_ocr_failed')
+    return result
 
 
 class VideoStore:
@@ -209,7 +223,7 @@ def validate_manifest(store, manifest):
     return item
 
 
-def process_video(store, path, artifact_dir, *, media, whisper=None, vision=None,
+def process_video(store, path, artifact_dir, *, media, whisper=None, vision=None, ocr=None,
                   extract_only=False, interval=5.0, max_frames=12, max_duration=600,
                   message_row_id=None, options=None):
     """Never hold SQLite write locks across ffmpeg, ASR, or network/model calls."""
@@ -225,6 +239,9 @@ def process_video(store, path, artifact_dir, *, media, whisper=None, vision=None
     stage = None
     try:
         if not extract_only:
+            if ocr is not None:
+                stage = 'ocr'
+                extraction['local_ocr'] = {'status': 'success', **ocr.recognize_frames(extraction['frames'])}
             if not extraction['media']['has_audio']:
                 transcript = {'status': 'no_audio', 'text': '', 'segments': []}
             elif whisper is not None:
@@ -243,10 +260,14 @@ def process_video(store, path, artifact_dir, *, media, whisper=None, vision=None
         # Optional model libraries surface sanitized errors with .code. Store no
         # raw exception/server body/API key, and do not substitute heuristic labels.
         code = getattr(exc, 'code', 'processing_error')
-        if stage == 'transcript':
+        partial = getattr(exc, 'partial_result', None)
+        partial = partial if isinstance(partial, dict) else {}
+        if stage == 'ocr':
+            extraction['local_ocr'] = {**partial, 'status': 'error', 'reason': code}
+        elif stage == 'transcript':
             transcript = {'status': 'error', 'reason': code}
         elif stage == 'vision':
-            observations = {**getattr(exc, 'partial_result', {}), 'status': 'error', 'reason': code}
+            observations = {**partial, 'status': 'error', 'reason': code}
         aid = store.save_analysis(extraction, transcript=transcript, vision=observations,
                                   status='error', options=options or {}, message_row_id=message_row_id,
                                   error_code=code)

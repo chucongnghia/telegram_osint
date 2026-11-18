@@ -269,6 +269,13 @@ h3 { font-size: 16px; line-height: 1.45; letter-spacing: -.01em; }
 .source-row > div:nth-child(3) .source-meta { display: block; }
 .activity-row .source-name { white-space: normal; overflow-wrap: anywhere; font-size: 12px; }
 .activity-row > .badge { max-width: 100px; overflow: hidden; text-overflow: ellipsis; }
+.image-preview { display: block; width: 100%; max-height: 420px; object-fit: contain; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+.ocr-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.ocr-words { max-height: 320px; overflow: auto; }
+.ocr-words .data-table { min-width: 0; width: 100%; }
+.ocr-words td { white-space: normal; overflow-wrap: anywhere; max-width: 22ch; }
+.ocr-diagnostics { margin-block: 16px; }
+.ocr-diagnostics > summary, .detail-block details > summary { min-height: 44px; padding-block: 12px; cursor: pointer; color: var(--muted); }
 .toast.is-error { border-color: #f0cdc6; color: #a94f46; }
 #connection-status.is-error { color: #ac6259; }
 @media(min-width:1600px) { .workspace { padding-left: 48px; padding-right: 48px; } .topbar { padding-left: 48px; padding-right: 48px; } }

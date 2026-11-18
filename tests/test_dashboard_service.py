@@ -7,10 +7,15 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import sys
 import tempfile
 import threading
 import unittest
 from unittest.mock import patch
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(ROOT / "src"))
 
 from telegram_demo import dashboard_service as ds
 from telegram_demo.storage import APPLICATION_ID, Database
@@ -141,7 +146,7 @@ class DashboardTest(unittest.TestCase):
             with self.assertRaises(ds.DashboardError):
                 self.app.database_path(name)
         with Database(self.dbpath) as db:
-            db.conn.executescript("DROP TABLE message_classifications; DROP TABLE video_classifications; DROP TABLE video_analyses; PRAGMA user_version=1;")
+            db.conn.executescript("DROP TABLE message_classifications; DROP TABLE video_classifications; DROP TABLE video_analyses; DROP TABLE image_classifications; DROP TABLE image_analyses; PRAGMA user_version=1;")
         with self.app.read_db() as conn:
             self.assertEqual(self.app.overview(conn)["counts"]["classified"], 0)
             self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 1)
@@ -249,7 +254,7 @@ class DashboardTest(unittest.TestCase):
                 self.assertIn("code", json.loads(raw))
             self.assertEqual(popen.call_count, 1)
         self.assertEqual(self.request(server, "POST", "/api/settings", {"clear_jev": True}, auth)[0], 200)
-        for route, key in (("overview", "counts"), ("messages", "items"), ("messages/1", "message"), ("sources", "items"), ("runs", "items"), ("profiles", "items"), ("videos", "analyses")):
+        for route, key in (("overview", "counts"), ("messages", "items"), ("messages/1", "message"), ("sources", "items"), ("runs", "items"), ("profiles", "items"), ("videos", "analyses"), ("images", "analyses")):
             status, _, raw = self.request(server, "GET", "/api/" + route + "?db=test.sqlite3")
             self.assertEqual(status, 200, route)
             self.assertIn(key, json.loads(raw))
@@ -347,7 +352,7 @@ class DashboardTest(unittest.TestCase):
             db.conn.execute("""INSERT INTO video_analyses(created_at,pipeline_version,source_path,video_sha256,status,
                 artifact_dir,options_json,media_json,transcript_json,vision_json,evidence_json)
                 VALUES(?,?,?,?,?,?,?,?,?,?,?)""", ("2026-01-14", "test", str(clip), "hash", "partial", str(frame.parent),
-                '{"api_key":"DO_NOT_EXPOSE"}', json.dumps({"frames": [{"path": str(frame), "timestamp": 1.5}, {"path": "/etc/passwd", "timestamp": 2}]}),
+                '{"api_key":"DO_NOT_EXPOSE"}', json.dumps({"frames": [{"path": str(frame), "timestamp": 1.5}, {"path": "/etc/passwd", "timestamp": 2}], "local_ocr": {"status": "success", "provider": "tesseract", "text": "Video chữ", "frames": [{"timestamp": 1.5, "words": [{"text": "chữ", "confidence": 90}]}], "source_path": "/secret", "api_key": "DO_NOT_EXPOSE"}}),
                 '{"text":"Public words"}', '{"status":"skipped"}', '{"sampling":{"selected":1},"secret":"DO_NOT_EXPOSE","source_json":{"x":1},"nan":NaN}'))
             db.conn.commit()
         with self.app.read_db() as conn:
@@ -356,6 +361,9 @@ class DashboardTest(unittest.TestCase):
         analysis = result["analyses"][0]
         self.assertEqual(analysis["source_path"], "clip.mp4")
         self.assertEqual(analysis["frames"], [{"url": "/api/media?path=frame.jpg", "timestamp": 1.5}])
+        self.assertEqual(analysis["local_ocr"]["text"], "Video chữ")
+        self.assertEqual(analysis["local_ocr"]["frames"][0]["words"][0]["confidence"], 90)
+        self.assertNotIn("/secret", json.dumps(result))
         self.assertNotIn(str(self.root), json.dumps(result))
         self.assertNotIn("DO_NOT_EXPOSE", json.dumps(result))
         self.assertIsNone(analysis["evidence"]["nan"])
@@ -363,6 +371,167 @@ class DashboardTest(unittest.TestCase):
             (self.root / "media" / f"clip{i}.mp4").write_bytes(b"v")
         with self.app.read_db() as conn:
             self.assertLessEqual(len(self.app.videos(conn)["files"]), 200)
+
+    def image_fixture(self):
+        image = self.root / "media" / "poster.png"
+        image.write_bytes(b"fixture image, never decoded")
+        ocr = {"status": "success", "provider": "tesseract", "version": "5.fixture", "languages": ["vie", "eng"],
+               "text": "Cảnh báo <script>not HTML</script>", "words": [{"text": "Cảnh", "confidence": 94.5,
+               "bbox": {"left": 1, "top": 2, "width": 30, "height": 10}}],
+               "image": {"width": 300, "height": 200, "source_path": "/secret"}, "api_key": "DO_NOT_EXPOSE",
+               "limitations": ["OCR does not understand scenes"]}
+        with Database(self.dbpath) as db:
+            cursor = db.conn.execute("""INSERT INTO image_analyses(created_at,pipeline_version,source_path,image_sha256,status,
+                artifact_dir,options_json,media_json,ocr_json,vision_json,evidence_json)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?)""", ("2026-01-14", "test", str(image), "imagehash", "partial", str(image.parent),
+                '{"api_key":"DO_NOT_EXPOSE"}', json.dumps({"width": 300, "path": str(image)}), json.dumps(ocr),
+                '{"status":"skipped"}', '{"gaps":["vision_skipped"],"secret":"DO_NOT_EXPOSE","nan":NaN}'))
+            image_id = cursor.lastrowid
+            db.conn.execute("""INSERT INTO image_classifications(image_analysis_id,created_at,batch_id,provider,model,
+                backend_key,rubric_version,rubric_json,evidence_sha256,evidence_json,source_json,status,label)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""", (image_id, "2026-01-14", "fixture", "mock", "fixture-model", "mock",
+                "1", "{}", "hash", "{}", '{"secret":"DO_NOT_EXPOSE"}', "success", "insufficient_information"))
+            db.conn.commit()
+        return image, image_id
+
+    def test_http_images_schema4_safe_evidence_and_media_refs(self):
+        image, image_id = self.image_fixture()
+        (self.root / "media" / "sub").mkdir()
+        (self.root / "media" / "sub" / "nested.webp").write_bytes(b"fixture")
+        (self.root / "media" / "linked.png").symlink_to(image)
+        (self.root / "media" / "linked-dir").symlink_to(self.root / "media" / "sub", target_is_directory=True)
+        (self.root / "media" / "not-ocr.gif").write_bytes(b"fixture")
+        before = self.dbpath.read_bytes()
+        server = self.start_server()
+        status, headers, raw = self.request(server, "GET", "/api/images")
+        self.assertEqual(status, 200, raw)
+        self.assertEqual(headers["Cache-Control"], "no-store")
+        result = json.loads(raw)
+        self.assertEqual({f["path"] for f in result["files"]}, {"poster.png", "sub/nested.webp"})
+        analysis = result["analyses"][0]
+        self.assertEqual(analysis["id"], image_id)
+        self.assertEqual(analysis["source_path"], "poster.png")
+        self.assertEqual(analysis["source_url"], "/api/media?path=poster.png")
+        self.assertEqual(analysis["source_sha256"], "imagehash")
+        self.assertEqual(analysis["ocr"]["words"][0]["confidence"], 94.5)
+        self.assertEqual(analysis["ocr"]["text"], "Cảnh báo <script>not HTML</script>")
+        self.assertEqual(analysis["evidence"]["gaps"], ["vision_skipped"])
+        self.assertIsNone(analysis["evidence"]["nan"])
+        self.assertNotIn("DO_NOT_EXPOSE", raw.decode())
+        self.assertNotIn(str(self.root), raw.decode())
+        self.assertNotIn("/secret", raw.decode())
+        self.assertEqual(result["classifications"][0]["image_analysis_id"], image_id)
+        self.assertEqual(self.request(server, "GET", analysis["source_url"])[2], image.read_bytes())
+        self.assertEqual(before, self.dbpath.read_bytes(), "image dashboard must never mutate/migrate storage")
+        self.assertEqual(self.request(server, "GET", "/api/images?db=../test.sqlite3")[0], 400)
+        self.assertEqual(self.request(server, "GET", "/api/images?limit=1000000")[0], 400)
+        for i in range(210):
+            (self.root / "media" / f"image{i}.png").write_bytes(b"fixture")
+        with self.app.read_db() as conn:
+            self.assertLessEqual(len(self.app.images(conn)["files"]), 200)
+
+    def test_http_images_absent_on_read_only_schema1_through3(self):
+        with closing(sqlite3.connect(self.dbpath)) as conn:
+            conn.executescript("DROP TABLE image_classifications; DROP TABLE image_analyses;")
+        server = self.start_server()
+        for version in (1, 2, 3):
+            with closing(sqlite3.connect(self.dbpath)) as conn:
+                conn.execute(f"PRAGMA user_version={version}")
+            before = self.dbpath.read_bytes()
+            status, _, raw = self.request(server, "GET", "/api/images")
+            self.assertEqual(status, 200, raw)
+            self.assertEqual(json.loads(raw), {"files": [], "analyses": [], "classifications": []})
+            self.assertEqual(before, self.dbpath.read_bytes())
+            with self.app.read_db() as conn:
+                self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], version)
+                self.assertNotIn("image_analyses", self.app._tables(conn))
+
+    def test_image_job_argv_is_accepted_by_actual_cli_parser(self):
+        from telegram_demo.cli import image as image_cli
+
+        image = self.root / "media" / "parser-contract.png"
+        image.write_bytes(b"fixture image, analyze is mocked")
+        with patch.dict(os.environ, {}, clear=True):
+            argv, _, _ = self.app.build_job("image_analyze", None,
+                                          {"path": image.name, "ocr_language": "eng"}, "parser-contract")
+
+        def inspect_dispatch(store, args):
+            # Keep the actual parser, Database and ImageStore boundary. Only OCR /
+            # vision execution is mocked, so flag drift must fail this contract.
+            self.assertEqual(store.db.conn.execute("PRAGMA database_list").fetchone()[2], str(self.dbpath))
+            self.assertEqual(args.command, "analyze")
+            self.assertEqual(args.file, str(image))
+            self.assertEqual(args.db, str(self.dbpath))
+            self.assertEqual(args.timeout, 30)
+            self.assertEqual(args.ocr_language, "eng")
+            self.assertFalse(args.vision)
+            self.assertFalse(args.allow_remote)
+            return 0
+
+        with patch.object(image_cli, "analyze", side_effect=inspect_dispatch) as analyze:
+            # Strip the launcher, main.py and its image dispatcher only; do not
+            # reconstruct parser arguments independently of DashboardApp.
+            self.assertEqual(image_cli.main(argv[3:]), 0)
+            analyze.assert_called_once()
+
+    def test_image_and_video_ocr_fixed_jobs_and_validation(self):
+        image, image_id = self.image_fixture()
+        clip = self.root / "media" / "clip.mp4"
+        clip.write_bytes(b"fixture")
+        (self.root / ".venv-video" / "bin").mkdir(parents=True)
+        (self.root / ".venv-video" / "bin" / "python").write_text("fixture, never executed")
+        with patch.dict(os.environ, {}, clear=True):
+            argv, params, _ = self.app.build_job("image_analyze", None, {"path": "poster.png"}, "fixture")
+            self.assertEqual(argv[:3], [ds.sys.executable, str(self.root / "main.py"), "image"])
+            self.assertIn(str(image), argv)
+            self.assertEqual(argv[argv.index("--ocr-language") + 1], "vie+eng")
+            self.assertEqual(argv[argv.index("--timeout") + 1], "30")
+            self.assertNotIn("--vision", argv)
+            self.assertFalse(params["vision"])
+            self.assertNotIn("--allow-remote", argv)
+            self.assertNotIn("--allow-model-download", argv)
+            for language in ("vie+eng", "eng", "vie"):
+                args, _, _ = self.app.build_job("image_analyze", None, {"path": "poster.png", "ocr_language": language}, "fixture")
+                self.assertEqual(args[args.index("--ocr-language") + 1], language)
+            invalid = [
+                {"path": "../poster.png"}, {"path": str(image)}, {"path": "clip.mp4"},
+                {"path": "poster.png", "ocr_language": "--help"}, {"path": "poster.png", "ocr_language": ["eng"]},
+                {"path": "poster.png", "vision": "true"}, {"path": "poster.png", "vision": True},
+                {"path": "poster.png", "tesseract": "/bin/sh"}, {"path": "poster.png", "allow_remote": True},
+                {"path": "poster.png", "ocr_timeout": 10000}, {"path": "poster.png", "language": "eng"},
+            ]
+            for suffix in ("gif", "bmp", "tiff"):
+                (self.root / "media" / f"unsupported.{suffix}").write_bytes(b"fixture")
+                invalid.append({"path": f"unsupported.{suffix}"})
+            (self.root / "media" / "link.png").symlink_to(image)
+            invalid.append({"path": "link.png"})
+            for params in invalid:
+                with self.subTest(params=params), self.assertRaises(ds.DashboardError):
+                    self.app.build_job("image_analyze", None, params, "fixture")
+            with self.assertRaises(ds.DashboardError):
+                self.app.build_job("image_classify", None, {"image_id": image_id}, "fixture")
+            self.app.settings({"jev_key": "mock-key-never-called"})
+            argv, _, _ = self.app.build_job("image_classify", None, {"image_id": image_id, "allow_partial": True, "recheck": True}, "fixture")
+            self.assertEqual(argv[2:7], ["image", "--db", str(self.dbpath), "classify", str(image_id)])
+            self.assertIn("--allow-partial", argv)
+            self.assertIn("--recheck", argv)
+            for params in ({"image_id": 0}, {"image_id": 999}, {"image_id": True}, {"image_id": image_id, "allow_partial": "true"}):
+                with self.assertRaises(ds.DashboardError):
+                    self.app.build_job("image_classify", None, params, "fixture")
+            for language in ("auto", "vi", "en"):
+                argv, params, _ = self.app.build_job("video_analyze", None, {"path": "clip.mp4", "language": language}, "fixture")
+                self.assertIn("--ocr", argv)
+                self.assertEqual(argv[argv.index("--ocr-language") + 1], "vie+eng")
+                self.assertIn("--skip-vision", argv)
+                self.assertTrue(params["ocr"])
+                self.assertNotIn("--allow-model-download", argv)
+                self.assertNotIn("--allow-remote", argv)
+            argv, _, _ = self.app.build_job("video_analyze", None, {"path": "clip.mp4", "ocr": False}, "fixture")
+            self.assertNotIn("--ocr", argv)
+            self.assertNotIn("--ocr-language", argv)
+            for params in ({"path": "clip.mp4", "ocr": 1}, {"path": "clip.mp4", "ocr_language": "auto"}, {"path": "clip.mp4", "language": "eng"}):
+                with self.assertRaises(ds.DashboardError):
+                    self.app.build_job("video_analyze", None, params, "fixture")
 
     def test_worker_mocked_child_redaction_bounded_logs_failure_drain_and_backup(self):
         class FakeProcess:

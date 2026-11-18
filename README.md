@@ -13,7 +13,7 @@ python3 main.py dashboard --open
 ```
 
 **TínTrạm** dùng dữ liệu SQLite thật: xem tin/nguồn/hồ sơ, thu thập và watch, phân loại
-Jev, video và nhật ký tác vụ. Logo máy bay giấy riêng, không phải sản phẩm Telegram.
+Jev, ảnh/OCR, video và nhật ký tác vụ. Logo máy bay giấy riêng, không phải sản phẩm Telegram.
 Mở trang chỉ đọc dữ liệu; tác vụ mạng/mô hình cần bạn chủ động xác nhận. Server chỉ
 nghe trên máy cục bộ, không cần cài frontend dependencies.
 
@@ -26,7 +26,7 @@ Chạy từ thư mục gốc project với Python 3.10+. Web/demo và SQLite ch�
 Tám lệnh mẫu sau gồm cả thao tác offline lẫn thao tác mạng được ghi chú rõ:
 
 ```bash
-# 1. Xem mười nhóm lệnh, gồm dashboard, web, api, groups, search, profile, db, classify, video, download
+# 1. Xem 11 nhóm lệnh: dashboard, web, api, groups, search, profile, db, classify, image, video, download
 python3 main.py --help
 
 # 2. Demo offline; kết quả mặc định vào json_folder/posts_web.json và SQLite
@@ -52,12 +52,29 @@ python3 -m venv .venv-api && .venv-api/bin/python -m pip install telethon
 ```
 
 Dùng [điểm vào chung](<main.py>) với cú pháp `COMMAND --help` để xem cờ của từng lệnh.
-Với `db`, `classify` và `video`, đặt `--db PATH` **sau tên lệnh, trước subcommand**.
+Với `db`, `classify`, `image` và `video`, đặt `--db PATH` **sau tên lệnh, trước subcommand**.
 Hướng dẫn đầy đủ, gồm cấu hình API, group kín, JSON, sao lưu và Jev:
 **[docs/USAGE.md](<docs/USAGE.md>)**.
 Video cục bộ (FFmpeg → Whisper/thị giác → Jev, tuỳ chọn, không tự tải URL):
 **[hướng dẫn video](<docs/VIDEO.md>)**. Không cần API key để inspect/extract;
 vision từ xa cần opt-in riêng, phân loại Jev là bước riêng có thể tính phí.
+
+## Phân tích ảnh và OCR video
+
+Tesseract đọc chữ Việt/Anh cục bộ; không cần Pillow/pytesseract và không tự tải weights.
+OCR không thay việc hiểu cảnh. Model thị giác và Jev là các bước riêng có opt-in.
+
+```bash
+python3 main.py db --db data/image-check.sqlite3 init
+python3 main.py image --db data/image-check.sqlite3 analyze media/anh-can-kiem-tra.png
+
+# Video vừa tải: OCR frame + Whisper; chưa gọi Jev, chưa hiểu cảnh nếu skip-vision.
+.venv-video/bin/python main.py video --db data/image-check.sqlite3 analyze \
+  media/telegram_downloads/VIDEO_DA_TAI.mp4 --ocr --language auto --skip-vision
+```
+
+Dashboard có trang **Ảnh**, OCR mặc định bật trong form video, evidence và nút Jev riêng.
+Xem [cài đặt, lệnh phân loại và giới hạn OCR](<docs/IMAGE_OCR.md>).
 
 ## Opt-in Jev ngay khi thu thập văn bản
 
@@ -115,7 +132,7 @@ link bình luận `?comment=...` không được hỗ trợ. Xem [chi tiết](<d
 .
 ├── main.py                       # dispatcher CLI duy nhất ở gốc
 ├── src/telegram_demo/
-│   ├── cli/                      # 10 CLI, gồm dashboard và download theo link
+│   ├── cli/                      # 11 CLI, gồm image, dashboard và download theo link
 │   ├── dashboard/                # HTML/CSS/JS, logo và font cục bộ
 │   ├── dashboard_service.py      # HTTP loopback, đọc DB và quản lý tác vụ
 │   ├── analyzer.py               # heuristic và xuất báo cáo dùng chung
@@ -127,7 +144,10 @@ link bình luận `?comment=...` không được hỗ trợ. Xem [chi tiết](<d
 │   ├── video_media.py            # FFmpeg/ffprobe, JPEG/WAV có giới hạn
 │   ├── video_models.py           # Whisper CPU/int8 và vision tuỳ chọn
 │   ├── video_pipeline.py         # evidence, bridge Jev và lịch sử video
-│   └── video_schema.py           # hai bảng video, schema v3 cộng thêm
+│   ├── video_schema.py           # hai bảng video, schema v3 cộng thêm
+│   ├── image_ocr.py              # Tesseract cục bộ, chữ/box/hash có giới hạn
+│   ├── image_pipeline.py         # ảnh/OCR/vision, evidence và Jev riêng
+│   └── image_schema.py           # hai bảng ảnh, schema v4 cộng thêm
 ├── config/channels.txt           # danh sách kênh cho --seed-file
 ├── config/requirements-video.txt  # faster-whisper ghim phiên bản, tuỳ chọn
 ├── docs/USAGE.md                  # tài liệu sử dụng chi tiết
@@ -156,9 +176,9 @@ chọn có thư mục vẫn tương đối với **cwd người gọi**; tên JS
 - [DB](<data/>) và [JSON](<json_folder/>) có thể chứa dữ liệu cá nhân, không mã hoá.
   Không chia sẻ [credential](<json_folder/tg_api.json>) hay [phiên Telethon](<sessions/>):
   ai có phiên có thể chiếm quyền tài khoản. Chỉ thu thập dữ liệu bạn được phép xử lý.
-- **369 test** thành công trong venv API; Python hệ thống chạy cùng suite với 1 test
-  cần Telethon được bỏ qua. Gồm 60 test Jev/collector và 25 test dashboard/CLI không tương tác;
-  contract frontend được kiểm tra bằng Node VM.
+- **452 test** thành công trong venv API; Python hệ thống chạy cùng suite với 1 test
+  cần Telethon được bỏ qua. Thêm 83 test cho OCR/ảnh/video/collector/dashboard;
+  contract frontend 10 route được kiểm tra bằng Node VM.
   Suite không gọi API có phí/tải model; CLI → HTTP giả lập cục bộ → SQLite đã kiểm chứng,
   nhưng nhánh thu thập → Jev mới chưa thử với key thật.
   Chất lượng phân loại video thực tế **chưa đo**;

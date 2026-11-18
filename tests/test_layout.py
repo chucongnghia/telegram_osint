@@ -31,7 +31,7 @@ COMMANDS = {
     "web": "demo_telegram", "api": "demo_telegram_api", "groups": "find_private_groups",
     "search": "keyword_usernames", "profile": "username_info", "db": "database",
     "classify": "classify_messages", "video": "video", "download": "telegram_download",
-    "dashboard": "dashboard",
+    "dashboard": "dashboard", "image": "image",
 }
 
 
