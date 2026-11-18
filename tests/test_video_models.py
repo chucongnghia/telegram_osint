@@ -326,6 +326,23 @@ class VisionTests(ErrorAssertions, unittest.TestCase):
         self.opener.open.return_value = Response(b"x" * (vm.MAX_RESPONSE_BYTES + 1))
         self.error("response_limit", lambda: self.client.describe(self.frames))
 
+    def test_http_error_message_names_status_and_provider_reason(self):
+        body = json.dumps({"error": {"code": 404, "status": "NOT_FOUND",
+                                     "message": "This model models/gemini-2.5-flash is no longer available to new users."}}).encode()
+        self.opener.open.side_effect = urllib.error.HTTPError(self.client.endpoint, 404, "Not Found", {},
+                                                             io.BytesIO(body))
+        message = str(self.error("http_error", lambda: self.client.describe(self.frames)))
+        self.assertIn("404", message)
+        self.assertIn("NOT_FOUND", message)
+        self.assertIn("no longer available", message)
+        # A key echoed by the provider is redacted before the message is surfaced.
+        keyed = VisionClient(model="qwen-vl", endpoint="http://127.0.0.1:11434/v1", api_key="private-api-secret")
+        body = json.dumps({"error": {"status": "UNAUTHORIZED", "message": "API key not valid: private-api-secret"}}).encode()
+        self.opener.open.side_effect = urllib.error.HTTPError(keyed.endpoint, 401, "Unauthorized", {}, io.BytesIO(body))
+        message = str(self.error("http_error", lambda: keyed.describe(self.frames)))
+        self.assertIn("401", message)
+        self.assertIn("[đã ẩn]", message)
+
     def test_gemini_official_header_and_payload(self):
         with patch.dict(os.environ, {"GEMINI_API_KEY": "private-api-secret"}):
             client = VisionClient(provider="gemini", model="gemini-user-selected", allow_remote=True)
@@ -340,6 +357,21 @@ class VisionTests(ErrorAssertions, unittest.TestCase):
             body = json.loads(req.data)
             self.assertEqual(body["generationConfig"]["responseMimeType"], "application/json")
             self.assertEqual(body["contents"][0]["parts"][1]["inlineData"]["mimeType"], "image/png")
+
+    def test_gemini_accepts_thought_signature_parts(self):
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "private-api-secret"}):
+            client = VisionClient(provider="gemini", model="gemini-3.1-flash-lite", allow_remote=True)
+            self.respond({"modelVersion": "gemini-3.1-flash-lite", "candidates": [{"finishReason": "STOP", "content": {
+                "parts": [{"text": '{"description":"Ảnh có chữ.","ocr_text":"OCR-2026"}',
+                           "thoughtSignature": "EpwBCpkBAWkUfRPx"}]}}]})
+            result = client.describe(self.frames)
+            self.assertEqual(result["resolved_model"], "gemini-3.1-flash-lite")
+            self.assertEqual(result["frames"][0]["description"], "Ảnh có chữ.")
+            # A thinking part is dropped, not merged into the answer.
+            self.respond({"candidates": [{"finishReason": "STOP", "content": {"parts": [
+                {"text": "internal reasoning", "thought": True},
+                {"text": '{"description":"d","ocr_text":""}'}]}}]})
+            self.assertEqual(client.describe(self.frames)["frames"][0]["description"], "d")
 
     def test_gemini_remote_and_endpoint_restriction(self):
         self.error("remote_disabled", VisionClient(provider="gemini", model="m", api_key="key").preflight)

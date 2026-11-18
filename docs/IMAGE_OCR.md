@@ -80,6 +80,28 @@ python3 main.py image --db data/image-check.sqlite3 analyze media/anh-can-kiem-t
 
 Với Gemini cần `GEMINI_API_KEY`, `--vision-provider gemini --vision-model TEN_MODEL_THUC_TE --allow-remote`. API OpenAI-compatible từ xa dùng `VISION_API_KEY`, endpoint HTTPS và `--allow-remote`. Chỉ cấp key cho endpoint tin cậy. Không coi `--vision` là đồng ý upload từ xa ngầm. CLI cho phép `--skip-ocr`, nhưng bước bỏ qua vẫn được ghi gap và cần `--allow-partial` khi phân loại.
 
+#### Chọn tên model Gemini
+
+Tên model phải là model **đang mở cho tài khoản của bạn**. Ngày 18/11/2026 trên key của project này:
+
+| Model | Kết quả thực tế |
+|---|---|
+| `gemini-3.1-flash-lite` | **Dùng được**: đọc ảnh 1400×700 trong ~4 giây, mô tả cảnh + OCR chính xác. |
+| `gemini-3-flash-preview` | Dùng được với ảnh nhỏ trong thử nghiệm. |
+| `gemini-2.5-flash` | **404**: "no longer available to new users" — Google đã chuyển người dùng mới sang dòng mới hơn. |
+| `gemini-3.8-flash`, `gemini-3.5-flash`, `gemini-flash-latest` | Trả `503 UNAVAILABLE` ("high demand") cho request ảnh lúc thử; thử lại sau. |
+
+Kiểm tra danh sách model thật của key mà không cần đoán:
+
+```bash
+read -rsp 'Gemini key: ' G; echo
+curl -s "https://generativelanguage.googleapis.com/v1beta/models?key=$G&pageSize=100" \
+  | python3 -c 'import json,sys; [print(m["name"]) for m in json.load(sys.stdin)["models"]]'
+unset G
+```
+
+Khi request lỗi, phân tích ảnh lưu `error_code=http_error` và log job hiện **mã HTTP + trạng thái/nội dung lỗi của nhà cung cấp** (đã che key), ví dụ `Vision HTTP 404: NOT_FOUND This model ... is no longer available`. Với ảnh, dòng 503/404 là lỗi model/quota, không phải "ảnh an toàn" hay OCR sai.
+
 ## Đọc chữ trong video
 
 ```bash

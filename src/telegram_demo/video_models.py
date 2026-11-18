@@ -50,6 +50,24 @@ def _fail(code, message):
     raise VideoModelError(code, message) from None
 
 
+def _http_detail(status, payload, key=None):
+    """Short, key-redacted HTTP failure text so a dead model or bad key is diagnosable."""
+    text = payload.decode("utf-8", "replace") if isinstance(payload, bytes) else str(payload or "")
+    detail = ""
+    try:
+        error = json.loads(text).get("error")
+        if isinstance(error, dict):
+            detail = " ".join(str(error.get(part) or "") for part in ("status", "message")).strip()
+        elif isinstance(error, str):
+            detail = error
+    except (ValueError, AttributeError):
+        pass
+    detail = " ".join((detail or text).split())[:240]
+    if key:
+        detail = detail.replace(key, "[đã ẩn]")
+    return f"Vision HTTP {status}: {detail}" if detail else f"Vision HTTP {status}"
+
+
 def _pairs(items):
     result = {}
     for key, value in items:
@@ -362,13 +380,18 @@ class VisionClient:
             opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
             with opener.open(request, timeout=self.timeout) as response:
                 if not 200 <= response.status < 300:
-                    _fail("http_error", "Vision HTTP request failed.")
+                    _fail("http_error", _http_detail(response.status, response.read(8192), key))
                 raw = response.read(MAX_RESPONSE_BYTES + 1)
         except VideoModelError:
             raise
         except urllib.error.HTTPError as exc:
-            exc.close()
-            _fail("http_error", "Vision HTTP request failed.")
+            try:
+                payload = exc.read(8192)
+            except (OSError, http.client.HTTPException):
+                payload = b""
+            finally:
+                exc.close()
+            _fail("http_error", _http_detail(exc.code, payload, key))
         except (OSError, urllib.error.URLError, http.client.HTTPException, ValueError, UnicodeError):
             _fail("network_error", "Vision request failed.")
         if len(raw) > MAX_RESPONSE_BYTES:
@@ -395,9 +418,21 @@ class VisionClient:
                 if candidate.get("finishReason") not in (None, "STOP"):
                     raise ValueError()
                 parts = candidate["content"]["parts"]
-                if not isinstance(parts, list) or not parts or any(set(p) != {"text"} or not isinstance(p["text"], str) for p in parts):
+                if not isinstance(parts, list) or not parts:
                     raise ValueError()
-                text = "".join(p["text"] for p in parts)
+                texts = []
+                for part in parts:
+                    # Gemini 3.x adds thoughtSignature (and sometimes thought) beside the text.
+                    if not isinstance(part, dict) or set(part) - {"text", "thought", "thoughtSignature"}:
+                        raise ValueError()
+                    if not isinstance(part.get("text"), str):
+                        raise ValueError()
+                    if part.get("thought") is True:
+                        continue
+                    texts.append(part["text"])
+                if not texts:
+                    raise ValueError()
+                text = "".join(texts)
             if not isinstance(text, str):
                 raise ValueError()
             observation = _json(text)
