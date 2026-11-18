@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 
 from ..analyzer import (NOUN_API, NOUN_WEB, analyze, json_path, json_payload, print_profile,
@@ -46,6 +47,19 @@ from ..paths import PROFILE_PHOTOS_DIR
 # ---------------------------------------------------------------------------
 # 1. Nguồn danh sách username
 # ---------------------------------------------------------------------------
+
+def target_of(name: str):
+    """Chuẩn hoá một mục cần tra: username -> str, ID Telegram (số) -> int.
+
+    Username Telegram luôn bắt đầu bằng chữ cái, nên chuỗi chỉ gồm chữ số (hoặc
+    dạng marked ID `-100...`) là ID. Dùng int để Telethon phân giải đúng người
+    dùng/kênh, kể cả khi tài khoản không có username công khai.
+    """
+    text = (name or "").strip().lstrip("@").strip()
+    if re.fullmatch(r"-?\d{1,19}", text):
+        return int(text)
+    return text
+
 
 def usernames_from_json(path: str) -> list[str]:
     """Lấy danh sách username từ JSON (kết quả `--out` của keyword_usernames.py)."""
@@ -116,7 +130,7 @@ async def _lookup_api(names: list[str], args) -> tuple[list[dict], list[dict], i
         for name in names:
             try:
                 profile, found = await api.lookup_entity(
-                    client, name, args.limit, photo_dir=photo_dir,
+                    client, target_of(name), args.limit, photo_dir=photo_dir,
                     common_limit=args.common_limit)
             except RuntimeError as exc:
                 print(f"[!] {exc}", file=sys.stderr)
@@ -156,7 +170,7 @@ def run(args) -> int:
         return 1
 
     print("=" * 100)
-    print("THÔNG TIN TÀI KHOẢN THEO USERNAME".center(100))
+    print("THÔNG TIN TÀI KHOẢN THEO USERNAME / ID".center(100))
     print("=" * 100)
 
     noun = NOUN_API if args.api else NOUN_WEB
@@ -174,8 +188,13 @@ def run(args) -> int:
             print_profile(profile, own or None, noun=noun, common_limit=args.common_limit)
     else:
         for name in names:
+            target = target_of(name)
+            if isinstance(target, int):
+                print(f"[!] {name}: trang web t.me không tra được bằng ID; thêm --api.",
+                      file=sys.stderr)
+                continue
             try:
-                profile, found = lookup_web(name, args.limit,
+                profile, found = lookup_web(target, args.limit,
                                             photo_dir=args.photo_dir, save_photo=True)
             except RuntimeError as exc:
                 print(f"[!] {name}: {exc}", file=sys.stderr)
@@ -203,8 +222,9 @@ def main() -> int:
     p = argparse.ArgumentParser(
         description="Nhập username -> in thông tin công khai của tài khoản (chức năng 2).",
         formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__)
-    p.add_argument("usernames", nargs="*", metavar="USERNAME",
-                   help="username (hoặc @username, t.me/username) cần tra; nhiều username OK")
+    p.add_argument("usernames", nargs="*", metavar="USERNAME|ID",
+                   help="username (@username, t.me/username) hoặc ID số Telegram cần tra; "
+                        "ID chỉ dùng được với --api; nhiều mục OK")
     p.add_argument("--user", action="append", metavar="USERNAME",
                    help="cách nhập khác, lặp lại được")
     p.add_argument("--from-json", metavar="FILE",

@@ -477,7 +477,7 @@ def _status_line(entity) -> str:
     }.get(name, "không rõ")
 
 
-async def lookup_entity(client, target: str, limit: int = 0, photo_dir: str = "",
+async def lookup_entity(client, target: str | int, limit: int = 0, photo_dir: str = "",
                         common_limit: int = 20, save_photo: bool = True
                         ) -> tuple[dict, list[dict]]:
     """Tra cứu thông tin một username/ID qua API (kể cả group kín đã tham gia).

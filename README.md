@@ -43,6 +43,7 @@ python3 main.py classify --db data/telegram.sqlite3 run --limit 10 --dry-run
 
 # 6. Tra hồ sơ công khai qua web (có gọi mạng); không tải ảnh ở ví dụ này
 python3 main.py profile durov --no-photo
+.venv-api/bin/python main.py profile 93372553 --api --no-photo   # tra cả bằng ID số
 
 # 7. Chỉ cần nếu dùng backend Telegram API
 python3 -m venv .venv-api && .venv-api/bin/python -m pip install telethon

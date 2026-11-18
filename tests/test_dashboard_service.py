@@ -534,6 +534,23 @@ class DashboardTest(unittest.TestCase):
                 with self.assertRaises(ds.DashboardError):
                     self.app.build_job("video_analyze", None, params, "fixture")
 
+    def test_profile_lookup_accepts_numeric_id_only_for_api_backend(self):
+        (self.root / "sessions" / "tg_session_test.session").write_bytes(b"not read")
+        (self.root / ".venv-api" / "bin").mkdir(parents=True)
+        (self.root / ".venv-api" / "bin" / "python").write_text("fake")
+        argv, params, _ = self.app.build_job("lookup", None,
+            {"username": "123456789, @durov", "backend": "api", "session": "tg_session_test"}, "fixture")
+        self.assertIn("123456789", argv)
+        self.assertIn("durov", argv)
+        self.assertIn("--api", argv)
+        self.assertEqual(params["username"], "123456789, @durov")
+        with self.assertRaises(ds.DashboardError) as rejected:
+            self.app.build_job("lookup", None, {"username": "-1001234567890", "backend": "web"}, "fixture")
+        self.assertIn("Telegram API", str(rejected.exception))
+        # Usernames keep working on the web backend.
+        argv, _, _ = self.app.build_job("lookup", None, {"username": "durov", "backend": "web"}, "fixture")
+        self.assertNotIn("--api", argv)
+
     def test_vision_settings_validation_and_job_consent(self):
         self.image_fixture()
         clip = self.root / "media" / "clip.mp4"

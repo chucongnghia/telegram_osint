@@ -660,8 +660,9 @@ class DashboardApp:
     def _names(raw, field="channels"):
         text = _text(raw, field, 2000, True)
         names = [x.strip().lstrip("@") for x in re.split(r"[,\n]", text) if x.strip()]
-        if not 1 <= len(names) <= 20 or any(not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,31}", n) for n in names):
-            raise DashboardError(f"{field}: nhập tối đa 20 username công khai, phân cách dấu phẩy hoặc xuống dòng.")
+        if not 1 <= len(names) <= 20 or any(not (re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,31}", n)
+                                                  or re.fullmatch(r"-?\d{1,19}", n)) for n in names):
+            raise DashboardError(f"{field}: nhập tối đa 20 username hoặc ID số, phân cách dấu phẩy hoặc xuống dòng.")
         return list(dict.fromkeys(names))
 
     def build_job(self, kind, database, params, job_id):
@@ -732,6 +733,9 @@ class DashboardApp:
             elif kind == "lookup":
                 names = self._names(p.get("username", ""), "username")
                 p["limit"] = _integer(p.get("limit", 0), "limit", 0, 100)
+                if backend != "api" and any(re.fullmatch(r"-?\d{1,19}", n) for n in names):
+                    raise DashboardError("ID số chỉ tra được bằng Telegram API; chọn backend API cho mục này.",
+                                         "unsupported")
                 argv = ["profile", *names, *dbflag, "--limit", str(p["limit"]), "--no-photo", "--out", output]
                 if backend == "api":
                     argv += ["--api"]

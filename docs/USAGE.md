@@ -572,7 +572,7 @@ username được gặp vì `@nhắc` / `link t.me` / `nguồn forward` / `bài 
 | `--record-noun bài\|tin` | cách gọi đơn vị trong câu thống kê, để in lại dữ liệu cũ dùng chữ "tin" |
 | `--compact` / `--full` | in gọn mỗi username một dòng, hoặc in đầy đủ chi tiết (mặc định: gọn khi chỉ có kết quả tìm kiếm, đầy đủ khi có bài để chấm điểm) |
 
-### Chức năng 2 — `profile`: username → thông tin tài khoản
+### Chức năng 2 — `profile`: username hoặc ID → thông tin tài khoản
 
 ```bash
 python3 main.py profile durov
@@ -581,6 +581,10 @@ python3 main.py profile durov --limit 25 --out profile.json     # kèm thống k
 .venv-api/bin/python main.py profile durov pythonchat --api     # thêm ID/điện thoại/nhóm chung
 .venv-api/bin/python main.py profile hathanh --api --photo-dir anh  # tải ảnh đại diện
 python3 main.py profile --from-json usernames.json              # nối tiếp chức năng 1
+
+# Tra bằng ID số (Telegram API): ID người dùng/bot, hoặc marked ID kênh/nhóm (-100...)
+.venv-api/bin/python main.py profile 93372553 --api --limit 0 --no-photo
+.venv-api/bin/python main.py profile -1002505512450 --api --limit 0 --no-photo
 ```
 
 In loại tài khoản (Kênh / Nhóm / Bot / Người dùng), tên hiển thị, giới thiệu, quy mô, và
@@ -591,6 +595,13 @@ bạ/công khai), **trạng thái hoạt động**, **ngày tạo**, **username 
 và tra được **group kín** đã tham gia. Nếu tài khoản là kênh/nhóm, `--limit N` lấy thêm N bài
 gần đây để in thống kê (điểm TB, cao nhất, số bài cần rà soát, mức rủi ro). `--from-json` đọc
 danh sách username do chức năng 1 xuất ra.
+
+**Tra bằng ID:** mục chỉ gồm chữ số (hoặc dạng `-100...` của kênh/nhóm) được hiểu là ID
+Telegram, không phải username (username luôn bắt đầu bằng chữ cái). ID chỉ tra được bằng
+`--api` vì trang `t.me` không có route theo ID; chế độ web sẽ báo rõ và bỏ qua mục đó. ID
+hữu ích khi tài khoản **không có username công khai**, hoặc khi bạn có ID từ dữ liệu khác.
+Tài khoản chưa từng tương tác và không công khai vẫn có thể báo "Không tra được" — đó là
+giới hạn quyền truy cập của Telegram, không phải lỗi cú pháp.
 
 ## Chấm điểm
 
