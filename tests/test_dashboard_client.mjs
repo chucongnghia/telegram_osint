@@ -180,7 +180,9 @@ for (const [view, prefix] of [['Image', 'image'], ['Video', 'video']]) {
 assert(control(rendered.Video, 'video-ocr').includes('checked'), 'new dashboard video jobs default OCR ON');
 assert(!control(rendered.Image, 'image-vision').includes('checked'), 'semantic image vision remains explicit opt-in');
 assert(rendered.Image.includes('class="image-preview"'));
-assert(rendered.Image.includes('91.2'));
+assert(rendered.Image.includes('tesseract'), 'OCR engine provenance renders');
+assert(!rendered.Image.includes('Vị trí pixel') && !rendered.Image.includes('"left"'),
+  'raw word boxes with pixel coordinates are not rendered');
 assert(rendered.Image.includes('Tesseract chỉ nhận diện chữ'));
 assert(rendered.Image.includes('vision_skipped'));
 assert(rendered.Video.includes('Khung hình tại 1.2 giây'));
