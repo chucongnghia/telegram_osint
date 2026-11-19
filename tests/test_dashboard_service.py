@@ -551,6 +551,57 @@ class DashboardTest(unittest.TestCase):
         argv, _, _ = self.app.build_job("lookup", None, {"username": "durov", "backend": "web"}, "fixture")
         self.assertNotIn("--api", argv)
 
+    def test_telegram_api_settings_write_private_file_and_redact(self):
+        path = self.root / "json_folder" / "tg_api.json"
+        path.write_text('{"bot_token": "keep-me"}', encoding="utf-8")
+        digest = "ab" * 16
+        result = self.app.settings({"api_id": 123456, "api_hash": digest.upper()})
+        self.assertEqual(result["config"]["api_id"], 123456)
+        self.assertTrue(result["config"]["api_configured"])
+        saved = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(saved, {"bot_token": "keep-me", "api_id": 123456, "api_hash": digest})
+        self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+        self.assertNotIn(digest, json.dumps(result))
+        self.assertIn(digest, self.app._redactions)
+        for bad in ({"api_id": 1}, {"api_hash": digest}, {"api_id": 0, "api_hash": digest},
+                    {"api_id": 5, "api_hash": "zz"}, {"api_id": "x", "api_hash": digest},
+                    {"api_id": 5, "api_hash": digest, "jev_key": "extra"}):
+            with self.assertRaises(ds.DashboardError):
+                self.app.settings(bad)
+        self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["api_id"], 123456)
+        with patch.dict(os.environ, {"TG_API_ID": "999", "TG_API_HASH": "cd" * 16}):
+            self.assertEqual(self.app.config()["api_id"], 999)
+
+    def test_collect_job_always_uses_jev_with_full_budget(self):
+        self.app.settings({"jev_key": "k" * 20})
+        (self.root / "sessions" / "tg_session.session").write_bytes(b"not read")
+        (self.root / ".venv-api" / "bin").mkdir(parents=True)
+        (self.root / ".venv-api" / "bin" / "python").write_text("fake")
+        argv, _, _ = self.app.build_job("collect", None,
+            {"channels": "one", "backend": "api", "limit": 50, "session": "tg_session",
+             "jev": True, "jev_limit": 1000}, "id")
+        self.assertIn("--jev", argv)
+        self.assertIn("1000", argv)
+        with self.assertRaises(ds.DashboardError):
+            self.app.build_job("collect", None,
+                {"channels": "one", "backend": "api", "limit": 50, "session": "tg_session",
+                 "jev": True, "jev_limit": 1001}, "id")
+
+    def test_search_results_lists_saved_sources(self):
+        with Database(self.dbpath) as db:
+            db.save_payload({"backend": "api", "keywords": ["đầu tư"], "usernames": [
+                {"username": "chanone", "name": "Kênh Một", "kind": "channel", "keywords": ["đầu tư"]},
+                {"username": "usertwo", "name": "Người Hai", "kind": "user", "keywords": ["đầu tư", "lãi"]}]},
+                tool="test", source="test")
+        with self.app.read_db(None) as conn:
+            result = self.app.search_results(conn, 10)
+        self.assertEqual(result["total"], 2)
+        self.assertEqual({item["username"] for item in result["items"]}, {"chanone", "usertwo"})
+        channel = next(item for item in result["items"] if item["username"] == "chanone")
+        self.assertEqual(channel["kind"], "channel")
+        self.assertEqual(channel["title"], "Kênh Một")
+        self.assertEqual(channel["keywords"], ["đầu tư"])
+
     def test_vision_settings_validation_and_job_consent(self):
         self.image_fixture()
         clip = self.root / "media" / "clip.mp4"

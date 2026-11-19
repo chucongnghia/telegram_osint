@@ -45,7 +45,11 @@ const state = {
   bootstrap: null, db: '', view: 'overview', params: new URLSearchParams(),
   controller: null, revision: 0, jobs: [], pollTimer: null, polling: false,
   expandedJobs: new Map(), selectedVideo: '', videos: null, selectedImage: '', images: null, drawerTrigger: null, drawerRevision: 0,
+  collectSources: [], searchResults: [], searchJobId: '',
 };
+const SOURCE_KINDS = Object.freeze({ user: 'Người dùng', chat: 'Nhóm', channel: 'Kênh', unknown: 'Không rõ' });
+const DEFAULT_COLLECT_LIMIT = 20;
+const MAX_COLLECT_LIMIT = 1000;
 let toastTimer;
 
 export function icon(name, size = 20) {
@@ -331,8 +335,91 @@ function collectFields(prefix, watch = false) {
     'Số tin mới tối đa được gửi đến mô hình trong lần chạy này.');
   return `${watch ? '' : backendField(prefix)}${sessionField(prefix)}${channels}${limit}${windowFields}${check(`${prefix}-jev`, 'jev', 'Phân loại tin mới bằng Jev (tùy chọn)')}${budget}`;
 }
+function sourceHandle(item) {
+  const username = String(item?.username || '').replace(/^@/, '').trim();
+  if (username) return `@${username}`;
+  const telegramId = item?.telegram_id;
+  return telegramId === undefined || telegramId === null || telegramId === '' ? 'Không rõ nguồn' : `#${telegramId}`;
+}
+function sourceKindLabel(kind) { return Object.hasOwn(SOURCE_KINDS, kind) ? SOURCE_KINDS[kind] : 'Không rõ'; }
+function collectLimit(value, fallback = DEFAULT_COLLECT_LIMIT) {
+  const parsed = Math.floor(Number(value));
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(MAX_COLLECT_LIMIT, Math.max(1, parsed));
+}
+function addCollectSources(items, fallbackLimit = DEFAULT_COLLECT_LIMIT) {
+  const limit = collectLimit(fallbackLimit);
+  const known = new Set(state.collectSources.map((source) => source.username.toLowerCase()));
+  let added = 0;
+  for (const item of list(items)) {
+    const username = String(item?.username || '').replace(/^@/, '').trim();
+    if (!username || known.has(username.toLowerCase())) continue;
+    known.add(username.toLowerCase());
+    state.collectSources.push({ username, title: String(item?.title || ''), kind: String(item?.kind || 'unknown'), limit });
+    added += 1;
+  }
+  return added;
+}
+function setCollectSourceLimit(username, value) {
+  const source = state.collectSources.find((item) => item.username === username);
+  if (source) source.limit = collectLimit(value, source.limit);
+}
+function applyCollectLimit(value) {
+  const limit = collectLimit(value);
+  for (const source of state.collectSources) source.limit = limit;
+  return limit;
+}
+function searchResultsTable() {
+  const items = list(state.searchResults);
+  if (!items.length) return empty('Chưa có nguồn phù hợp — chạy tìm kiếm trước.', 'Kết quả tìm kiếm công khai sẽ xuất hiện tại đây để chọn nguồn.');
+  const rows = items.map((item, index) => {
+    const keywords = Array.isArray(item.keywords) ? item.keywords.map((word) => String(word)).join(', ') : String(item.keywords || '');
+    return `<tr><td><input class="check-input" type="checkbox" name="source-pick" data-index="${index}" value="${esc(item.username || '')}" aria-label="Chọn ${esc(sourceHandle(item))}"></td><td><span class="source-name">${esc(sourceHandle(item))}</span></td><td>${esc(item.title || 'Không có tiêu đề')}</td><td>${esc(sourceKindLabel(item.kind))}</td><td class="text-cell">${esc(keywords || '—')}</td></tr>`;
+  }).join('');
+  return `<div class="table-wrap"><table class="data-table"><thead><tr><th scope="col">${check('collect-select-all', 'select_all', 'Chọn tất cả', false, 'data-action="collect-select-all"')}</th><th scope="col">Nguồn</th><th scope="col">Tiêu đề</th><th scope="col">Loại</th><th scope="col">Từ khóa</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+function collectSearchPanel(config) {
+  const note = config.api_configured ? '' : info('Chưa cấu hình api_id/api_hash. Mở Cài đặt để nhập trước khi tìm nguồn bằng Telegram API.');
+  const running = state.searchJobId ? info('Đang chạy tìm nguồn. Kết quả sẽ hiện khi tác vụ hoàn tất.') : '';
+  return panel('Tìm nguồn theo từ khóa', 'Tìm công khai bằng Telegram API, sau đó chọn nguồn để thu thập.', `<form data-form="collect-search" id="collect-search-form"><div class="form-grid">${field('collect-search-keyword', 'Từ khóa', textInput('collect-search-keyword', 'keyword', '', 'required maxlength="200" placeholder="vd: rao ban"'))}${field('collect-search-limit', 'Giới hạn kết quả', textInput('collect-search-limit', 'limit', 20, 'type="number" min="1" max="100" step="1" required'))}${field('collect-search-backend', 'Phương thức', '<select id="collect-search-backend" name="backend"><option value="api" selected>Telegram API · phiên có sẵn</option></select>')}${sessionField('collect')}</div>${formEnd('Tìm nguồn', 'Tác vụ dùng mạng và phiên CLI đã đăng nhập.', false)}</form>${note}${running}<div class="quick-actions">${button('Thêm nguồn đã chọn', 'collect-add')}</div>${searchResultsTable()}`);
+}
+function collectSourcesPanel() {
+  const sources = list(state.collectSources);
+  const rows = sources.map((source, index) => `<tr><td><span class="source-name">${esc(sourceHandle(source))}</span><div class="source-meta">${esc(source.title || 'Không có tiêu đề')}</div></td><td><input id="collect-source-limit-${index}" class="collect-source-limit" type="number" min="1" max="${MAX_COLLECT_LIMIT}" step="1" inputmode="numeric" value="${esc(collectLimit(source.limit))}" data-collect-source="${esc(source.username)}" aria-label="Số tin tối đa cho ${esc(sourceHandle(source))}"></td><td><button type="button" class="icon-button" data-action="collect-remove" data-username="${esc(source.username)}" aria-label="Bỏ nguồn ${esc(sourceHandle(source))}">${icon('close', 18)}</button></td></tr>`).join('');
+  const table = rows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th scope="col">Nguồn</th><th scope="col">Số tin tối đa</th><th scope="col"><span class="muted">Bỏ</span></th></tr></thead><tbody>${rows}</tbody></table></div>` : empty('Chưa chọn nguồn nào — tìm theo từ khóa rồi thêm.', 'Nguồn đã chọn chỉ tồn tại trong bộ nhớ trang này.');
+  return panel('Nguồn đã chọn', 'Giới hạn áp dụng riêng cho từng nguồn; không lưu vào tệp.', `<div class="toolbar">${field('collect-global-limit', 'Số tin tối đa mỗi nguồn', textInput('collect-global-limit', 'collect_global_limit', DEFAULT_COLLECT_LIMIT, 'type="number" min="1" max="1000" step="1" inputmode="numeric"'), 'Áp dụng cho mọi nguồn đã chọn; có thể sửa từng dòng.')}${button('Áp dụng cho tất cả', 'collect-apply-limit')}</div>${table}`);
+}
+function collectRunPanel() {
+  const sources = list(state.collectSources);
+  const largest = sources.length ? Math.max(...sources.map((source) => collectLimit(source.limit))) : 0;
+  return panel('Thu thập & phân loại', 'Mỗi nguồn một tác vụ; Jev luôn bật và giới hạn do CLI áp dụng.', `<div class="detail-grid"><div><strong class="stat-value">${number(sources.length)}</strong><span class="muted"> nguồn đã chọn</span></div>${badge(sources.length ? `Tối đa ${number(largest)} tin mỗi nguồn` : 'Chưa chọn nguồn', 'blue')}</div><p class="hint">Giới hạn Jev tối đa 1000 yêu cầu mỗi nguồn mỗi lần chạy — giới hạn của CLI. Nội dung gửi mô hình có thể phát sinh chi phí.</p><div class="form-actions">${button(`Thu thập đã chọn (${sources.length})`, 'collect-selected', sources.length ? '' : 'disabled', true)}</div>`);
+}
+async function startSelectedCollection() {
+  const sources = list(state.collectSources).map((source) => ({ ...source, limit: collectLimit(source.limit) }));
+  if (!sources.length) { toast('Chưa chọn nguồn nào để thu thập.', true); return; }
+  const session = $('form[data-form="collect-search"] [name="session"]')?.value || '';
+  if (!window.confirm(`Gửi ${sources.length} tác vụ thu thập?\nJev luôn bật và có thể phát sinh chi phí.\nMỗi nguồn tối đa 1000 yêu cầu mỗi lần chạy — giới hạn của CLI.\nKết quả được ghi vào cơ sở dữ liệu đang chọn.`)) return;
+  let sent = 0;
+  try {
+    for (const source of sources) {
+      await postJob('collect', { channels: source.username, backend: 'api', session, limit: source.limit, jev: true, jev_limit: Math.min(MAX_COLLECT_LIMIT, source.limit) });
+      sent += 1;
+    }
+  } catch (error) {
+    state.collectSources = state.collectSources.slice(sent);
+    if (state.view === 'collection') await loadView({ quiet: true });
+    schedulePoll();
+    toast(`Đã gửi ${number(sent)}/${number(sources.length)} tác vụ. ${error.message}`, true);
+    return;
+  }
+  state.collectSources = [];
+  schedulePoll();
+  toast(`Đã gửi ${number(sent)} tác vụ thu thập`);
+  await navigate('jobs');
+}
 async function renderCollection() {
-  return `<div class="section-stack">${keyWarning()}${info('Thu thập sử dụng mạng. Khi bật Jev, nội dung tin nhắn có thể được gửi tới nhà cung cấp mô hình và phát sinh chi phí. Bạn sẽ xác nhận trước khi gửi.')}<div class="split-grid">${panel('Thu thập một lần', 'Lưu nguồn, tin nhắn và lịch sử chạy vào cơ sở dữ liệu đang chọn.', `<form data-form="collect" id="collect-form"><div class="form-grid">${collectFields('collect')}</div><div class="info-banner"><span data-budget="collect">Ngân sách Jev: tối đa 10 yêu cầu khi bật phân loại.</span></div>${formEnd('Bắt đầu thu thập', 'Tác vụ chạy nền; theo dõi kết quả tại mục Tác vụ.')}</form>`)}${panel('Theo dõi một cửa sổ', 'Telegram API · tự dừng theo thời gian hoặc số tin mới.', `<form data-form="watch" id="watch-form"><div class="form-grid">${collectFields('watch', true)}</div><div class="info-banner"><span data-budget="watch">Ngân sách Jev: tối đa 10 yêu cầu cho 1 chu kỳ.</span></div>${formEnd('Bắt đầu theo dõi', 'Dừng tác vụ đang chạy trong mục Tác vụ.', false)}</form>`)}</div></div>`;
+  const config = state.bootstrap?.config || {};
+  return `<div class="section-stack">${keyWarning()}${info('Thu thập sử dụng mạng. Khi bật Jev, nội dung tin nhắn có thể được gửi tới nhà cung cấp mô hình và phát sinh chi phí. Bạn sẽ xác nhận trước khi gửi.')}${collectSearchPanel(config)}${collectSourcesPanel()}${collectRunPanel()}${panel('Theo dõi một cửa sổ', 'Telegram API · tự dừng theo thời gian hoặc số tin mới.', `<form data-form="watch" id="watch-form"><div class="form-grid">${collectFields('watch', true)}</div><div class="info-banner"><span data-budget="watch">Ngân sách Jev: tối đa 10 yêu cầu cho 1 chu kỳ.</span></div>${formEnd('Bắt đầu theo dõi', 'Dừng tác vụ đang chạy trong mục Tác vụ.', false)}</form>`)}</div>`;
 }
 async function renderClassify(signal) {
   const data = await api('messages?limit=8&offset=0', { signal });
@@ -428,9 +515,19 @@ function visionSettingsPanel(config) {
   const urlAttrs = `maxlength="400" placeholder="http://127.0.0.1:11434/v1/chat/completions"${provider === 'gemini' ? ' disabled' : ''}`;
   return panel('Đặt khóa thị giác (Gemini / OpenAI-compatible)', 'Khóa chỉ được gửi khi bạn xác nhận. Máy chủ lưu cấu hình vào file riêng trên máy (quyền 0600, không mã hoá).', `<form data-form="vision"><div class="form-grid">${field('vision-provider', 'Nhà cung cấp thị giác', `<select id="vision-provider" name="vision_provider">${selectOptions([['gemini', 'Gemini API'], ['openai', 'OpenAI-compatible / Qwen-VL cục bộ']], provider)}</select>`)}${field('vision-model', 'Tên model', textInput('vision-model', 'vision_model', model, 'required maxlength="200" placeholder="vd: gemini-2.5-flash"'))}${field('vision-key', 'Khóa API thị giác (lưu file cục bộ 0600)', '<input id="vision-key" name="vision_key" type="password" autocomplete="off" spellcheck="false" maxlength="512">', 'Lưu vào json_folder/dashboard_secrets.json (0600, không mã hoá), không hiển thị lại. Để trống nếu endpoint loopback không cần khóa.', true)}${field('vision-url', 'URL endpoint (OpenAI-compatible)', textInput('vision-url', 'vision_url', '', urlAttrs), 'Chỉ dùng HTTP cho loopback (127.0.0.1, localhost, ::1); endpoint từ xa phải dùng HTTPS và cần khóa.', true)}</div>${formEnd('Lưu cấu hình thị giác', 'Lưu cấu hình không xác thực khóa; chỉ lần chạy thật mới cho biết khóa hợp lệ và có thể bị tính phí.')}</form><div class="divider"></div>${button('Xóa cấu hình thị giác', 'clear-vision')}`);
 }
+function telegramApiStatus(config) {
+  if (!config.api_configured) return '<div class="source-meta">Chưa cấu hình — API cần api_id/api_hash.</div>';
+  const shown = config.api_id === null || config.api_id === undefined || config.api_id === '' ? '—' : String(config.api_id);
+  return `<div class="source-meta">api_id ${esc(shown)} · api_hash lưu trong json_folder/tg_api.json (0600, không mã hoá, văn bản thuần).</div>`;
+}
+function telegramApiPanel(config) {
+  const configured = Boolean(config.api_configured);
+  const apiId = configured && config.api_id !== null && config.api_id !== undefined ? String(config.api_id) : '';
+  return panel('Cấu hình phiên Telegram', 'api_id/api_hash dùng chung với CLI qua json_folder/tg_api.json (0600, không mã hoá).', `<div class="activity-list"><div class="activity-row">${icon('key')}<div><div class="source-name">Telegram API</div>${telegramApiStatus(config)}</div>${badge(configured ? 'Đã cấu hình' : 'Chưa cấu hình', configured ? 'success' : 'warning')}</div></div><form data-form="telegram-api" id="telegram-api-form"><div class="form-grid">${field('telegram-api-id', 'api_id', textInput('telegram-api-id', 'api_id', apiId, 'type="number" min="1" max="2147483647" step="1" inputmode="numeric" required'), 'Số nguyên Telegram cấp cho ứng dụng.')}${field('telegram-api-hash', 'api_hash', '<input id="telegram-api-hash" name="api_hash" type="password" maxlength="32" pattern="[0-9a-fA-F]{32}" autocomplete="off" spellcheck="false" required>', 'Đúng 32 ký tự hex (0-9, a-f); không hiển thị lại sau khi lưu.', true)}</div>${formEnd('Lưu cấu hình API', 'Ghi file cục bộ; không kiểm chứng với Telegram.')}</form><p class="hint">Đăng nhập/OTP vẫn chỉ thực hiện qua CLI: .venv-api/bin/python main.py api --login.</p>`);
+}
 async function renderSettings() {
   const config = state.bootstrap?.config || {};
-  return `<div class="section-stack">${panel('Kết nối mô hình', 'Dashboard chỉ hiển thị trạng thái; không đọc hoặc hiển thị lại khóa đã lưu.', `<div class="activity-list"><div class="activity-row">${icon('key')}<div><div class="source-name">Jev</div><div class="source-meta">Khóa lưu file cục bộ 0600 (json_folder/dashboard_secrets.json), không mã hoá.</div></div>${badge(config.jev_configured ? 'Đã cấu hình' : 'Chưa cấu hình', config.jev_configured ? 'success' : 'warning')}</div><div class="activity-row">${icon('scan')}<div><div class="source-name">Mô hình thị giác</div>${visionStatusMeta(config)}</div>${badge(config.vision_configured ? 'Đã cấu hình' : 'Chưa cấu hình', config.vision_configured ? 'success' : 'neutral')}</div><div class="activity-row">${icon('message')}<div><div class="source-name">Whisper cục bộ</div><div class="source-meta">Không tự động tải trọng số từ giao diện này.</div></div>${badge(config.whisper_available ? 'Sẵn sàng' : 'Chưa sẵn sàng', config.whisper_available ? 'success' : 'neutral')}</div></div>`)}<div class="split-grid">${panel('Đặt khóa Jev cho phiên này', 'Khóa chỉ được gửi khi bạn xác nhận; lưu file cục bộ 0600 để lần sau không phải nhập lại.', `<form data-form="settings"><div class="form-grid">${field('settings-jev-key', 'Khóa API Jev', '<input id="settings-jev-key" name="jev_key" type="password" autocomplete="off" spellcheck="false" required>', 'Trường khóa được xóa ngay sau khi gửi.', true)}</div>${formEnd('Đặt khóa Jev', 'Cấu hình không đồng nghĩa khóa đã được nhà cung cấp xác thực.')}</form><div class="divider"></div>${button('Xóa khóa phiên', 'clear-key')}`)}${visionSettingsPanel(config)}</div>${panel('Dữ liệu và sao lưu', 'Bản sao lưu tạo bằng tác vụ backend, không sửa dữ liệu gốc.', `<dl class="meta-list"><dt>Cơ sở dữ liệu đang dùng</dt><dd>${esc(state.db || 'Chưa có')}</dd><dt>Phiên bản dashboard</dt><dd>${esc(state.bootstrap?.version || 'Chưa cung cấp')}</dd><dt>Phiên Telegram có sẵn</dt><dd>${number(list(config.sessions).length)}</dd></dl>${button('Tạo bản sao lưu', 'backup')}<p class="hint">Bạn sẽ xác nhận trước khi ghi một file sao lưu mới. Tên và kết quả thực tế được ghi trong nhật ký tác vụ.</p>`)}${info('Đăng nhập Telegram bằng CLI hiện có trước khi dùng tác vụ API. Dashboard không hỏi mã OTP, mật khẩu Telegram hay thông tin đăng nhập tương tác.')}</div>`;
+  return `<div class="section-stack">${panel('Kết nối mô hình', 'Dashboard chỉ hiển thị trạng thái; không đọc hoặc hiển thị lại khóa đã lưu.', `<div class="activity-list"><div class="activity-row">${icon('key')}<div><div class="source-name">Jev</div><div class="source-meta">Khóa lưu file cục bộ 0600 (json_folder/dashboard_secrets.json), không mã hoá.</div></div>${badge(config.jev_configured ? 'Đã cấu hình' : 'Chưa cấu hình', config.jev_configured ? 'success' : 'warning')}</div><div class="activity-row">${icon('scan')}<div><div class="source-name">Mô hình thị giác</div>${visionStatusMeta(config)}</div>${badge(config.vision_configured ? 'Đã cấu hình' : 'Chưa cấu hình', config.vision_configured ? 'success' : 'neutral')}</div><div class="activity-row">${icon('message')}<div><div class="source-name">Whisper cục bộ</div><div class="source-meta">Không tự động tải trọng số từ giao diện này.</div></div>${badge(config.whisper_available ? 'Sẵn sàng' : 'Chưa sẵn sàng', config.whisper_available ? 'success' : 'neutral')}</div></div>`)}<div class="split-grid">${panel('Đặt khóa Jev cho phiên này', 'Khóa chỉ được gửi khi bạn xác nhận; lưu file cục bộ 0600 để lần sau không phải nhập lại.', `<form data-form="settings"><div class="form-grid">${field('settings-jev-key', 'Khóa API Jev', '<input id="settings-jev-key" name="jev_key" type="password" autocomplete="off" spellcheck="false" required>', 'Trường khóa được xóa ngay sau khi gửi.', true)}</div>${formEnd('Đặt khóa Jev', 'Cấu hình không đồng nghĩa khóa đã được nhà cung cấp xác thực.')}</form><div class="divider"></div>${button('Xóa khóa phiên', 'clear-key')}`)}${visionSettingsPanel(config)}</div>${telegramApiPanel(config)}${panel('Dữ liệu và sao lưu', 'Bản sao lưu tạo bằng tác vụ backend, không sửa dữ liệu gốc.', `<dl class="meta-list"><dt>Cơ sở dữ liệu đang dùng</dt><dd>${esc(state.db || 'Chưa có')}</dd><dt>Phiên bản dashboard</dt><dd>${esc(state.bootstrap?.version || 'Chưa cung cấp')}</dd><dt>Phiên Telegram có sẵn</dt><dd>${number(list(config.sessions).length)}</dd></dl>${button('Tạo bản sao lưu', 'backup')}<p class="hint">Bạn sẽ xác nhận trước khi ghi một file sao lưu mới. Tên và kết quả thực tế được ghi trong nhật ký tác vụ.</p>`)}${info('Đăng nhập Telegram bằng CLI hiện có trước khi dùng tác vụ API. Dashboard không hỏi mã OTP, mật khẩu Telegram hay thông tin đăng nhập tương tác.')}</div>`;
 }
 function updateJobs(jobs) {
   const previous = new Map(state.jobs.map((job) => [String(job.id), job.status]));
@@ -453,6 +550,17 @@ async function pollJobs() {
   try {
     const data = await api('jobs', { db: false });
     const finished = updateJobs(list(data.items));
+    if (state.searchJobId) {
+      const searchJob = state.jobs.find((job) => String(job.id) === String(state.searchJobId));
+      if (searchJob && !activeJob(searchJob)) {
+        state.searchJobId = '';
+        if (['success', 'succeeded', 'completed', 'done'].includes(searchJob.status)) await loadSourceResults();
+        else {
+          toast(`Tìm nguồn không hoàn tất: ${STATUS_NAMES[searchJob.status] || searchJob.status}`, true);
+          if (state.view === 'collection') await loadView({ quiet: true });
+        }
+      }
+    }
     for (const [id] of state.expandedJobs) {
       const job = state.jobs.find((item) => String(item.id) === id);
       if (job && (activeJob(job) || finished)) {
@@ -470,6 +578,12 @@ async function pollJobs() {
     }
   } catch (error) { toast(`Không cập nhật được tác vụ: ${error.message}`, true); }
   finally { state.polling = false; schedulePoll(); }
+}
+async function loadSourceResults() {
+  const data = await api('search-results?limit=100');
+  state.searchResults = list(data.items);
+  if (state.view === 'collection') await loadView({ quiet: true });
+  toast(`Đã nhận ${number(state.searchResults.length)} nguồn từ tìm kiếm.`);
 }
 function closeDrawer() {
   ++state.drawerRevision;
@@ -519,11 +633,15 @@ function confirmJob(kind, params) {
   if (!costs && !network && kind !== 'db_backup') return true;
   return window.confirm(`${JOB_NAMES[kind] || 'Bắt đầu tác vụ'}?\n${kind === 'db_backup' ? 'Máy chủ sẽ tạo một file sao lưu mới của cơ sở dữ liệu đang chọn.' : network ? 'Tác vụ sẽ truy cập mạng và ghi kết quả vào dữ liệu cục bộ.' : 'Nội dung đã lưu sẽ được gửi đến nhà cung cấp mô hình.'}${costs ? ['video_analyze', 'image_analyze'].includes(kind) ? '\nẢnh hoặc khung hình sẽ được gửi tới endpoint thị giác đã cấu hình (có thể ở xa) và có thể phát sinh chi phí.' : '\nNội dung có thể được gửi đến mô hình bên ngoài và có thể phát sinh chi phí.' : ''}${budget}\nChỉ tiếp tục nếu bạn có quyền xử lý dữ liệu này.`);
 }
-async function createJob(kind, params) {
+async function postJob(kind, params) {
   const response = await api('jobs', { method: 'POST', db: false, body: { kind, db: state.db, params } });
   if (!response.job?.id) throw new ApiError('Máy chủ chưa xác nhận mã tác vụ. Hãy kiểm tra danh sách tác vụ trước khi gửi lại.', 0, 'missing_job');
   state.jobs = [response.job, ...state.jobs.filter((job) => String(job.id) !== String(response.job.id))];
-  toast(`Đã tiếp nhận tác vụ #${response.job.id}. Kết quả chỉ có sau khi tiến trình hoàn tất.`);
+  return response.job;
+}
+async function createJob(kind, params) {
+  const job = await postJob(kind, params);
+  toast(`Đã tiếp nhận tác vụ #${job.id}. Kết quả chỉ có sau khi tiến trình hoàn tất.`);
   await navigate('jobs');
   schedulePoll();
 }
@@ -542,6 +660,8 @@ async function submitForm(event) {
   if (errorNode) { errorNode.hidden = true; errorNode.textContent = ''; }
   const config = state.bootstrap?.config || {};
   let visionBody = null;
+  let telegramBody = null;
+  let searchParams = null;
   if (kind === 'settings') {
     const input = $('[name="jev_key"]', form);
     const key = String(params.jev_key || '').trim();
@@ -573,6 +693,24 @@ async function submitForm(event) {
     visionBody = { vision_provider: provider, vision_model: model };
     if (key) visionBody.vision_key = key;
     if (provider === 'openai' && url) visionBody.vision_url = url;
+  } else if (kind === 'telegram-api') {
+    const hashInput = $('[name="api_hash"]', form);
+    const apiId = Number(params.api_id);
+    const hash = String(params.api_hash || '').trim();
+    if (hashInput) hashInput.value = '';
+    if (!Number.isInteger(apiId) || apiId < 1 || apiId > 2147483647) { formError(form, 'api_id phải là số nguyên trong khoảng 1..2147483647.'); return; }
+    if (!/^[0-9a-fA-F]{32}$/.test(hash)) { formError(form, 'api_hash phải đúng 32 ký tự hex (0-9, a-f).'); return; }
+    if (!window.confirm('Lưu api_id/api_hash vào json_folder/tg_api.json (quyền 0600, không mã hoá)? CLI đọc file này để đăng nhập Telegram; dashboard không đăng nhập thay.')) return;
+    telegramBody = { api_id: apiId, api_hash: hash };
+  } else if (kind === 'collect-search') {
+    const keyword = String(params.keyword || '').trim();
+    const limit = Number(params.limit);
+    const session = String(params.session || '').trim();
+    if (!keyword) { formError(form, 'Nhập từ khóa cần tìm nguồn.'); return; }
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) { formError(form, 'Giới hạn kết quả phải là số nguyên trong khoảng 1..100.'); return; }
+    if (!config.api_configured) { formError(form, 'Chưa cấu hình api_id/api_hash. Mở Cài đặt để nhập trước khi tìm nguồn bằng Telegram API.'); return; }
+    if (!window.confirm('Tìm nguồn bằng Telegram API?\nTác vụ dùng mạng và phiên CLI đã đăng nhập; kết quả được lưu vào cơ sở dữ liệu đang chọn.')) return;
+    searchParams = { keyword, limit, backend: 'api', session };
   } else {
     if (['collect', 'watch'].includes(kind)) {
       params.channels = String(params.channels || '').trim();
@@ -626,6 +764,18 @@ async function submitForm(event) {
       await bootstrap();
       toast('Máy chủ đã tiếp nhận cấu hình thị giác. Khóa chưa được xác thực với nhà cung cấp; chỉ lần chạy thật mới cho biết hợp lệ và có thể bị tính phí.');
       await loadView();
+    } else if (kind === 'telegram-api') {
+      await api('settings', { method: 'POST', db: false, body: telegramBody });
+      await bootstrap();
+      toast('Đã lưu api_id/api_hash; chưa kiểm chứng với Telegram');
+      await loadView();
+    } else if (kind === 'collect-search') {
+      const job = await postJob('search', searchParams);
+      state.searchJobId = String(job.id);
+      state.searchResults = [];
+      await loadView({ quiet: true });
+      toast('Đã gửi tác vụ tìm nguồn. Kết quả hiện khi hoàn tất.');
+      schedulePoll();
     } else {
       await createJob(kind, params);
     }
@@ -633,6 +783,8 @@ async function submitForm(event) {
     params.jev_key = '';
     const visionKeyInput = $('[name="vision_key"]', form);
     if (visionKeyInput) visionKeyInput.value = '';
+    const hashInput = $('[name="api_hash"]', form);
+    if (hashInput) hashInput.value = '';
     formError(form, error.message); if (status) status.textContent = ''; toast(error.message, true);
   }
   finally { delete form.dataset.busy; if (submit) { submit.disabled = false; submit.removeAttribute('aria-busy'); } }
@@ -680,6 +832,34 @@ async function handleAction(event) {
   try {
     if (Object.hasOwn(VIEWS, action)) { await navigate(action); return; }
     if (action === 'collect') { await navigate('collection'); return; }
+    if (action === 'collect-add') {
+      const picked = $$('#view-root input[name="source-pick"]:checked').map((node) => state.searchResults[Number(node.dataset.index)]).filter(Boolean);
+      if (!picked.length) { toast('Chưa chọn nguồn nào trong kết quả tìm kiếm.', true); return; }
+      const added = addCollectSources(picked, $('#collect-global-limit')?.value);
+      $$('#view-root input[name="source-pick"]').forEach((node) => { node.checked = false; });
+      const selectAll = $('#collect-select-all');
+      if (selectAll) selectAll.checked = false;
+      await loadView({ quiet: true });
+      toast(`Đã thêm ${number(added)} nguồn vào danh sách chọn.`);
+      return;
+    }
+    if (action === 'collect-select-all') {
+      $$('#view-root input[name="source-pick"]').forEach((node) => { node.checked = target.checked === true; });
+      return;
+    }
+    if (action === 'collect-apply-limit') {
+      const limit = applyCollectLimit($('#collect-global-limit')?.value);
+      await loadView({ quiet: true });
+      toast(`Đã áp dụng ${number(limit)} tin tối đa cho mỗi nguồn đã chọn.`);
+      return;
+    }
+    if (action === 'collect-remove') {
+      state.collectSources = state.collectSources.filter((source) => source.username !== target.dataset.username);
+      await loadView({ quiet: true });
+      toast('Đã bỏ nguồn khỏi danh sách chọn.');
+      return;
+    }
+    if (action === 'collect-selected') { await startSelectedCollection(); return; }
     if (action === 'retry') { await refresh(); return; }
     if (action === 'message') { await openMessage(target.dataset.id, target); return; }
     if (action === 'source-messages') { await navigate('messages', { username: target.dataset.username }); return; }
@@ -720,7 +900,11 @@ function bindShell() {
   if ($('#global-query')) $('#global-query').maxLength = 256;
   document.addEventListener('click', handleAction);
   document.addEventListener('submit', submitForm);
-  document.addEventListener('input', (event) => { if (event.target.closest('form[data-form="collect"],form[data-form="watch"]')) syncFormOptions(); });
+  document.addEventListener('input', (event) => {
+    if (event.target.closest('form[data-form="collect"],form[data-form="watch"]')) syncFormOptions();
+    const source = event.target.dataset?.collectSource;
+    if (source) setCollectSourceLimit(source, event.target.value);
+  });
   document.addEventListener('change', (event) => {
     const target = event.target;
     if (target.closest('form[data-form="collect"],form[data-form="watch"]')) syncFormOptions();

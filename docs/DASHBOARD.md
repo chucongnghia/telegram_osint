@@ -26,13 +26,13 @@ Server chỉ lắng nghe `127.0.0.1`, không mở ra LAN. Đây là ứng dụng
 | Tổng quan | Số tin/nguồn, nhãn Jev hiện hành, biểu đồ theo dữ liệu đã lưu, tin gần đây và lịch sử run. |
 | Tin nhắn | Tìm kiếm, lọc, phân trang; mở chi tiết nội dung, điểm heuristic và lịch sử Jev. Nhãn cũ sau khi text thay đổi được đánh dấu, không tính như kết quả hiện hành. |
 | Nguồn thu thập | Nguồn và số tin thực tế; mở danh sách tin của nguồn. |
-| Thu thập dữ liệu | Web công khai hoặc Telegram API; giới hạn tin và Jev tuỳ chọn. Watch là một cửa sổ hữu hạn, không chạy vô hạn. |
+| Thu thập dữ liệu | Tìm nguồn theo từ khoá qua Telegram API, chọn nhiều nguồn, đặt số tin tối đa chung hoặc riêng từng nguồn; mỗi nguồn chạy một tác vụ có Jev bật sẵn. Watch là một cửa sổ hữu hạn, không chạy vô hạn. |
 | Phân loại Jev | Chọn giới hạn và chủ động gửi batch văn bản. Không tự gọi mô hình khi mở trang. |
 | Phân tích video | Xem/phát video trong `media/`, tải theo link, Whisper + OCR frame (mặc định bật), chọn ngôn ngữ auto; gọi Jev riêng. |
 | Phân tích ảnh | Chọn PNG/JPEG/WebP trong `media/`, OCR Việt/Anh cục bộ, xem original/evidence, Jev riêng với đồng ý partial/key. |
 | Tra cứu hồ sơ | Xem hồ sơ đã lưu, lookup hoặc tìm username bằng các CLI hiện có. |
 | Nhật ký tác vụ | Trạng thái thật, log có giới hạn, xem lỗi và dừng tác vụ. Một worker chạy tuần tự. |
-| Cài đặt | Thông tin DB, key Jev/thị giác lưu file cục bộ 0600 và sao lưu SQLite. |
+| Cài đặt | api_id/api_hash cho phiên Telegram, key Jev/thị giác lưu file cục bộ 0600 và sao lưu SQLite. |
 
 DB picker liệt kê DB ứng dụng trong `data/`, bỏ qua bản backup và file không đúng định dạng. DB truyền bằng `--db` được cho phép riêng. Mở/chuyển trang chỉ đọc DB, không tự thu thập hay phân loại. Muốn xem ví dụ Jev văn bản, chọn `jev-demo.sqlite3` rồi mở **Tin nhắn**; bảng heuristic `analyses` không chứa nhãn Jev.
 
@@ -42,6 +42,9 @@ DB picker liệt kê DB ứng dụng trong `data/`, bỏ qua bản backup và fi
 - **Jev:** nhập TypeSafe key tại Cài đặt, hoặc export `TYPESAFE_API_KEY` trong đúng terminal khởi động server. Key nhập qua form được lưu vào `json_folder/dashboard_secrets.json` (0600, plaintext, git-ignored), không vào DB/localStorage, không trả lại cho trình duyệt. Xoá key trong form chỉ xoá bản nhập này, không xoá biến môi trường của server. Có key không đồng nghĩa key đã được nhà cung cấp xác thực.
 - **Thị giác:** cùng panel Cài đặt có provider (`gemini` hoặc `openai`), model, key và URL. Key Gemini lưu trong file cục bộ 0600; chọn model cục bộ thì dùng URL loopback và không cần key. Endpoint từ xa cần tick đồng ý gửi ảnh ở **từng lần chạy**; thiếu consent trả `consent_required`. Lưu cấu hình không xác thực key. Chi tiết: [hướng dẫn OCR](<IMAGE_OCR.md>).
 - **Chi phí:** form xác nhận trước tác vụ mạng/mô hình. Jev mặc định tắt; giới hạn UI tối đa 100 lần thử request, không phải ngân sách tiền. Không tự retry lỗi key/rate limit. Dữ liệu text có thể được gửi ra nhà cung cấp khi bạn bật Jev.
+- **Phiên Telegram (api_id/api_hash):** nhập ở Cài đặt; ghi vào `json_folder/tg_api.json` (0600, plaintext — cùng file CLI đọc) và giữ nguyên `bot_token` nếu đã có. `api_id` là số Telegram cấp cho ứng dụng, `api_hash` 32 ký tự hex. Lưu cấu hình **không** tạo phiên và **không** đăng nhập: bước nhập SĐT/OTP/mật khẩu vẫn phải chạy CLI, ví dụ `.venv-api/bin/python main.py api --login`. Dashboard chỉ dùng các phiên đã có trong `sessions/`.
+- **Thu thập theo nguồn:** (1) nhập từ khoá, chạy **Tìm nguồn** — tác vụ `search` ghi kết quả vào `search_results`; (2) danh sách nguồn hiện ra với loại (Người dùng/Nhóm/Kênh) và từ khoá khớp, tick rồi **Thêm nguồn đã chọn**; (3) đặt **Số tin tối đa mỗi nguồn** chung, bấm **Áp dụng cho tất cả**, hoặc sửa từng dòng; (4) **Thu thập đã chọn** gửi mỗi nguồn một tác vụ `collect` với Jev bật sẵn. Ngân sách Jev của mỗi nguồn là `min(1000, số tin)` request — 1000 là mức trần CLI, không phải chi phí tiền tệ; mỗi tác vụ vẫn xác nhận trước khi chạy và có thể phát sinh chi phí.
+
 - **Video:** cần FFmpeg và runtime Whisper riêng đã mô tả trong [VIDEO](<VIDEO.md>). Dashboard không tự tải model. Bản giao diện này hỗ trợ bỏ qua vision hoặc cấu hình vision cục bộ qua môi trường; không tự bật quyền gửi frame tới dịch vụ từ xa. Thiếu âm thanh/thị giác phải hiện rõ; `partial` không phải kết quả kiểm tra đầy đủ.
 - Điểm từ khoá, nhãn Jev và trạng thái xử lý là ba khái niệm riêng. Tin chưa phân loại không đồng nghĩa an toàn; nhãn không phải kết luận pháp lý hay xác suất gian lận đã hiệu chuẩn.
 

@@ -179,7 +179,7 @@ chọn có thư mục vẫn tương đối với **cwd người gọi**; tên JS
 - [DB](<data/>) và [JSON](<json_folder/>) có thể chứa dữ liệu cá nhân, không mã hoá.
   Không chia sẻ [credential](<json_folder/tg_api.json>) hay [phiên Telethon](<sessions/>):
   ai có phiên có thể chiếm quyền tài khoản. Chỉ thu thập dữ liệu bạn được phép xử lý.
-- **452 test** thành công trong venv API; Python hệ thống chạy cùng suite với 1 test
+- **467 test** thành công trong venv API; Python hệ thống chạy cùng suite với 2 test
   cần Telethon được bỏ qua. Thêm 83 test cho OCR/ảnh/video/collector/dashboard;
   contract frontend 10 route được kiểm tra bằng Node VM.
   Suite không gọi API có phí/tải model; CLI → HTTP giả lập cục bộ → SQLite đã kiểm chứng,

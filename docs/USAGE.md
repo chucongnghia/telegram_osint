@@ -643,7 +643,14 @@ cũ, không phải tuyên bố đã chạy lại CLI hay kiểm chứng live sau
 
 ## Chạy test
 
-Suite hiện tại sau ảnh/OCR/video: **452 test** trong venv API đều đạt; Python hệ thống
+
+**Cấu hình phiên & thu thập theo nguồn (dashboard):** Cài đặt → *Cấu hình phiên Telegram* nhận
+`api_id`/`api_hash`, ghi `json_folder/tg_api.json` (0600) đúng file CLI đọc; đăng nhập/OTP vẫn
+qua CLI. Trang *Thu thập dữ liệu*: tìm nguồn theo từ khoá (tác vụ `search`, đọc từ bảng
+`search_results`), tick nhiều nguồn, đặt số tin tối đa chung hoặc riêng từng nguồn, rồi thu thập —
+mỗi nguồn một tác vụ `collect` với `--jev` luôn bật và ngân sách `min(1000, số tin)` request.
+Xem [hướng dẫn dashboard](<DASHBOARD.md>).
+Suite hiện tại sau cấu hình phiên và thu thập theo nguồn: **467 test** trong venv API đều đạt; Python hệ thống
 chạy cùng suite và bỏ qua 1 test cần Telethon. Bổ sung 83 test cho ảnh/OCR/video/collector/
 dashboard: 31 OCR, 23 image pipeline, 9 video OCR/migration, 16 collector OCR và các test
 HTTP dashboard (kể cả ca argv thật qua parser `image`). Các contract UI

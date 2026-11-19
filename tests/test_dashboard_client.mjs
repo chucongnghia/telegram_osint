@@ -69,6 +69,7 @@ const fixtures = {
     classifications: [{ id: 2, video_analysis_id: 1, status: 'error', error_code: hostile }],
   },
   jobs: { items: [{ id: 'saved', kind: 'collect', status: 'failed', logs: [hostile], params: { channels: hostile } }] },
+  'search-results': { items: [{ run_id: 9, username: 'from-search', title: 'Từ khóa', kind: 'channel', telegram_id: 900, keywords: ['k'] }], total: 1 },
 };
 const location = { origin: 'http://127.0.0.1:9999', hash: '#overview' };
 const context = vm.createContext({
@@ -95,6 +96,8 @@ vm.runInContext(source.replace(/^export (?=(?:async )?function)/gm, '') + `
     renderSettings, externalUrl, mediaUrl, safeMediaUrl, labelBadge, messageRows,
     jobCard, submitForm, schedulePoll, stopPoll, sourceDisplay,
     syncFormOptions, syncVisionForm, handleAction,
+    addCollectSources, applyCollectLimit, collectLimit, sourceKindLabel, startSelectedCollection,
+    telegramApiPanel, telegramApiStatus, loadSourceResults,
   };`, context, { filename: 'dashboard/app.js' });
 const client = context.clientTest;
 client.state.bootstrap = fixtures.bootstrap;
@@ -137,6 +140,7 @@ const allowedJobFields = {
   classify: ['limit', 'query', 'username', 'include_demo', 'recheck'],
   lookup: ['username', 'limit', 'backend', 'session'],
   search: ['keyword', 'limit', 'backend', 'session'],
+  'collect-search': ['keyword', 'limit', 'backend', 'session'],
   download: ['url', 'session'],
   video_analyze: ['path', 'skip_vision', 'language', 'model', 'max_frames', 'ocr', 'ocr_language', 'allow_remote'],
   image_analyze: ['path', 'ocr_language', 'vision', 'allow_remote'],
@@ -157,11 +161,11 @@ function control(html, id) {
   return match[0];
 }
 assert(!rendered.Collection.includes('id="watch-limit"'), 'watch has no history limit control');
-for (const id of ['collect-budget', 'watch-budget']) assert(control(rendered.Collection, id).includes('max="100"'));
+for (const id of ['watch-budget']) assert(control(rendered.Collection, id).includes('max="100"'));
 assert(control(rendered.Classify, 'classify-limit').includes('max="100"'));
 assert(control(rendered.Collection, 'watch-interval').includes('max="3600"'));
 assert(control(rendered.Collection, 'watch-cycles').includes('max="1000"'));
-assert(control(rendered.Collection, 'collect-limit').includes('max="1000"'));
+assert(control(rendered.Collection, 'collect-global-limit').includes('max="1000"'));
 assert(control(rendered.Video, 'video-max-frames').includes('max="12"'));
 assert(rendered.Video.includes('Tối đa 12 khung hình'));
 assert(!rendered.Collection.includes('https://t.me/kenh_khac'));
@@ -503,6 +507,208 @@ assert(requests.slice(requests.indexOf(clearVisionPost)).some((request) => reque
 client.state.bootstrap.config = baseVisionConfig;
 console.log('PASS clear-vision action posts only clear_vision and refreshes state');
 
+// Telegram API settings: status, fields, validation, exact POST body, cleared hash.
+const telegramConfig = { ...baseVisionConfig, api_configured: true, api_id: 123456789 };
+client.state.bootstrap.config = telegramConfig;
+const telegramSettings = await client.renderSettings();
+assert(telegramSettings.includes('<form data-form="telegram-api"'), 'settings renders the Telegram API form');
+assert(telegramSettings.includes('Cấu hình phiên Telegram'));
+assert(telegramSettings.indexOf('data-form="vision"') < telegramSettings.indexOf('data-form="telegram-api"'), 'telegram panel follows the vision panel');
+assert(telegramSettings.indexOf('data-form="telegram-api"') < telegramSettings.indexOf('Dữ liệu và sao lưu'), 'telegram panel sits above backups');
+const apiIdTag = control(telegramSettings, 'telegram-api-id');
+assert(apiIdTag.includes('name="api_id"') && apiIdTag.includes('type="number"'));
+assert(apiIdTag.includes('min="1"') && apiIdTag.includes('max="2147483647"') && apiIdTag.includes('step="1"'));
+assert(apiIdTag.includes('inputmode="numeric"') && apiIdTag.includes('required'));
+assert(apiIdTag.includes('value="123456789"'), 'configured api_id is prefilled');
+assert(telegramSettings.includes('api_id 123456789'));
+assert(telegramSettings.includes('json_folder/tg_api.json') && telegramSettings.includes('0600'));
+assert(telegramSettings.includes('không mã hoá'));
+const apiHashTag = control(telegramSettings, 'telegram-api-hash');
+assert(apiHashTag.includes('type="password"') && apiHashTag.includes('maxlength="32"'));
+assert(apiHashTag.includes('pattern="[0-9a-fA-F]{32}"'));
+assert(apiHashTag.includes('autocomplete="off"') && apiHashTag.includes('required'));
+assert(!apiHashTag.includes('value='), 'api_hash is never prefilled');
+assert(telegramSettings.includes('.venv-api/bin/python main.py api --login'), 'login remains CLI-only');
+const telegramFormHtml = telegramSettings.match(/<form data-form="telegram-api"[^>]*>([\s\S]*?)<\/form>/)[1];
+assert.deepEqual([...telegramFormHtml.matchAll(/<(?:input|select|textarea)\b[^>]*\bname="([^"]+)"/g)].map((match) => match[1]).sort(), ['api_hash', 'api_id']);
+client.state.bootstrap.config = { ...baseVisionConfig };
+const unconfiguredTelegram = await client.renderSettings();
+assert(unconfiguredTelegram.includes('Chưa cấu hình — API cần api_id/api_hash.'));
+assert(control(unconfiguredTelegram, 'telegram-api-id').includes('value=""'), 'unconfigured api_id is blank');
+console.log('PASS telegram api settings form, configured api_id, status, and CLI-only login hint');
+
+const telegramHashInput = element();
+telegramHashInput.value = 'abcdef0123456789abcdef0123456789';
+const telegramForm = form('telegram-api', [['api_id', ' 123456789 '], ['api_hash', ' ABCDEF0123456789ABCDEF0123456789 ']], { '[name="api_hash"]': telegramHashInput });
+client.state.bootstrap.config = telegramConfig;
+confirmed = true;
+const postsBeforeTelegram = requests.length;
+const confirmationsBeforeTelegram = confirmations;
+await submit(telegramForm);
+const telegramPost = requests.slice(postsBeforeTelegram).find((request) => request.options.method === 'POST' && request.url.pathname === '/api/settings');
+assert(telegramPost, 'telegram settings are posted');
+assert.equal(telegramPost.url.search, '', 'settings POST has no query parameters');
+assert.equal(telegramHashInput.value, '', 'api_hash input is cleared immediately');
+assert.equal(confirmations, confirmationsBeforeTelegram + 1, 'plaintext file write is confirmed');
+const telegramPostedBody = JSON.parse(telegramPost.options.body);
+assert.deepEqual(telegramPostedBody, { api_id: 123456789, api_hash: 'ABCDEF0123456789ABCDEF0123456789' });
+assert.equal(typeof telegramPostedBody.api_id, 'number');
+assert(requests.slice(postsBeforeTelegram).some((request) => request.options.method === 'GET' && request.url.pathname === '/api/bootstrap'), 'saving api credentials refreshes bootstrap');
+const postsBeforeTelegramInvalid = requests.length;
+const badIdForm = form('telegram-api', [['api_id', '0'], ['api_hash', 'abcdef0123456789abcdef0123456789']], { '[name="api_hash"]': element() });
+await submit(badIdForm);
+assert.equal(requests.length, postsBeforeTelegramInvalid, 'api_id range is blocked client-side');
+assert(badIdForm.querySelector('[data-form-error]').textContent.includes('1..2147483647'));
+const badHashForm = form('telegram-api', [['api_id', '123'], ['api_hash', 'not-hex']], { '[name="api_hash"]': element() });
+await submit(badHashForm);
+assert.equal(requests.length, postsBeforeTelegramInvalid, 'api_hash format is blocked client-side');
+assert(badHashForm.querySelector('[data-form-error]').textContent.includes('32 ký tự hex'));
+const cancelHashInput = element();
+const cancelledTelegram = form('telegram-api', [['api_id', '123'], ['api_hash', 'abcdef0123456789abcdef0123456789']], { '[name="api_hash"]': cancelHashInput });
+confirmed = false;
+await submit(cancelledTelegram);
+assert.equal(requests.length, postsBeforeTelegramInvalid, 'cancelled telegram save sends nothing');
+assert.equal(cancelHashInput.value, '', 'api_hash is cleared even when confirmation is cancelled');
+confirmed = true;
+console.log('PASS telegram api settings POST body, validation, confirmation, and cleared password');
+
+// Collection flow: search sources by keyword, select them, then collect each source.
+client.state.bootstrap.config = { ...baseVisionConfig, api_configured: true, api_id: 123456789 };
+location.hash = '#collection';
+client.state.view = 'collection';
+client.state.searchResults = [];
+client.state.searchJobId = '';
+client.state.collectSources = [];
+const collectionHtml = await client.renderCollection();
+assert(collectionHtml.includes('Tìm nguồn theo từ khóa'));
+assert(collectionHtml.includes('Nguồn đã chọn'));
+assert(collectionHtml.includes('Thu thập &amp; phân loại'));
+assert(collectionHtml.includes('<form data-form="collect-search"'));
+assert(collectionHtml.includes('data-form="watch"'), 'watch panel survives the redesign');
+assert(control(collectionHtml, 'collect-search-keyword').includes('maxlength="200"'));
+assert(control(collectionHtml, 'collect-search-keyword').includes('required'));
+assert(control(collectionHtml, 'collect-search-limit').includes('max="100"'));
+assert(control(collectionHtml, 'collect-search-limit').includes('value="20"'));
+const searchBackendSelect = collectionHtml.match(/<select id="collect-search-backend"[^>]*>([\s\S]*?)<\/select>/);
+assert(searchBackendSelect, 'search backend is a constrained select');
+assert(searchBackendSelect[1].includes('value="api" selected'));
+assert(!searchBackendSelect[1].includes('value="web"'), 'search backend is fixed to the API');
+assert(control(collectionHtml, 'collect-session').includes('name="session"'));
+assert(control(collectionHtml, 'collect-global-limit').includes('max="1000"'));
+assert(collectionHtml.includes('Chưa có nguồn phù hợp — chạy tìm kiếm trước.'));
+assert(collectionHtml.includes('Chưa chọn nguồn nào — tìm theo từ khóa rồi thêm.'));
+assert(collectionHtml.includes('data-action="collect-selected" disabled'));
+assert(!collectionHtml.includes('Chưa cấu hình api_id/api_hash'), 'configured API hides the settings note');
+const searchForm = form('collect-search', [['keyword', ' tin tức '], ['limit', '25'], ['backend', 'api'], ['session', 'tg_session']]);
+const requestsBeforeSearch = requests.length;
+const confirmationsBeforeSearch = confirmations;
+await submit(searchForm);
+const searchPost = requests.slice(requestsBeforeSearch).find((request) => request.options.method === 'POST' && request.options.body.includes('"kind":"search"'));
+assert(searchPost, 'search form creates a search job');
+const searchPayload = JSON.parse(searchPost.options.body);
+assert.equal(searchPayload.kind, 'search');
+assert.equal(searchPayload.db, 'fixture.db');
+assert.deepEqual(searchPayload.params, { keyword: 'tin tức', limit: 25, backend: 'api', session: 'tg_session' });
+assert.equal(confirmations, confirmationsBeforeSearch + 1, 'search requires confirmation before network use');
+assert.equal(client.state.searchJobId, 'new-job');
+client.state.searchJobId = '';
+client.state.jobs = [];
+client.stopPoll();
+
+// The search-success path replaces the table from the persisted result store.
+location.hash = '#collection';
+client.state.view = 'collection';
+const requestsBeforeResults = requests.length;
+await client.loadSourceResults();
+const resultsRequest = requests.slice(requestsBeforeResults).find((request) => request.options.method === 'GET' && request.url.pathname === '/api/search-results');
+assert(resultsRequest, 'completed search fetches stored results');
+assert.equal(resultsRequest.url.searchParams.get('limit'), '100');
+assert.equal(resultsRequest.url.searchParams.get('db'), 'fixture.db');
+assert.equal(client.state.searchResults.length, 1, 'fetched results replace the result table');
+assert.equal(client.state.searchResults[0].username, 'from-search');
+client.state.searchResults = [];
+
+client.state.collectSources = [{ username: 'alpha', title: 'Alpha', kind: 'user', limit: 5 }, { username: 'beta', title: 'Beta', kind: 'channel', limit: 9 }];
+const globalLimitInput = document.querySelector('#collect-global-limit');
+globalLimitInput.value = '777';
+const applyLimitTarget = { dataset: { action: 'collect-apply-limit' }, disabled: false, tagName: 'BUTTON' };
+applyLimitTarget.closest = (selector) => selector === '[data-action]' ? applyLimitTarget : null;
+await client.handleAction({ target: applyLimitTarget });
+assert.deepEqual([...client.state.collectSources.map((source) => source.limit)], [777, 777], 'global limit overwrites every source');
+const sourcesHtml = await client.renderCollection();
+assert(sourcesHtml.includes('class="collect-source-limit"'));
+assert(sourcesHtml.includes('data-collect-source="alpha"') && sourcesHtml.includes('data-collect-source="beta"'));
+assert(control(sourcesHtml, 'collect-source-limit-0').includes('value="777"'));
+assert(control(sourcesHtml, 'collect-source-limit-1').includes('value="777"'));
+assert(sourcesHtml.includes('Thu thập đã chọn (2)'));
+assert(!sourcesHtml.includes('data-action="collect-selected" disabled'));
+assert(sourcesHtml.includes('data-action="collect-remove"') && sourcesHtml.includes('data-username="alpha"'));
+console.log('PASS collection panels, search job payload, and global per-source limits');
+
+client.state.collectSources = [{ username: 'alpha', title: 'Alpha', kind: 'user', limit: 999 }, { username: 'beta', title: 'Beta', kind: 'channel', limit: 1000 }];
+const sessionSelectNode = document.querySelector('form[data-form="collect-search"] [name="session"]');
+sessionSelectNode.value = 'tg_session';
+client.state.view = 'collection';
+const requestsBeforeCollect = requests.length;
+const collectTarget = { dataset: { action: 'collect-selected' }, disabled: false, tagName: 'BUTTON' };
+collectTarget.closest = (selector) => selector === '[data-action]' ? collectTarget : null;
+await client.handleAction({ target: collectTarget });
+const collectPosts = requests.slice(requestsBeforeCollect).filter((request) => request.options.method === 'POST' && request.options.body.includes('"kind":"collect"'));
+assert.equal(collectPosts.length, 2, 'one collect job per selected source');
+const collectBodies = collectPosts.map((request) => JSON.parse(request.options.body));
+assert.deepEqual(collectBodies.map((body) => body.params.channels), ['alpha', 'beta']);
+assert.deepEqual(collectBodies.map((body) => body.params.limit), [999, 1000]);
+for (const collectBody of collectBodies) {
+  assert.equal(collectBody.db, 'fixture.db');
+  assert.equal(collectBody.params.backend, 'api');
+  assert.equal(collectBody.params.session, 'tg_session');
+  assert.equal(collectBody.params.jev, true);
+  assert.equal(collectBody.params.jev_limit, Math.min(1000, collectBody.params.limit));
+  assert(!Object.hasOwn(collectBody.params, 'demo'));
+}
+assert.equal(client.state.collectSources.length, 0, 'selection clears after all jobs are accepted');
+assert.equal(location.hash, '#jobs', 'successful submission navigates to jobs');
+console.log('PASS two selected sources submit two collect jobs with capped Jev budgets');
+
+client.state.collectSources = [];
+client.state.searchResults = [
+  { run_id: 1, username: 'evil', title: hostile, kind: 'channel', telegram_id: 111, keywords: [hostile, 'lừa đảo'] },
+  { run_id: 1, username: '', title: 'ID only', kind: 'chat', telegram_id: 222, keywords: [] },
+  { run_id: 1, username: 'unknown-kind', title: 'Other', kind: 'mystery', telegram_id: 333, keywords: ['a'] },
+  { run_id: 1, username: 'EVIL', title: 'Bản trùng', kind: 'channel', telegram_id: 444, keywords: [] },
+];
+client.state.searchJobId = '';
+const hostileResults = await client.renderCollection();
+assert(hostileResults.includes('&lt;script id=pwn&gt;'), 'hostile title and keywords are escaped');
+assert(!hostileResults.includes('<script id=pwn>'));
+assert(!hostileResults.includes('<img src=x'), 'hostile image markup never becomes markup');
+assert(hostileResults.includes('Chọn tất cả'));
+assert(hostileResults.includes('name="source-pick"'));
+assert(hostileResults.includes('@evil'));
+assert(hostileResults.includes('#222'), 'missing username falls back to the telegram id');
+assert(hostileResults.includes('Kênh') && hostileResults.includes('Nhóm') && hostileResults.includes('Không rõ'));
+assert(hostileResults.includes('lừa đảo'), 'keywords are joined for display');
+assert(hostileResults.includes('data-action="collect-add"'));
+const dedupeAdded = client.addCollectSources([{ username: '@Same', title: 'first' }, { username: 'same', title: 'second' }, { username: 'other', title: 'third' }], 42);
+assert.equal(dedupeAdded, 2, 'username dedupe keeps the first occurrence');
+assert.deepEqual([...client.state.collectSources.map((source) => source.username)], ['Same', 'other']);
+assert.equal(client.state.collectSources[0].title, 'first');
+assert.deepEqual([...client.state.collectSources.map((source) => source.limit)], [42, 42]);
+client.state.collectSources = [];
+const pickedNodes = [{ dataset: { index: '0' }, checked: true }, { dataset: { index: '3' }, checked: true }];
+const originalQuerySelectorAll = document.querySelectorAll;
+document.querySelectorAll = (selector) => selector.startsWith('#view-root input[name="source-pick"]') ? pickedNodes : [];
+const addTarget = { dataset: { action: 'collect-add' }, disabled: false, tagName: 'BUTTON' };
+addTarget.closest = (selector) => selector === '[data-action]' ? addTarget : null;
+await client.handleAction({ target: addTarget });
+document.querySelectorAll = originalQuerySelectorAll;
+assert.equal(client.state.collectSources.length, 1, 'collect-add dedupes checked usernames');
+assert.equal(client.state.collectSources[0].username, 'evil');
+assert(pickedNodes.every((node) => node.checked === false), 'checked result rows are cleared after adding');
+client.state.collectSources = [];
+client.state.searchResults = [];
+location.hash = '#overview';
+console.log('PASS hostile search result escaping and username dedupe');
 
 client.state.jobs = [{ id: 'active', status: 'running' }];
 client.schedulePoll();

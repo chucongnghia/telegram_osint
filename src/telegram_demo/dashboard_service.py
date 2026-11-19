@@ -150,6 +150,50 @@ def _secrets_path():
     return JSON_DIR / "dashboard_secrets.json"
 
 
+
+def _write_private_json(path: Path, payload: dict) -> None:
+    """Ghi JSON nguyên tử, mode 0600, không theo symlink (cùng kiểu dashboard_secrets.json)."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_name(path.name + ".tmp")
+        with os.fdopen(os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, ensure_ascii=False, indent=2)
+        os.replace(temporary, path)
+    except OSError as exc:
+        raise DashboardError(f"Không ghi được file cấu hình cục bộ: {exc.strerror or 'lỗi IO'}") from None
+
+
+def _api_config_path() -> Path:
+    return JSON_DIR / "tg_api.json"
+
+
+def _api_credentials() -> tuple[int | None, str | None]:
+    """api_id/api_hash từ file CLI dùng chung (json_folder/tg_api.json) hoặc biến môi trường."""
+    api_id = os.environ.get("TG_API_ID")
+    api_hash = os.environ.get("TG_API_HASH")
+    path = _api_config_path()
+    try:
+        if path.is_file() and not path.is_symlink():
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                api_id = api_id or data.get("api_id")
+                api_hash = api_hash or data.get("api_hash")
+    except (OSError, ValueError):
+        pass
+    try:
+        identifier = int(api_id)
+    except (TypeError, ValueError):
+        identifier = None
+    if identifier is not None and not 1 <= identifier <= 2_147_483_647:
+        identifier = None
+    digest = api_hash.strip().lower() if isinstance(api_hash, str) else None
+    if not digest or not re.fullmatch(r"[0-9a-f]{32}", digest):
+        digest = None
+    if identifier is None or digest is None:
+        return None, None
+    return identifier, digest
+
+
 class DashboardApp:
     def __init__(self, db_path=DEFAULT_DB):
         self.db_path = Path(db_path).expanduser().absolute()
@@ -476,6 +520,26 @@ class DashboardApp:
                     continue
         return sorted(files, key=lambda item: item["path"])
 
+    def search_results(self, conn, limit=100):
+        """Nguồn tìm được theo từ khoá, đọc từ bảng search_results của storage."""
+        limit = max(1, min(int(limit), 200))
+        if "search_results" not in self._tables(conn):
+            return {"items": [], "total": 0}
+        rows = conn.execute(
+            "SELECT s.run_id, e.username, e.title, e.peer_type, e.telegram_id, s.keywords_json "
+            "FROM search_results s JOIN entities e ON e.id = s.entity_id "
+            "ORDER BY s.run_id DESC, e.username LIMIT ?", (limit,)).fetchall()
+        total = conn.execute("SELECT COUNT(*) FROM search_results").fetchone()[0]
+        items = []
+        for row in rows:
+            username = row["username"] or ""
+            items.append({"run_id": row["run_id"], "username": username,
+                          "title": row["title"] or username,
+                          "kind": row["peer_type"] or "unknown",
+                          "telegram_id": row["telegram_id"],
+                          "keywords": _json(row["keywords_json"], [])})
+        return {"items": items, "total": total}
+
     def images(self, conn):
         analyses, classifications = [], []
         tables = self._tables(conn)
@@ -561,6 +625,7 @@ class DashboardApp:
         if not whisper:
             whisper = any((PROJECT_ROOT / ".venv-video" / "lib").glob("python*/site-packages/faster_whisper/__init__.py"))
         vision = self._vision()
+        api_id, _ = _api_credentials()
         return {"jev_configured": bool(self._jev_key or os.environ.get("TYPESAFE_API_KEY")),
                 "vision_configured": vision["ready"],
                 "vision_provider": vision["provider"],
@@ -568,7 +633,8 @@ class DashboardApp:
                 "vision_remote": vision["remote"],
                 "vision_key_set": bool(vision["key"]),
                 "vision_endpoint_set": bool(vision["url"]),
-                "whisper_available": whisper, "tesseract_available": bool(shutil.which("tesseract")), "sessions": sessions}
+                "whisper_available": whisper, "tesseract_available": bool(shutil.which("tesseract")), "sessions": sessions,
+                "api_configured": api_id is not None, "api_id": api_id}
 
     def bootstrap(self, token):
         return {"token": token, "databases": [{"name": name, "label": name} for name in self.databases()],
@@ -577,6 +643,31 @@ class DashboardApp:
     def settings(self, data):
         if not isinstance(data, dict) or not data:
             raise DashboardError("Thiếu cấu hình cần lưu.")
+        if set(data) & {"api_id", "api_hash"}:
+            if set(data) != {"api_id", "api_hash"}:
+                raise DashboardError("Gửi riêng api_id và api_hash trong một lần.")
+            try:
+                identifier = int(data["api_id"])
+            except (TypeError, ValueError):
+                raise DashboardError("api_id phải là số nguyên Telegram cấp cho ứng dụng.") from None
+            if not 1 <= identifier <= 2_147_483_647:
+                raise DashboardError("api_id nằm ngoài khoảng Telegram cho phép.")
+            digest = str(data["api_hash"]).strip().lower()
+            if not re.fullmatch(r"[0-9a-f]{32}", digest):
+                raise DashboardError("api_hash phải là 32 ký tự hex (0-9, a-f).")
+            merged = {}
+            path = _api_config_path()
+            try:
+                if path.is_file() and not path.is_symlink():
+                    existing = json.loads(path.read_text(encoding="utf-8"))
+                    if isinstance(existing, dict):
+                        merged = {k: v for k, v in existing.items() if isinstance(k, str)}
+            except (OSError, ValueError):
+                merged = {}
+            merged.update({"api_id": identifier, "api_hash": digest})
+            _write_private_json(path, merged)
+            self._redactions.add(digest)
+            return {"config": self.config()}
         jev = set(data) & {"jev_key", "clear_jev"}
         vision_fields = set(data) & {"vision_key", "vision_model", "vision_provider", "vision_url", "clear_vision"}
         if jev and vision_fields:
@@ -724,7 +815,7 @@ class DashboardApp:
                         raise DashboardError("Dashboard chỉ hỗ trợ theo dõi có thời hạn; once phải là true.", "unsupported")
                     argv += ["--interval", str(p["interval"]), "--cycles", str(p["cycles"]), "--watch-once"]
                 p["jev"] = _boolean(p.get("jev", False), "jev")
-                p["jev_limit"] = _integer(p.get("jev_limit", 10), "jev_limit", 1, 100)
+                p["jev_limit"] = _integer(p.get("jev_limit", 10), "jev_limit", 1, 1000)
                 if p["jev"]:
                     self._require_jev()
                     argv += ["--jev", "--jev-limit", str(p["jev_limit"])]
@@ -1174,6 +1265,12 @@ class DashboardApp:
                         elif route == "/api/sources":
                             items = app.sources(conn)
                             result = {"items": items, "total": conn.execute("SELECT COUNT(*) FROM entities").fetchone()[0]}
+                        elif route == "/api/search-results":
+                            try:
+                                limit = int(q.get("limit", "100"))
+                            except ValueError:
+                                raise DashboardError("limit phải là số nguyên.") from None
+                            result = app.search_results(conn, limit)
                         elif route == "/api/runs":
                             result = {"items": app.runs(conn), "total": conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0]}
                         elif route == "/api/profiles":
