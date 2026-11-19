@@ -190,7 +190,6 @@ async function bootstrap() {
     select.disabled = !databases.length;
   }
   if (Array.isArray(data.jobs)) updateJobs(data.jobs);
-  if ($('#nav-status')) $('#nav-status').textContent = state.db ? `SQLite · ${state.db}` : 'Chưa có cơ sở dữ liệu';
 }
 export async function refresh() {
   $('#refresh-button')?.setAttribute('aria-busy', 'true');
@@ -352,10 +351,8 @@ function ocrLanguageField(prefix) {
 function ocrDetails(ocr) {
   if (!ocr || typeof ocr !== 'object') return info('Chưa có OCR cục bộ trong bản ghi này. Bản ghi cũ không tự được phân tích lại. Không có chữ OCR không đồng nghĩa nội dung an toàn.');
   const frames = list(ocr.frames);
-  const words = list(ocr.words).slice(0, 200);
-  const rows = words.map((word) => `<tr><td>${esc(word.text)}</td><td>${word.confidence == null ? 'Không có' : esc(word.confidence)}</td><td class="mono">${esc(pretty(word.bbox || {}))}</td></tr>`).join('');
   const frameRows = frames.map((frame) => `<div class="detail-block"><h4>Khung hình tại ${esc(frame.timestamp ?? '?')} giây</h4><pre class="detail-text">${esc(frame.text || 'Không nhận diện được chữ tại khung hình này.')}</pre><details><summary>Từ và độ tin cậy trong khung hình</summary><pre class="detail-text">${esc(pretty(list(frame.words)))}</pre></details></div>`).join('');
-  return `<div class="detail-block"><h3>OCR cục bộ · chữ được nhận diện</h3>${statusBadge(ocr.status)}<p class="hint">Giới hạn hiển thị: 16.000 ký tự mỗi trường, 200 từ mỗi danh sách. Bằng chứng OCR có thể bị cắt trong dashboard.</p><dl class="meta-list"><dt>Engine</dt><dd>${esc(ocr.provider || ocr.engine || 'Chưa ghi nhận')} ${esc(ocr.version || '')}</dd><dt>Ngôn ngữ</dt><dd>${esc(list(ocr.languages).join(' + ') || 'Chưa ghi nhận')}</dd></dl>${ocr.error_code ? `<p class="field-error">${esc(ocr.error_code)}</p>` : ''}<pre class="detail-text ocr-text">${esc(ocr.text || 'Không nhận diện được chữ. Đây không phải bằng chứng ảnh không có chữ hay nội dung an toàn.')}</pre>${rows ? `<div class="table-wrap ocr-words"><table class="data-table"><thead><tr><th>Từ nhận diện</th><th>Độ tin cậy OCR (0–100)</th><th>Vị trí pixel</th></tr></thead><tbody>${rows}</tbody></table></div>` : ''}${frameRows}<details class="ocr-diagnostics"><summary>Engine, tiền xử lý và giới hạn OCR</summary><pre class="detail-text">${esc(pretty({ image: ocr.image, preprocessing: ocr.preprocessing, limitations: ocr.limitations, error_code: ocr.error_code, errors: ocr.errors }))}</pre></details>${info('Tesseract chỉ nhận diện chữ, không hiểu ngữ cảnh hay cảnh trong ảnh. Độ tin cậy OCR không phải điểm an toàn hoặc mức tin cậy của Jev.')}</div>`;
+  return `<div class="detail-block"><h3>OCR cục bộ · chữ được nhận diện</h3>${statusBadge(ocr.status)}<p class="hint">Giới hạn hiển thị: 16.000 ký tự mỗi trường. Bằng chứng OCR có thể bị cắt trong dashboard.</p><dl class="meta-list"><dt>Engine</dt><dd>${esc(ocr.provider || ocr.engine || 'Chưa ghi nhận')} ${esc(ocr.version || '')}</dd><dt>Ngôn ngữ</dt><dd>${esc(list(ocr.languages).join(' + ') || 'Chưa ghi nhận')}</dd></dl>${ocr.error_code ? `<p class="field-error">${esc(ocr.error_code)}</p>` : ''}<pre class="detail-text ocr-text">${esc(ocr.text || 'Không nhận diện được chữ. Đây không phải bằng chứng ảnh không có chữ hay nội dung an toàn.')}</pre>${frameRows}<details class="ocr-diagnostics"><summary>Engine, tiền xử lý và giới hạn OCR</summary><pre class="detail-text">${esc(pretty({ image: ocr.image, preprocessing: ocr.preprocessing, limitations: ocr.limitations, error_code: ocr.error_code, errors: ocr.errors }))}</pre></details>${info('Tesseract chỉ nhận diện chữ, không hiểu ngữ cảnh hay cảnh trong ảnh. Độ tin cậy OCR không phải điểm an toàn hoặc mức tin cậy của Jev.')}</div>`;
 }
 function mediaClassifications(kind, analysis, classifications) {
   const key = kind === 'image' ? 'image_analysis_id' : 'video_analysis_id';
@@ -739,7 +736,6 @@ function bindShell() {
   $('#database-select')?.addEventListener('change', async (event) => {
     state.db = event.target.value;
     closeDrawer();
-    if ($('#nav-status')) $('#nav-status').textContent = `SQLite · ${state.db}`;
     await loadView();
   });
   $('#global-search')?.addEventListener('submit', (event) => {
