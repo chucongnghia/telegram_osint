@@ -310,3 +310,8 @@ h3 { font-size: 16px; line-height: 1.45; letter-spacing: -.01em; }
   .message-table td:last-child .row-button { display: flex; align-items: center; justify-content: center; width: 100%; border: 1px solid var(--line); border-radius: 8px; }
 }
 @media(prefers-reduced-motion:reduce) { .sidebar { transition: none; } }
+
+/* Tạm ẩn toàn bộ khối cảnh báo/lưu ý trên giao diện (yêu cầu 2026-11-19).
+   Xoá 3 quy tắc dưới đây để hiện lại; HTML/JS vẫn tạo đủ nội dung. */
+.info-banner { display: none !important; }
+.workspace-footer > span + span { display: none; }
