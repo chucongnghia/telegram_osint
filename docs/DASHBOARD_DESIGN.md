@@ -3,7 +3,8 @@ Deal: centred hero; blue-black-cornflower / Geist; pinned-chapters. Adaptation: 
 
 # Dashboard design brief
 
-- Product name: TínTrạm. A project-specific working name, not a claim of affiliation with Telegram. The original mark combines an origami plane and an inspection fold, not a redraw of the Telegram logo.
+- Product name: **Telegram OSINT System** (đổi tên từ "TínTrạm" ngày 2026-11-19; giữ nguyên logo và bảng màu).
+  A project-specific working name, not a claim of affiliation with Telegram. The original mark combines an origami plane and an inspection fold, not a redraw of the Telegram logo.
 - Audience: the operator of this local Telegram collection and content-classification project.
 - Main action: Thu thập dữ liệu.
 - Existing material: real SQLite messages, entities, heuristic analyses, Jev judgments, runs, profiles, local videos and extracted frames. Never seed production to decorate the interface.

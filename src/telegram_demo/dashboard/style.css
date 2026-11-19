@@ -1,4 +1,4 @@
-/* TínTrạm: the application uses the Taste brand token block unchanged. */
+/* Telegram OSINT System: the application uses the Taste brand token block unchanged. */
 :root {
   --p-bg: #f6f8fb; --p-surface: #ffffff; --p-ink: #192638; --p-muted: #5e6d84;
   --p-accent: #147bb7; --p-accent-ink: #ffffff; --p-action: #147bb7; --p-action-ink: #ffffff;
@@ -40,8 +40,8 @@ h3 { font-size: 16px; line-height: 1.45; letter-spacing: -.01em; }
 .sidebar { width: var(--sidebar); position: fixed; inset: 0 auto 0 0; z-index: 30; display: flex; flex-direction: column; overflow-y: auto; background: #fff; padding: 24px 16px 16px; border-right: 1px solid var(--line); }
 .brand { display: flex; align-items: center; gap: 12px; color: var(--ink); padding: 0 8px 28px; }
 .brand-symbol { flex-shrink: 0; }
-.brand-word { display: flex; flex-direction: column; font-size: 23px; font-weight: 500; letter-spacing: -.035em; line-height: 1.15; }
-.brand-caption { font-size: 11px; font-weight: 400; letter-spacing: .015em; color: var(--muted); margin-top: 5px; }
+.brand-word { display: flex; flex-direction: column; font-size: 15px; font-weight: 600; letter-spacing: -.015em; line-height: 1.25; }
+.brand-caption { font-size: 10.5px; font-weight: 400; letter-spacing: .02em; color: var(--muted); margin-top: 4px; text-transform: uppercase; }
 .workspace-label { padding: 12px 10px; margin: 0 0 24px; border: 1px solid var(--line); border-radius: 10px; display: flex; align-items: center; gap: 10px; font-weight: 500; font-size: 13px; }
 .workspace-label > span:nth-child(2) { flex: 1; }
 .workspace-label small { display: block; font-size: 12px; font-weight: 400; color: var(--muted); line-height: 1.5; }
@@ -173,6 +173,23 @@ h3 { font-size: 16px; line-height: 1.45; letter-spacing: -.01em; }
 .field-error { color: #b25951; font-size: 12px; min-height: 0; }
 [aria-invalid=true] { border-color: #c97268 !important; }
 .hint { color: var(--muted); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+/* Ghi chú dưới ô nhập chỉ hiện khi rê chuột vào ô (hoặc focus/tap vào ô),
+   không chiếm chỗ trong bố cục. */
+.field, .form-actions { position: relative; }
+.field > .hint, .form-actions > .hint {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 30;
+  max-width: min(340px, 100%);
+  margin: 0; padding: 8px 10px;
+  background: var(--surface); color: var(--muted);
+  border: 1px solid var(--line-strong); border-radius: 8px;
+  box-shadow: 0 10px 24px -18px rgb(25 38 56 / .5);
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transition: opacity 120ms var(--ease), visibility 120ms var(--ease);
+}
+.field:hover > .hint, .field:focus-within > .hint,
+.form-actions:hover > .hint, .form-actions:focus-within > .hint { opacity: 1; visibility: visible; }
+}
+
 .form-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding-top: 20px; }
 .toggle-row { display: flex; align-items: flex-start; gap: 10px; padding: 14px 0; color: #516278; font-size: 13px; }
 .toggle-row > div, .toggle-row > span { flex: 1; }

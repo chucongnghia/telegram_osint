@@ -1,4 +1,7 @@
-# Dashboard QA — TínTrạm
+# Dashboard QA — Telegram OSINT System
+
+> Báo cáo này ghi lại lần chạy gate ngày 2026-11-17 khi sản phẩm còn tên "TínTrạm";
+> trích dẫn trong báo cáo giữ nguyên văn bản lúc đo, tên hiện tại đã đổi thành Telegram OSINT System.
 
 **GATE: OPEN 43 (rounds used up)**
 

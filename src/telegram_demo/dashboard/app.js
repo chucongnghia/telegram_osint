@@ -164,7 +164,7 @@ function setHeader() {
   const [title, description] = VIEWS[state.view];
   if ($('#page-title')) $('#page-title').textContent = title;
   if ($('#page-description')) $('#page-description').textContent = description;
-  document.title = `${title} · TínTrạm`;
+  document.title = `${title} · Telegram OSINT System`;
   $$('[data-view]').forEach((node) => {
     const active = node.dataset.view === state.view;
     node.classList.toggle('active', active);

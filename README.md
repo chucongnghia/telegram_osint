@@ -12,7 +12,7 @@ python3 main.py dashboard --open
 # http://127.0.0.1:8765
 ```
 
-**TínTrạm** dùng dữ liệu SQLite thật: xem tin/nguồn/hồ sơ, thu thập và watch, phân loại
+**Telegram OSINT System** dùng dữ liệu SQLite thật: xem tin/nguồn/hồ sơ, thu thập và watch, phân loại
 Jev, ảnh/OCR, video và nhật ký tác vụ. Logo máy bay giấy riêng, không phải sản phẩm Telegram.
 Mở trang chỉ đọc dữ liệu; tác vụ mạng/mô hình cần bạn chủ động xác nhận. Server chỉ
 nghe trên máy cục bộ, không cần cài frontend dependencies.

@@ -1,4 +1,4 @@
-# TínTrạm — dashboard cục bộ
+# Telegram OSINT System — dashboard cục bộ
 
 Giao diện của project Telegram, không phải sản phẩm chính thức của Telegram. Mở dữ liệu thật trong SQLite; không tạo tin nhắn hay số liệu mẫu để trang trí.
 
