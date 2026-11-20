@@ -371,7 +371,7 @@ function applyCollectLimit(value) {
 }
 function searchResultsTable() {
   const items = list(state.searchResults);
-  if (!items.length) return empty('Chưa có nguồn phù hợp — chạy tìm kiếm trước.', 'Kết quả tìm kiếm công khai sẽ xuất hiện tại đây để chọn nguồn.');
+  if (!items.length) return empty('Không có nguồn mới phù hợp', 'Nguồn đã thu thập bị loại khỏi danh sách; thử từ khoá khác rồi tìm lại.');
   const rows = items.map((item, index) => {
     const keywords = Array.isArray(item.keywords) ? item.keywords.map((word) => String(word)).join(', ') : String(item.keywords || '');
     return `<tr><td><input class="check-input" type="checkbox" name="source-pick" data-index="${index}" value="${esc(item.username || '')}" aria-label="Chọn ${esc(sourceHandle(item))}"></td><td><span class="source-name">${esc(sourceHandle(item))}</span></td><td>${esc(item.title || 'Không có tiêu đề')}</td><td>${esc(sourceKindLabel(item.kind))}</td><td class="text-cell">${esc(keywords || '—')}</td></tr>`;
@@ -381,7 +381,7 @@ function searchResultsTable() {
 function collectSearchPanel(config) {
   const note = config.api_configured ? '' : info('Chưa cấu hình api_id/api_hash. Mở Cài đặt để nhập trước khi tìm nguồn bằng Telegram API.');
   const running = state.searchJobId ? info('Đang chạy tìm nguồn. Kết quả sẽ hiện khi tác vụ hoàn tất.') : '';
-  return panel('Tìm nguồn theo từ khóa', 'Tìm công khai bằng Telegram API, sau đó chọn nguồn để thu thập.', `<form data-form="collect-search" id="collect-search-form"><div class="form-grid">${field('collect-search-keyword', 'Từ khóa', textInput('collect-search-keyword', 'keyword', '', 'required maxlength="200" placeholder="vd: rao ban"'))}${field('collect-search-limit', 'Giới hạn kết quả', textInput('collect-search-limit', 'limit', 20, 'type="number" min="1" max="100" step="1" required'))}${field('collect-search-backend', 'Phương thức', '<select id="collect-search-backend" name="backend"><option value="api" selected>Telegram API · phiên có sẵn</option></select>')}${sessionField('collect')}</div>${formEnd('Tìm nguồn', 'Tác vụ dùng mạng và phiên CLI đã đăng nhập.', false)}</form>${note}${running}<div class="quick-actions">${button('Thêm nguồn đã chọn', 'collect-add')}</div>${searchResultsTable()}`);
+  return panel('Tìm nguồn theo từ khóa', 'Tìm công khai bằng Telegram API; chỉ hiện nguồn mới (chưa có tin trong DB) từ lượt tìm gần nhất.', `<form data-form="collect-search" id="collect-search-form"><div class="form-grid">${field('collect-search-keyword', 'Từ khóa', textInput('collect-search-keyword', 'keyword', '', 'required maxlength="200" placeholder="vd: rao ban"'))}${field('collect-search-limit', 'Giới hạn kết quả', textInput('collect-search-limit', 'limit', 20, 'type="number" min="1" max="100" step="1" required'))}${field('collect-search-backend', 'Phương thức', '<select id="collect-search-backend" name="backend"><option value="api" selected>Telegram API · phiên có sẵn</option></select>')}${sessionField('collect')}</div>${formEnd('Tìm nguồn', 'Tác vụ dùng mạng và phiên CLI đã đăng nhập.', false)}</form>${note}${running}<div class="quick-actions">${button('Thêm nguồn đã chọn', 'collect-add')}</div>${searchResultsTable()}`);
 }
 function collectSourcesPanel() {
   const sources = list(state.collectSources);
@@ -580,10 +580,12 @@ async function pollJobs() {
   finally { state.polling = false; schedulePoll(); }
 }
 async function loadSourceResults() {
-  const data = await api('search-results?limit=100');
+  const data = await api('search-results?limit=100&exclude_collected=1');
   state.searchResults = list(data.items);
   if (state.view === 'collection') await loadView({ quiet: true });
-  toast(`Đã nhận ${number(state.searchResults.length)} nguồn từ tìm kiếm.`);
+  toast(state.searchResults.length
+    ? `Đã nhận ${number(state.searchResults.length)} nguồn mới từ tìm kiếm.`
+    : 'Không có nguồn mới: kết quả đã thu thập hoặc từ khoá không khớp.');
 }
 function closeDrawer() {
   ++state.drawerRevision;
@@ -836,6 +838,8 @@ async function handleAction(event) {
       const picked = $$('#view-root input[name="source-pick"]:checked').map((node) => state.searchResults[Number(node.dataset.index)]).filter(Boolean);
       if (!picked.length) { toast('Chưa chọn nguồn nào trong kết quả tìm kiếm.', true); return; }
       const added = addCollectSources(picked, $('#collect-global-limit')?.value);
+      const pickedNames = new Set(picked.map((item) => String(item?.username || '').replace(/^@/, '').trim().toLowerCase()));
+      state.searchResults = state.searchResults.filter((item) => !pickedNames.has(String(item?.username || '').replace(/^@/, '').trim().toLowerCase()));
       $$('#view-root input[name="source-pick"]').forEach((node) => { node.checked = false; });
       const selectAll = $('#collect-select-all');
       if (selectAll) selectAll.checked = false;

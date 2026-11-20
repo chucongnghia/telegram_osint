@@ -520,16 +520,32 @@ class DashboardApp:
                     continue
         return sorted(files, key=lambda item: item["path"])
 
-    def search_results(self, conn, limit=100):
-        """Nguồn tìm được theo từ khoá, đọc từ bảng search_results của storage."""
+    def search_results(self, conn, limit=100, run_id=None, exclude_collected=True):
+        """Nguồn **mới** tìm được theo từ khoá.
+
+        * mặc định chỉ đọc lượt tìm gần nhất (không trộn các lượt cũ),
+        * bỏ các nguồn đã có tin nhắn trong DB (đã thu thập),
+        * `run_id` và `exclude_collected` cho phép ghi đè khi cần xem lịch sử.
+        """
         limit = max(1, min(int(limit), 200))
         if "search_results" not in self._tables(conn):
-            return {"items": [], "total": 0}
-        rows = conn.execute(
-            "SELECT s.run_id, e.username, e.title, e.peer_type, e.telegram_id, s.keywords_json "
-            "FROM search_results s JOIN entities e ON e.id = s.entity_id "
-            "ORDER BY s.run_id DESC, e.username LIMIT ?", (limit,)).fetchall()
-        total = conn.execute("SELECT COUNT(*) FROM search_results").fetchone()[0]
+            return {"items": [], "total": 0, "run_id": None}
+        if run_id is None:
+            row = conn.execute("SELECT MAX(run_id) FROM search_results").fetchone()
+            run_id = row[0] if row else None
+        if run_id is None:
+            return {"items": [], "total": 0, "run_id": None}
+        query = ("SELECT s.run_id, e.username, e.title, e.peer_type, e.telegram_id, s.keywords_json "
+                 "FROM search_results s JOIN entities e ON e.id = s.entity_id WHERE s.run_id = ?")
+        if exclude_collected:
+            query += " AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.entity_id = e.id)"
+        query += " ORDER BY e.username LIMIT ?"
+        rows = conn.execute(query, (run_id, limit)).fetchall()
+        count_query = ("SELECT COUNT(*) FROM search_results s JOIN entities e ON e.id = s.entity_id "
+                       "WHERE s.run_id = ?")
+        if exclude_collected:
+            count_query += " AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.entity_id = e.id)"
+        total = conn.execute(count_query, (run_id,)).fetchone()[0]
         items = []
         for row in rows:
             username = row["username"] or ""
@@ -538,7 +554,7 @@ class DashboardApp:
                           "kind": row["peer_type"] or "unknown",
                           "telegram_id": row["telegram_id"],
                           "keywords": _json(row["keywords_json"], [])})
-        return {"items": items, "total": total}
+        return {"items": items, "total": total, "run_id": run_id}
 
     def images(self, conn):
         analyses, classifications = [], []
@@ -1270,7 +1286,14 @@ class DashboardApp:
                                 limit = int(q.get("limit", "100"))
                             except ValueError:
                                 raise DashboardError("limit phải là số nguyên.") from None
-                            result = app.search_results(conn, limit)
+                            run_id = q.get("run_id")
+                            if run_id is not None:
+                                try:
+                                    run_id = int(run_id)
+                                except ValueError:
+                                    raise DashboardError("run_id phải là số nguyên.") from None
+                            exclude = q.get("exclude_collected", "1") not in ("0", "false", "False")
+                            result = app.search_results(conn, limit, run_id, exclude)
                         elif route == "/api/runs":
                             result = {"items": app.runs(conn), "total": conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0]}
                         elif route == "/api/profiles":

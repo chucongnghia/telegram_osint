@@ -601,6 +601,21 @@ class DashboardTest(unittest.TestCase):
         self.assertEqual(channel["kind"], "channel")
         self.assertEqual(channel["title"], "Kênh Một")
         self.assertEqual(channel["keywords"], ["đầu tư"])
+        # Only the newest search run is shown, and collected sources are hidden.
+        with Database(self.dbpath) as db:
+            db.save_payload({"backend": "api", "usernames": [
+                {"username": "chanone", "name": "Kênh Một", "kind": "channel"}]}, tool="test", source="test")
+            db.save_payload({"backend": "api", "posts": [
+                {"channel": "usertwo", "message_id": 1, "text": "đã thu thập"}]}, tool="test", source="test")
+        with self.app.read_db(None) as conn:
+            newest = self.app.search_results(conn, 10)
+        self.assertEqual({item["username"] for item in newest["items"]}, {"chanone"})
+        with self.app.read_db(None) as conn:
+            older = self.app.search_results(conn, 10, run_id=result["run_id"], exclude_collected=False)
+        self.assertEqual({item["username"] for item in older["items"]}, {"chanone", "usertwo"})
+        with self.app.read_db(None) as conn:
+            filtered = self.app.search_results(conn, 10, run_id=result["run_id"])
+        self.assertEqual({item["username"] for item in filtered["items"]}, {"chanone"})
 
     def test_vision_settings_validation_and_job_consent(self):
         self.image_fixture()
