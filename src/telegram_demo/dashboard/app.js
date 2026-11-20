@@ -322,16 +322,18 @@ function collectFields(prefix, watch = false) {
   const limit = watch ? '' : field(`${prefix}-limit`, 'Số tin tối đa mỗi nguồn',
     textInput(`${prefix}-limit`, 'limit', 20, 'type="number" min="1" max="1000" required'));
   const windowFields = watch ? [
-    field('watch-interval', 'Cửa sổ theo dõi (giây)',
-      textInput('watch-interval', 'interval', 60, 'type="number" min="10" max="3600" required'),
-      'Tự dừng khi hết khoảng thời gian này.'),
+    field('watch-infinite', 'Thời gian theo dõi',
+      check('watch-infinite', 'infinite', 'Chạy vô hạn (chỉ dừng khi huỷ hoặc đủ số tin mới)'),
+      'Bỏ tick để giới hạn theo số phút.'),
+    field('watch-minutes', 'Cửa sổ theo dõi (phút)',
+      textInput('watch-minutes', 'minutes', 5, 'type="number" min="1" max="1440" required'),
+      'Chỉ áp dụng khi không chạy vô hạn; tối đa 1440 phút (24 giờ).'),
     field('watch-cycles', 'Dừng khi đủ số tin mới',
-      textInput('watch-cycles', 'cycles', 30, 'type="number" min="1" max="1000" required'),
-      'cycles của CLI là số tin mới tối đa, không phải số vòng lặp.'),
-    info('Chế độ một cửa sổ hữu hạn: dừng khi hết thời gian hoặc đạt giới hạn tin mới. Không theo dõi vô hạn.'),
+      textInput('watch-cycles', 'cycles', 0, 'type="number" min="0" max="1000" required'),
+      '0 = không giới hạn số tin; chỉ dừng theo thời gian hoặc khi huỷ.'),
   ].join('') : '';
   const budget = field(`${prefix}-budget`, 'Ngân sách yêu cầu Jev',
-    textInput(`${prefix}-budget`, 'jev_limit', 10, 'type="number" min="1" max="100" required'),
+    textInput(`${prefix}-budget`, 'jev_limit', 10, 'type="number" min="1" max="1000" required'),
     'Số tin mới tối đa được gửi đến mô hình trong lần chạy này.');
   return `${watch ? '' : backendField(prefix)}${sessionField(prefix)}${channels}${limit}${windowFields}${check(`${prefix}-jev`, 'jev', 'Phân loại tin mới bằng Jev (tùy chọn)')}${budget}`;
 }
@@ -717,7 +719,18 @@ async function submitForm(event) {
     if (['collect', 'watch'].includes(kind)) {
       params.channels = String(params.channels || '').trim();
       if (!lines(params.channels).length) { formError(form, 'Nhập ít nhất một kênh hoặc nhóm công khai.'); return; }
-      if (kind === 'watch') { delete params.limit; delete params.backend; params.once = true; }
+      if (kind === 'watch') {
+        delete params.limit; delete params.backend;
+        const infinite = $('[name="infinite"]', form)?.checked === true;
+        params.once = !infinite;
+        params.cycles = Number(params.cycles);
+        if (!Number.isInteger(params.cycles) || params.cycles < 0 || params.cycles > 1000) { formError(form, 'Số tin mới phải là 0..1000 (0 = không giới hạn).'); return; }
+        if (infinite) { delete params.minutes; }
+        else {
+          params.minutes = Number(params.minutes);
+          if (!Number.isInteger(params.minutes) || params.minutes < 1 || params.minutes > 1440) { formError(form, 'Cửa sổ theo dõi phải là 1..1440 phút.'); return; }
+        }
+      }
     }
     if (kind === 'download') {
       let url;
@@ -801,6 +814,11 @@ function syncFormOptions() {
     if (prefix === 'collect') {
       const session = $('[name="session"]', form);
       if (session) session.disabled = $('[name="backend"]', form)?.value !== 'api';
+    }
+    if (prefix === 'watch') {
+      const infinite = $('[name="infinite"]', form)?.checked === true;
+      const minutes = $('[name="minutes"]', form);
+      if (minutes) minutes.disabled = infinite;
     }
     const budget = $('[name="jev_limit"]', form)?.value || 10;
     const note = $(`[data-budget="${prefix}"]`, form);

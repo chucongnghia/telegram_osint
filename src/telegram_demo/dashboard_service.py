@@ -777,7 +777,7 @@ class DashboardApp:
             raise DashboardError("params phải là object.")
         supported = {
             "collect": {"backend", "channels", "limit", "session", "jev", "jev_limit", "demo"},
-            "watch": {"channels", "session", "jev", "jev_limit", "interval", "cycles", "once"},
+            "watch": {"channels", "session", "jev", "jev_limit", "minutes", "cycles", "once"},
             "classify": {"limit", "query", "username", "include_demo", "recheck"},
             "lookup": {"username", "limit", "backend", "session"},
             "search": {"keyword", "limit", "backend", "session"},
@@ -824,12 +824,13 @@ class DashboardApp:
                     if demo:
                         argv += ["--demo"]
                 else:
-                    p["interval"] = _integer(p.get("interval", 60), "interval", 10, 3600)
-                    p["cycles"] = _integer(p.get("cycles", 100), "cycles", 1, 1000)
+                    p["cycles"] = _integer(p.get("cycles", 0), "cycles", 0, 1000)
                     p["once"] = _boolean(p.get("once", True), "once")
-                    if not p["once"]:
-                        raise DashboardError("Dashboard chỉ hỗ trợ theo dõi có thời hạn; once phải là true.", "unsupported")
-                    argv += ["--interval", str(p["interval"]), "--cycles", str(p["cycles"]), "--watch-once"]
+                    argv += ["--cycles", str(p["cycles"])]
+                    if p["once"]:
+                        minutes = _integer(p.get("minutes", 5), "minutes", 1, 1440)
+                        p["minutes"] = minutes
+                        argv += ["--watch-once", "--interval", str(minutes * 60)]
                 p["jev"] = _boolean(p.get("jev", False), "jev")
                 p["jev_limit"] = _integer(p.get("jev_limit", 10), "jev_limit", 1, 1000)
                 if p["jev"]:

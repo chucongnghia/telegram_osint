@@ -301,15 +301,27 @@ class DashboardTest(unittest.TestCase):
         (self.root / "sessions" / "tg_session_test.session").write_bytes(b"not read")
         (self.root / ".venv-api" / "bin").mkdir(parents=True)
         (self.root / ".venv-api" / "bin" / "python").write_text("fake")
-        argv, params, _ = self.app.build_job("watch", None, {"channels": "one", "session": "tg_session_test", "cycles": 8}, "id")
+        argv, params, _ = self.app.build_job("watch", None,
+            {"channels": "one", "session": "tg_session_test", "cycles": 8, "minutes": 2}, "id")
         self.assertIn("--watch-once", argv)
         self.assertIn("--non-interactive", argv)
         self.assertNotIn("-c", argv)
         self.assertEqual(params["cycles"], 8)
+        self.assertEqual(params["minutes"], 2)
+        self.assertEqual(argv[argv.index("--interval") + 1], "120")
         self.assertEqual(argv[argv.index("--session") + 1], "tg_session_test")
-        with self.assertRaises(ds.DashboardError) as raised:
-            self.app.build_job("watch", None, {"channels": "one", "session": "tg_session_test", "once": False}, "id")
-        self.assertEqual(raised.exception.code, "unsupported")
+        # Vô hạn: bỏ --watch-once; cycles 0 = không giới hạn số tin.
+        infinite, infinite_params, _ = self.app.build_job("watch", None,
+            {"channels": "one", "session": "tg_session_test", "once": False, "cycles": 0}, "id")
+        self.assertNotIn("--watch-once", infinite)
+        self.assertNotIn("--interval", infinite)
+        self.assertEqual(infinite_params["cycles"], 0)
+        with self.assertRaises(ds.DashboardError):
+            self.app.build_job("watch", None,
+                {"channels": "one", "session": "tg_session_test", "minutes": 0}, "id")
+        with self.assertRaises(ds.DashboardError):
+            self.app.build_job("watch", None,
+                {"channels": "one", "session": "tg_session_test", "minutes": 1441}, "id")
 
     def test_cancel_only_owned_group_and_drain_queued_cancel(self):
         reading, release = threading.Event(), threading.Event()

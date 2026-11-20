@@ -136,7 +136,7 @@ fixtures.overview.recent_runs = originalRuns;
 console.log('PASS mobile message cell labels and compact filesystem source names');
 const allowedJobFields = {
   collect: ['backend', 'channels', 'limit', 'session', 'jev', 'jev_limit', 'demo'],
-  watch: ['channels', 'session', 'jev', 'jev_limit', 'interval', 'cycles', 'once'],
+  watch: ['channels', 'session', 'jev', 'jev_limit', 'minutes', 'cycles', 'once', 'infinite'],
   classify: ['limit', 'query', 'username', 'include_demo', 'recheck'],
   lookup: ['username', 'limit', 'backend', 'session'],
   search: ['keyword', 'limit', 'backend', 'session'],
@@ -161,10 +161,13 @@ function control(html, id) {
   return match[0];
 }
 assert(!rendered.Collection.includes('id="watch-limit"'), 'watch has no history limit control');
-for (const id of ['watch-budget']) assert(control(rendered.Collection, id).includes('max="100"'));
+for (const id of ['watch-budget']) assert(control(rendered.Collection, id).includes('max="1000"'));
 assert(control(rendered.Classify, 'classify-limit').includes('max="100"'));
-assert(control(rendered.Collection, 'watch-interval').includes('max="3600"'));
+assert(control(rendered.Collection, 'watch-minutes').includes('max="1440"'));
 assert(control(rendered.Collection, 'watch-cycles').includes('max="1000"'));
+assert(control(rendered.Collection, 'watch-cycles').includes('min="0"'));
+assert(control(rendered.Collection, 'watch-infinite').includes('name="infinite"'));
+assert(!control(rendered.Collection, 'watch-budget').includes('max="100"'), 'watch Jev budget allows 1000');
 assert(control(rendered.Collection, 'collect-global-limit').includes('max="1000"'));
 assert(control(rendered.Video, 'video-max-frames').includes('max="12"'));
 assert(rendered.Video.includes('Tối đa 12 khung hình'));
@@ -257,7 +260,7 @@ function form(kind, entries, extra = {}) {
     querySelectorAll() { return []; },
   };
 }
-const watch = form('watch', [['channels', '@fixture\n@second'], ['cycles', 3], ['interval', 60], ['limit', 10], ['backend', 'web']]);
+const watch = form('watch', [['channels', '@fixture\n@second'], ['cycles', 3], ['minutes', 5], ['limit', 10], ['backend', 'web']]);
 await client.submitForm({ target: watch, preventDefault() {} });
 const created = requests.findLast(request => request.options.method === 'POST' && request.options.body.includes('"kind":"watch"'));
 assert(created, 'watch sends an actual job request');
@@ -265,11 +268,18 @@ const body = JSON.parse(created.options.body);
 assert.equal(created.url.search, '', 'job creation has no query parameters');
 assert.equal(body.db, 'fixture.db', 'job creation sends selected database in JSON body');
 assert.equal(body.params.channels, '@fixture\n@second');
-assert.equal(body.params.once, true, 'watch always has finite time window');
+assert.equal(body.params.once, true, 'watch defaults to a finite window');
+assert.equal(body.params.minutes, 5, 'finite window is in minutes');
 assert(!Object.hasOwn(body.params, 'limit'), 'watch drops unsupported history limit defensively');
 assert(!Object.hasOwn(body.params, 'backend'), 'watch lets backend choose API internally');
 for (const name of Object.keys(body.params)) assert(allowedJobFields.watch.includes(name), `watch payload supports ${name}`);
 assert.equal(body.params.cycles, 3, 'cycles remains max-new-message cap');
+const infiniteWatch = form('watch', [['channels', '@fixture'], ['cycles', 0], ['minutes', 5]], { '[name="infinite"]': { checked: true } });
+await client.submitForm({ target: infiniteWatch, preventDefault() {} });
+const infiniteBody = JSON.parse(requests.findLast(request => request.options.method === 'POST' && request.options.body.includes('"kind":"watch"')).options.body);
+assert.equal(infiniteBody.params.once, false, 'infinite watch drops --watch-once');
+assert(!Object.hasOwn(infiniteBody.params, 'minutes'), 'infinite watch sends no window');
+assert.equal(infiniteBody.params.cycles, 0, 'cycles 0 means unlimited new messages');
 assert(confirmations > 0, 'network job requires browser confirmation');
 const mediaPosts = () => requests.filter((request) => request.options.method === 'POST' && /"kind":"(?:image|video)_/.test(request.options.body));
 const submit = (item) => client.submitForm({ target: item, preventDefault() {} });
