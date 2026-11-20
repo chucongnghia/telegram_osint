@@ -526,32 +526,38 @@ export function jobResultTarget(job) {
       return null;
   }
 }
-function logLines(logs) {
-  const lines = [];
-  const push = (value) => String(value ?? '').split('\n').forEach((line) => lines.push(line));
-  if (Array.isArray(logs)) logs.forEach((item) => push(typeof item === 'string' ? item : pretty(item)));
-  else if (logs !== undefined && logs !== null) push(logs);
-  return lines;
+function jobParamsShort(job) {
+  const params = job.params && typeof job.params === 'object' ? job.params : {};
+  const skip = new Set(['db']);
+  const parts = [];
+  const add = (label, value) => parts.push(`${label}: ${value}`);
+  if (typeof params.channels === 'string' && params.channels.trim()) {
+    add('nguồn', String(params.channels).split(/[,\n]/).map((item) => item.trim()).filter(Boolean).slice(0, 3).join(', '));
+  }
+  if (typeof params.username === 'string' && params.username.trim()) add('username', params.username.trim());
+  if (typeof params.keyword === 'string' && params.keyword.trim()) add('từ khoá', params.keyword.trim());
+  if (typeof params.path === 'string' && params.path.trim()) add('file', String(params.path).split('/').pop());
+  if (typeof params.url === 'string' && params.url.trim()) add('link', String(params.url).split('/').pop());
+  for (const [key, label] of [['limit', 'tối đa'], ['cycles', 'số tin'], ['minutes', 'phút'], ['analysis_id', 'bản phân tích'], ['image_id', 'bản phân tích'], ['message_id', 'tin'], ['run_id', 'lượt chạy']]) {
+    if (params[key] !== undefined && params[key] !== null && params[key] !== '') add(label, params[key]);
+  }
+  if (params.jev) add('Jev', params.jev_limit ? `tối đa ${params.jev_limit}` : 'bật');
+  if (params.ocr) add('OCR', 'bật');
+  if (params.vision) add('thị giác', 'bật');
+  for (const [key, value] of Object.entries(params)) {
+    if (skip.has(key) || parts.length >= 4) break;
+    if (['channels', 'username', 'keyword', 'path', 'url', 'limit', 'cycles', 'minutes', 'analysis_id', 'image_id', 'message_id', 'run_id', 'jev', 'jev_limit', 'ocr', 'vision'].includes(key)) continue;
+    const text = typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value);
+    if (text && text !== 'false') parts.push(`${key}: ${text}`);
+  }
+  const joined = parts.join(' · ') || '—';
+  return joined.length > 120 ? `${joined.slice(0, 117)}…` : joined;
 }
-function jobLogTable(logs) {
-  const all = logLines(logs);
-  const shown = all.slice(0, 500);
-  if (!shown.length) return '<p class="muted">Chưa có nhật ký được ghi nhận.</p>';
-  const rows = shown.map((line, index) => {
-    const tone = /^\[!\]|traceback|error|thất bại|lỗi/i.test(line) ? 'error'
-      : /^\[w\]/i.test(line) ? 'warn'
-        : /^\[i\]/i.test(line) ? 'info' : '';
-    return `<tr${tone ? ` class="log-${tone}"` : ''}><td class="log-index">${index + 1}</td><td class="log-line">${esc(line || ' ')}</td></tr>`;
-  }).join('');
-  const truncated = all.length > shown.length
-    ? `<p class="muted">Hiển thị ${number(shown.length)} / ${number(all.length)} dòng; xem đầy đủ qua CLI hoặc file log.</p>` : '';
-  return `<div class="table-wrap log-table-wrap" tabindex="0" role="region" aria-label="Nhật ký tiến trình">${truncated}<table class="data-table log-table"><thead><tr><th scope="col" class="log-index">#</th><th scope="col">Nội dung nhật ký</th></tr></thead><tbody>${rows}</tbody></table></div>`;
-}
-function jobCard(job) {
-  const opened = state.expandedJobs.has(String(job.id));
-  const detail = state.expandedJobs.get(String(job.id));
-  const logs = detail?.logs;
-  return `<article class="job-card" data-job-id="${esc(job.id)}"><div class="panel-header"><div><h2 class="panel-title">${esc(JOB_NAMES[job.kind] || job.kind || 'Tác vụ')} <span class="source-meta">#${esc(job.id)}</span></h2><p class="panel-subtitle">${esc(date(job.created_at))}${job.params?.db ? ` · ${esc(job.params.db)}` : ''}</p></div>${statusBadge(job.status)}</div><div class="panel-body"><div class="meta-list"><span>Bắt đầu: ${esc(date(job.started_at))}</span><span>Kết thúc: ${esc(date(job.ended_at))}</span><span>Mã thoát: ${job.exit_code === undefined || job.exit_code === null ? '—' : esc(job.exit_code)}</span></div><div class="quick-actions">${jobResultTarget(job) ? button(jobResultTarget(job).label, 'job-result', `data-id="${esc(job.id)}"`) : ''}${button(opened ? 'Ẩn nhật ký' : 'Xem nhật ký', 'job-log', `data-id="${esc(job.id)}" aria-expanded="${opened}" aria-controls="job-log-${esc(job.id)}"`)}${activeJob(job) ? button('Dừng tác vụ', 'cancel-job', `data-id="${esc(job.id)}"`) : ''}</div>${opened ? `<div id="job-log-${esc(job.id)}" class="job-log-panel"><h3 class="section-heading">Tham số</h3><pre class="detail-text">${esc(pretty(detail?.params || job.params || {}))}</pre><h3 class="section-heading">Nhật ký tiến trình</h3>${jobLogTable(logs)}</div>` : ''}</div></article>`;
+function jobDetail(job) {
+  const detail = state.expandedJobs.get(String(job.id)) || {};
+  const logs = detail.logs;
+  const logText = Array.isArray(logs) ? logs.map((line) => typeof line === 'string' ? line : pretty(line)).join('\n') : (logs || 'Chưa có nhật ký được ghi nhận.');
+  return `<article class="job-card" data-job-id="${esc(job.id)}"><div class="panel-header"><div><h2 class="panel-title">${esc(JOB_NAMES[job.kind] || job.kind || 'Tác vụ')} <span class="source-meta">#${esc(job.id)}</span></h2><p class="panel-subtitle">${esc(date(job.created_at))}${job.params?.db ? ` · ${esc(job.params.db)}` : ''}</p></div>${statusBadge(job.status)}</div><div class="panel-body"><div class="meta-list"><span>Bắt đầu: ${esc(date(job.started_at))}</span><span>Kết thúc: ${esc(date(job.ended_at))}</span><span>Mã thoát: ${job.exit_code === undefined || job.exit_code === null ? '—' : esc(job.exit_code)}</span></div><div class="quick-actions">${jobResultTarget(job) ? button(jobResultTarget(job).label, 'job-result', `data-id="${esc(job.id)}"`) : ''}${button('Ẩn chi tiết', 'job-log', `data-id="${esc(job.id)}" aria-expanded="true" aria-controls="job-log-${esc(job.id)}"`)}${activeJob(job) ? button('Dừng tác vụ', 'cancel-job', `data-id="${esc(job.id)}"`) : ''}</div><div id="job-log-${esc(job.id)}" class="job-log-panel"><h3 class="section-heading">Tham số</h3><pre class="detail-text">${esc(pretty(detail.params || job.params || {}))}</pre><h3 class="section-heading">Nhật ký tiến trình</h3><pre class="job-log" tabindex="0">${esc(logText)}</pre></div></div></article>`;
 }
 async function renderJobs(signal) {
   const data = await api('jobs', { signal, db: false });
@@ -560,7 +566,22 @@ async function renderJobs(signal) {
 }
 function jobsMarkup() {
   const running = state.jobs.filter(activeJob).length;
-  return `<div class="section-stack">${info(running ? `${running} tác vụ đang chờ hoặc đang chạy. Cập nhật mỗi 2 giây khi tab đang hiển thị.` : 'Không có tác vụ đang chạy. Trạng thái và mã thoát dưới đây là kết quả từ máy chủ.')}<div class="activity-list">${state.jobs.length ? state.jobs.map(jobCard).join('') : panel('Lịch sử tác vụ', '', empty('Chưa có tác vụ', 'Bắt đầu một lần thu thập hoặc phân loại để xem tiến trình tại đây.', button('Thu thập dữ liệu', 'collect')))}</div></div>`;
+  if (!state.jobs.length) {
+    return `<div class="section-stack">${info(running ? `${running} tác vụ đang chờ hoặc đang chạy.` : 'Không có tác vụ đang chạy.')}${panel('Lịch sử tác vụ', '', empty('Chưa có tác vụ', 'Bắt đầu một lần thu thập hoặc phân loại để xem tiến trình tại đây.', button('Thu thập dữ liệu', 'collect')))}</div>`;
+  }
+  const rows = state.jobs.map((job) => {
+    const target = jobResultTarget(job);
+    const opened = state.expandedJobs.has(String(job.id));
+    return `<tr>
+      <td data-label="Tác vụ"><div class="source-name">${esc(JOB_NAMES[job.kind] || job.kind || 'Tác vụ')}</div><div class="source-meta">#${esc(String(job.id).slice(0, 8))}</div></td>
+      <td data-label="Thời gian"><div>${esc(date(job.created_at))}</div><div class="source-meta">${statusBadge(job.status)}</div></td>
+      <td data-label="Tham số" class="job-params">${esc(jobParamsShort(job))}</td>
+      <td data-label="Chi tiết">${button(opened ? 'Ẩn chi tiết' : 'Xem chi tiết', 'job-log', `data-id="${esc(job.id)}" aria-expanded="${opened}" aria-controls="job-log-${esc(job.id)}"`)}</td>
+      <td data-label="Điều hướng">${target ? button('Điều hướng', 'job-result', `data-id="${esc(job.id)}"`) : '<span class="muted">—</span>'}</td>
+    </tr>`;
+  }).join('');
+  const openedJobs = state.jobs.filter((job) => state.expandedJobs.has(String(job.id)));
+  return `<div class="section-stack">${info(running ? `${running} tác vụ đang chờ hoặc đang chạy. Cập nhật mỗi 2 giây khi tab đang hiển thị.` : 'Không có tác vụ đang chạy. Trạng thái và mã thoát dưới đây là kết quả từ máy chủ.')}${panel('Lịch sử tác vụ', `${number(state.jobs.length)} tác vụ gần đây`, `<div class="table-wrap"><table class="data-table jobs-table"><thead><tr><th scope="col">Tác vụ</th><th scope="col">Thời gian</th><th scope="col">Tham số</th><th scope="col">Chi tiết</th><th scope="col">Điều hướng</th></tr></thead><tbody>${rows}</tbody></table></div>`)}${openedJobs.map(jobDetail).join('')}</div>`;
 }
 function visionStatusMeta(config) {
   if (!config.vision_configured) return '<div class="source-meta">Chưa cấu hình. Nhập khóa và model bên dưới hoặc dùng biến môi trường máy chủ.</div>';

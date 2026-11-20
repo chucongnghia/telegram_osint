@@ -94,10 +94,10 @@ vm.runInContext(source.replace(/^export (?=(?:async )?function)/gm, '') + `
     state, api, showPageError, renderOverview, renderMessages, renderSources,
     renderCollection, renderClassify, renderProfiles, renderVideo, renderImage, ocrDetails, confirmJob, renderJobs,
     renderSettings, externalUrl, mediaUrl, safeMediaUrl, labelBadge, messageRows,
-    jobCard, submitForm, schedulePoll, stopPoll, sourceDisplay,
+    jobDetail, jobParamsShort, jobsMarkup, submitForm, schedulePoll, stopPoll, sourceDisplay,
     syncFormOptions, syncVisionForm, handleAction,
     addCollectSources, applyCollectLimit, collectLimit, sourceKindLabel, startSelectedCollection,
-    telegramApiPanel, telegramApiStatus, loadSourceResults, jobResultTarget, firstChannel, jobLogTable,
+    telegramApiPanel, telegramApiStatus, loadSourceResults, jobResultTarget, firstChannel,
   };`, context, { filename: 'dashboard/app.js' });
 const client = context.clientTest;
 client.state.bootstrap = fixtures.bootstrap;
@@ -204,8 +204,11 @@ assert(client.labelBadge(null, 'error').includes('Lỗi phân loại'));
 assert(client.labelBadge(null).includes('Chưa phân loại'));
 assert(!client.labelBadge(null).includes('an toàn'));
 client.state.expandedJobs.set('saved', fixtures.jobs.items[0]);
-assert(client.jobCard(fixtures.jobs.items[0]).includes('&lt;script id=pwn&gt;'));
-assert(!client.jobCard(fixtures.jobs.items[0]).includes('<script id=pwn>'));
+const hostileJob = fixtures.jobs.items[0];
+client.state.expandedJobs.set(String(hostileJob.id), { logs: Array.isArray(hostileJob.logs) ? hostileJob.logs : ['[!] <script id=pwn>'] });
+assert(client.jobDetail(hostileJob).includes('&lt;script id=pwn&gt;'));
+assert(!client.jobDetail(hostileJob).includes('<script id=pwn>'));
+client.state.expandedJobs.clear();
 assert.equal(client.externalUrl('javascript:alert(1)'), '');
 assert.equal(client.externalUrl('data:text/html,hello'), '');
 assert.equal(client.externalUrl('https://t.me/example/1'), 'https://t.me/example/1');
@@ -744,8 +747,11 @@ assert.equal(JSON.stringify(client.jobResultTarget({ kind: 'video_analyze', para
 assert.equal(client.jobResultTarget({ kind: 'db_backup', params: {} }).view, 'settings');
 assert.equal(client.jobResultTarget({ kind: 'unknown', params: {} }), null);
 const jobsHtml = await client.renderJobs();
-assert(jobsHtml.includes('data-action="job-result"'), 'job card offers a result link');
-assert(jobsHtml.includes('Xem tin đã thu thập'), 'collect result link names the messages view');
+assert(jobsHtml.includes('data-action="job-result"'), 'jobs table offers result navigation');
+assert(jobsHtml.includes('Điều hướng'), 'navigation column is visible');
+client.state.expandedJobs.set('saved', { logs: [] });
+assert(client.jobsMarkup().includes('Xem tin đã thu thập'), 'collect detail names the messages view');
+client.state.expandedJobs.clear();
 const resultTarget = { dataset: { action: 'job-result', id: 'saved' }, disabled: false, tagName: 'BUTTON' };
 resultTarget.closest = (selector) => selector === '[data-action]' ? resultTarget : null;
 location.hash = '#jobs';
@@ -753,20 +759,27 @@ await client.handleAction({ target: resultTarget });
 assert(location.hash.startsWith('#messages'), 'result link navigates to the messages view');
 location.hash = '#overview';
 console.log('PASS job cards link to the result view of each task');
-console.log('PASS job log renders as a table with severity and escaping');
-const logHtml = client.jobLogTable([
-  '[i] Dùng lại phiên tg_session', '[w] Flood wait 3s', '[!] Không lưu được: <script id=pwn>alert(1)</script>',
-  'traceback: boom', 'dòng thường',
-]);
-assert(logHtml.includes('<th scope="col" class="log-index">#</th>'), 'log table has an index column');
-assert(logHtml.includes('Nội dung nhật ký'), 'log table has a content column');
-assert.equal((logHtml.match(/<tr[ >]/g) || []).length, 6, 'one header row plus five log rows');
-assert(logHtml.includes('class="log-error"') && logHtml.includes('class="log-warn"') && logHtml.includes('class="log-info"'));
-assert(!logHtml.includes('<script id=pwn>'), 'log lines are escaped');
-assert(logHtml.includes('&lt;script id=pwn&gt;'), 'log markup is shown as text');
-assert(client.jobLogTable([]).includes('Chưa có nhật ký'), 'empty logs show a placeholder');
-const many = client.jobLogTable(Array.from({ length: 620 }, (_, index) => `[i] dòng ${index + 1}`));
-assert(many.includes('Hiển thị') && many.includes('620'), 'long logs are capped with a note');
-assert.equal((many.match(/<tr[ >]/g) || []).length, 501, 'cap keeps 500 rows plus the header');
+console.log('PASS jobs table lists tasks with result navigation and a raw detail log');
+client.state.jobs = [{ id: 'job-abc12345', kind: 'collect', status: 'failed', created_at: '2026-11-20T14:05:00Z',
+  started_at: '2026-11-20T14:05:01Z', ended_at: '2026-11-20T14:05:19Z', exit_code: 1,
+  params: { channels: '@alpha, @beta', limit: 5, jev: true, jev_limit: 5 } }];
+client.state.expandedJobs.clear();
+const jobsTable = client.jobsMarkup();
+for (const heading of ['Tác vụ', 'Thời gian', 'Tham số', 'Chi tiết', 'Điều hướng']) {
+  assert(jobsTable.includes(`<th scope="col">${heading}</th>`), `jobs table has the ${heading} column`);
+}
+assert(jobsTable.includes('@alpha, @beta'), 'channels are summarised in the params column');
+assert(jobsTable.includes('tối đa: 5'), 'limit is summarised in the params column');
+assert(jobsTable.includes('data-action="job-result"'), 'row offers result navigation');
+assert(jobsTable.includes('Xem chi tiết'), 'row offers a detail button');
+assert(!jobsTable.includes('<pre class="job-log"'), 'log stays closed until details are requested');
+client.state.expandedJobs.set('job-abc12345', { logs: ['[i] Dòng 1', '[!] lỗi <script id=pwn>'] });
+const jobsDetail = client.jobsMarkup();
+assert(jobsDetail.includes('<pre class="job-log"'), 'details keep the original raw log block');
+assert(jobsDetail.includes('Tham số') && jobsDetail.includes('Nhật ký tiến trình'));
+assert(jobsDetail.includes('&lt;script id=pwn&gt;') && !jobsDetail.includes('<script id=pwn>'), 'detail log is escaped');
+assert(jobsDetail.includes('Ẩn chi tiết'));
+client.state.expandedJobs.clear();
+client.state.jobs = [];
 console.log('PASS visible-only 2-second job polling lifecycle');
 console.log('All dashboard client contract tests passed.');
