@@ -629,6 +629,22 @@ class DashboardTest(unittest.TestCase):
             filtered = self.app.search_results(conn, 10, run_id=result["run_id"])
         self.assertEqual({item["username"] for item in filtered["items"]}, {"chanone"})
 
+    def test_linked_groups_job_only_discovers_sources(self):
+        (self.root / "sessions" / "tg_session_test.session").write_bytes(b"not read")
+        (self.root / ".venv-api" / "bin").mkdir(parents=True)
+        (self.root / ".venv-api" / "bin" / "python").write_text("fake")
+        argv, params, _ = self.app.build_job("linked_groups", None,
+            {"channels": "@chanone, -1001234567890", "session": "tg_session_test"}, "id")
+        self.assertIn("api", argv[:3])
+        self.assertIn("--linked-groups-only", argv)
+        self.assertIn("--channel", argv)
+        self.assertIn("chanone", argv)
+        self.assertIn("-1001234567890", argv)
+        self.assertIn("--session", argv)
+        self.assertNotIn("--limit", argv)
+        self.assertNotIn("--jev", argv)
+        self.assertIn("tg_session_test", params["session"])
+
     def test_collect_can_include_linked_discussion_groups(self):
         (self.root / "sessions" / "tg_session_test.session").write_bytes(b"not read")
         (self.root / ".venv-api" / "bin").mkdir(parents=True)

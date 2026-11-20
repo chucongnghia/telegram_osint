@@ -742,6 +742,31 @@ client.state.searchResults = [];
 location.hash = '#overview';
 console.log('PASS hostile search result escaping and username dedupe');
 
+client.state.searchResults = [
+  { run_id: 1, username: 'chanA', title: 'A', kind: 'channel', telegram_id: 111, keywords: [] },
+  { run_id: 1, username: 'userB', title: 'B', kind: 'user', telegram_id: 222, keywords: [] },
+  { run_id: 1, username: '', title: 'NoName', kind: 'channel', telegram_id: 333, keywords: [] },
+];
+const findPicks = [{ dataset: { index: '0' }, checked: true }, { dataset: { index: '1' }, checked: true }, { dataset: { index: '2' }, checked: true }];
+const oldFindQSA = document.querySelectorAll;
+document.querySelectorAll = (selector) => selector.startsWith('#view-root input[name="source-pick"]') ? findPicks : [];
+document.querySelector('form[data-form="collect-search"] [name="session"]').value = 'tg_session';
+const requestsBeforeFind = requests.length;
+const findTarget = { dataset: { action: 'collect-find-groups' }, disabled: false, tagName: 'BUTTON' };
+findTarget.closest = (selector) => selector === '[data-action]' ? findTarget : null;
+await client.handleAction({ target: findTarget });
+document.querySelectorAll = oldFindQSA;
+const findPosts = requests.slice(requestsBeforeFind).filter((request) => request.options?.method === 'POST' && request.options.body.includes('"kind":"linked_groups"'));
+assert.equal(findPosts.length, 1, 'one discovery job is posted');
+const findBody = JSON.parse(findPosts[0].options.body);
+assert.equal(findBody.params.channels, 'chanA,-1000000000333', 'only channel rows are used, with marked ids as fallback');
+assert.equal(findBody.params.session, 'tg_session');
+assert.equal(client.state.linkedJobId, 'new-job', 'the client tracks the discovery job');
+client.state.linkedJobId = '';
+client.state.searchResults = [];
+console.log('PASS find discussion groups for selected channels');
+
+
 client.state.jobs = [{ id: 'active', status: 'running' }];
 client.schedulePoll();
 assert.equal(timers.get(client.state.pollTimer).delay, 2000);

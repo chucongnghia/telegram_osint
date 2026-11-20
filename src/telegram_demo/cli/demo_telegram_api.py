@@ -602,6 +602,32 @@ async def lookup_entity(client, target: str | int, limit: int = 0, photo_dir: st
     return profile, records
 
 
+async def discover_linked_groups(client, targets) -> list[dict]:
+    """Dò group thảo luận của từng kênh/nhóm; trả về các dòng nguồn kiểu `usernames`."""
+    rows, seen = [], set()
+    for target in targets:
+        try:
+            entity = await client.get_entity(
+                int(target) if isinstance(target, str) and re.fullmatch(r"-?\d{1,19}", target.strip()) else target)
+        except Exception as exc:
+            print(f"    ! {target}: không truy cập được ({type(exc).__name__})")
+            continue
+        group = await linked_group_entity(client, entity)
+        if group is None:
+            print(f"    - {target}: không có group thảo luận công khai")
+            continue
+        username = (getattr(group, "username", None) or "").lstrip("@")
+        key = username.lower() or f"id:{getattr(group, 'id', '')}"
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append({"username": username, "name": getattr(group, "title", "") or username,
+                     "kind": "group", "telegram_id": getattr(group, "id", None),
+                     "peer_type": "channel", "linked_group_of": str(target),
+                     "keywords": [f"group của {str(target).lstrip('@')}"]})
+    return rows
+
+
 async def linked_group_entity(client, entity):
     """Group thảo luận gắn với một kênh (linked chat), nếu có và tài khoản truy cập được."""
     if not isinstance(entity, Channel):
@@ -1063,6 +1089,317 @@ async def run_async(args) -> int:
         print("     (Thiếu api_id/api_hash? Chạy --login trước.)", file=sys.stderr)
         return 2
 
+    if getattr(args, "linked_groups_only", False):
+        try:
+            rows = await discover_linked_groups(client, args.channel or [])
+        finally:
+            await client.disconnect()
+        write_json(args.out, [], "telethon", noun="nguồn",
+                   extra={"usernames": rows, "source": "linked-groups"})
+        print(f"[i] Tìm thấy {len(rows)} group thảo luận từ {len(args.channel or [])} kênh/nhóm.")
+        return 0
+
+    me = await client.get_me()
+    print(f"[i] Token hợp lệ — bot @{getattr(me, 'username', '') or me.id} (id={me.id})")
+    print("    ! Bot CHỈ nhận tin nhắn MỚI kể từ khi được thêm vào nhóm:")
+    print("      không đọc được lịch sử cũ và không dùng được --search.")
+    print("    ! Thêm bot vào nhóm: mở nhóm → Add members → tìm @username của bot.")
+    count = 0
+    async for dialog in client.iter_dialogs():
+        if dialog.is_group or dialog.is_channel:
+            count += 1
+            kind = "nhóm" if dialog.is_group else "kênh"
+            print(f"    - [{kind}] {dialog.name}  (id={dialog.id})")
+    print(f"[i] Bot đang ở {count} nhóm/kênh.")
+    if not count:
+        print("    Chưa có nhóm nào — thêm bot vào nhóm rồi chạy lại lệnh này.")
+    save_credentials(api_id, api_hash, token)      # lưu token để lần sau khỏi nhập
+    await client.disconnect()
+    return 0
+
+
+async def run_bot_mode(args) -> int:
+    """Nhánh chỉ dùng token bot: --setup-bot <token> và --login-bot --bot-token <token>."""
+    missing = _missing()
+    if missing:
+        return missing
+    api_id, api_hash = load_credentials(args)
+    if not api_id or not api_hash:
+        print("[!] " + credentials_help(), file=sys.stderr)
+        return 2
+    token = (args.setup_bot or "").strip() or load_bot_token(args)
+    if not token:
+        print("[!] Thiếu token bot. Dùng: --setup-bot <token> hoặc --bot-token <token>\n"
+              "    (token lấy từ @BotFather, dạng 123456789:AAH...).", file=sys.stderr)
+        return 2
+
+    if args.setup_bot is not None:
+        return await run_setup_bot(api_id, api_hash, token, args.session)
+
+    client, err = await open_bot_client(api_id, api_hash, token, args.session)
+    if err:
+        print(f"[!] {err}", file=sys.stderr)
+        return 2
+    me = await client.get_me()
+    path = session_path(args.session, bot=True)
+    print(f"[i] Đăng nhập bot thành công: @{getattr(me, 'username', '') or me.id}")
+    print(f"[i] Phiên lưu tại: {path}.session (loại: {session_kind(path)})")
+    save_credentials(api_id, api_hash, token)
+    await client.disconnect()
+    return 0
+
+
+async def run_watch(args, api_id: int, api_hash: str, bot: bool = False) -> int:
+    """--watch: theo dõi tin nhắn MỚI và chấm điểm ngay khi nhận được."""
+    if getattr(args, "non_interactive", False):
+        client, err = await open_client(api_id, api_hash, interactive=False,
+                                      session=args.session, bot=bot)
+    elif bot:
+        token = load_bot_token(args)
+        if not token:
+            print("[!] Chế độ bot cần token: --bot-token <token> (hoặc TG_BOT_TOKEN).",
+                  file=sys.stderr)
+            return 2
+        client, err = await open_bot_client(api_id, api_hash, token, args.session)
+    else:
+        client, err = await open_client(api_id, api_hash, interactive=True,
+                                        session=args.session, bot=False)
+    if err:
+        print(f"[!] {err}", file=sys.stderr)
+        return 2
+
+    if args.media_dir:
+        os.makedirs(args.media_dir, exist_ok=True)
+    collected: list[dict] = []
+    targets = list(args.watch or [])
+    incremental = bool(getattr(args, "jev", False))
+    queue = asyncio.Queue(maxsize=64) if incremental else None
+    watch_errors: list[str] = []
+    handlers: set[asyncio.Task] = set()
+    ocr_slots = asyncio.Semaphore(2)    # per invocation, shared by all event callbacks
+    accepting = True
+
+    async def _consume():
+        # One sequential writer/inference worker. HTTP runs off the event loop;
+        # queue backpressure and a shared invocation budget bound pending work.
+        while True:
+            rec = await queue.get()
+            try:
+                if rec is None:
+                    return
+                try:
+                    payload = json_payload([rec], "telethon-bot" if bot else "telethon-watch",
+                                           noun=NOUN_API, extra={"watch_incremental": True})
+                    await asyncio.to_thread(persist_payload, payload, source="watch-event",
+                                            classify=not watch_errors)
+                except Exception:
+                    if not watch_errors:
+                        watch_errors.append("Không hoàn tất lưu/phân loại Jev trong watch")
+                        print("[!] Watch/Jev có lỗi; ngừng gọi Jev, vẫn lưu các tin tiếp theo.",
+                              file=sys.stderr)
+            finally:
+                queue.task_done()
+
+    worker = asyncio.create_task(_consume()) if incremental else None
+
+    async def _process_new(event):
+        msg = event.message
+        try:
+            rec = to_record(msg, event.chat)
+        except Exception as exc:
+            print(f"    ! bỏ qua tin {getattr(msg, 'id', '?')}: {type(exc).__name__}")
+            return
+        if args.media_dir and rec["has_media"]:
+            path = None
+            try:
+                path = await client.download_media(
+                    msg, file=os.path.join(args.media_dir, rec["message_id"]))
+            except Exception as exc:
+                print(f"    ! tải media lỗi: {type(exc).__name__}")
+            if path:
+                rec["media_path"] = path
+                rec["pipeline_status"]["downloaded"] = True
+                if args.ocr and path.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
+                    async with ocr_slots:
+                        task = asyncio.create_task(asyncio.to_thread(apply_ocr_record, rec, path))
+                        try:
+                            await asyncio.shield(task)
+                        except asyncio.CancelledError:
+                            # Cancelling an await cannot stop a running thread.
+                            # Keep its slot until completion, including shutdown.
+                            await task
+                            raise
+        rec["analysis"] = analyze(rec, ocr_text=rec.get("ocr_text", ""))
+        collected.append(rec)
+        if queue is not None and not worker.done():
+            await queue.put(rec)
+        elif queue is not None and not watch_errors:
+            watch_errors.append("Worker watch/Jev đã dừng bất thường")
+        a = rec["analysis"]
+        print(f"  [{a['scam_score']:>3}/100 | {a['level']:<10}] "
+              f"@{rec['channel']}/{rec['message_id']}  {a['scam_category_vi'] or '—'}")
+        snippet = " ".join((rec.get("text") or "").split())[:120]
+        if snippet:
+            print(f"        {snippet}")
+        if args.cycles and len(collected) >= args.cycles:
+            print(f"[i] Đã nhận đủ {args.cycles} tin — dừng theo --cycles.")
+            asyncio.ensure_future(client.disconnect())
+
+    @client.on(events.NewMessage(chats=targets or None))
+    async def _on_new(event):
+        if not accepting:
+            return
+        task = asyncio.current_task()
+        handlers.add(task)
+        try:
+            await _process_new(event)
+        finally:
+            handlers.discard(task)
+
+    print(f"[i] Chế độ: {'BOT' if bot else 'TÀI KHOẢN NGƯỜI DÙNG'}"
+          f"{' | phiên ' + os.path.basename(session_path(args.session, bot=bot)) if args.session else ''}")
+    if targets:
+        print(f"[i] Đang theo dõi: {', '.join(targets)}")
+    else:
+        print("[i] Không truyền --watch → theo dõi MỌI hội thoại mà tài khoản/bot thấy.")
+    if bot:
+        print("[!] Bot chỉ nhận tin MỚI trong nhóm bot đã được thêm; không đọc được lịch sử cũ.")
+    interrupted = False
+    try:
+        if args.watch_once:
+            print(f"[i] Chờ tối đa {args.interval}s rồi thoát (--watch-once).")
+            try:
+                await asyncio.wait_for(client.run_until_disconnected(), timeout=args.interval)
+            except asyncio.TimeoutError:
+                print("[i] Hết thời gian chờ.")
+        else:
+            print("[i] Theo dõi liên tục — nhấn Ctrl+C để dừng.")
+            await client.run_until_disconnected()
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        interrupted = True
+        print("\n[i] Đã dừng theo dõi; đang lưu nốt các tin đã nhận.")
+    finally:
+        accepting = False
+        try:
+            await client.disconnect()
+        except Exception:
+            pass
+        if worker is not None:
+            # Finish accepted callbacks before the sentinel, otherwise a full
+            # queue could strand an event behind an already stopped worker.
+            pending = [task for task in handlers if not task.done()]
+            if pending:
+                callbacks = asyncio.gather(*pending, return_exceptions=True)
+                done, _ = await asyncio.wait((callbacks, worker),
+                                             return_when=asyncio.FIRST_COMPLETED)
+                if worker in done and not callbacks.done():
+                    callbacks.cancel()
+                await asyncio.gather(callbacks, return_exceptions=True)
+            drain = asyncio.create_task(queue.join())
+            done, _ = await asyncio.wait((drain, worker), return_when=asyncio.FIRST_COMPLETED)
+            if worker in done:
+                if not watch_errors:
+                    watch_errors.append("Worker watch/Jev đã dừng bất thường")
+                drain.cancel()
+                await asyncio.gather(drain, return_exceptions=True)
+                # Preserve all collected records in the final snapshot even if
+                # a cancelled/dead worker left queued items unprocessed.
+                while not queue.empty():
+                    queue.get_nowait()
+                    queue.task_done()
+            else:
+                await drain
+                await queue.put(None)
+            result = (await asyncio.gather(worker, return_exceptions=True))[0]
+            if isinstance(result, BaseException) and not watch_errors:
+                watch_errors.append("Worker watch/Jev đã dừng bất thường")
+        else:
+            # OCR callbacks may still be finishing after the Telegram disconnect.
+            pending = [task for task in handlers if not task.done()]
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+
+    if not collected:
+        print("[i] Không nhận được tin nhắn mới nào.")
+        return 130 if interrupted else 0
+    out = write_json(args.out, collected, "telethon-bot" if bot else "telethon-watch",
+                     noun=NOUN_API, classify=not incremental)
+    if args.no_report:
+        print_history(out)
+    else:
+        report(out, [f"theo dõi {', '.join(targets) or 'mọi hội thoại'}"])
+    if watch_errors:
+        print(f"[!] {watch_errors[0]}; JSON/SQLite đã lưu vẫn giữ nguyên.", file=sys.stderr)
+        return 130 if interrupted else 1
+    return 130 if interrupted else 0
+
+
+# ---------------------------------------------------------------------------
+# 9. main
+# ---------------------------------------------------------------------------
+
+async def run_async(args) -> int:
+    missing = _missing()
+    if missing:
+        return missing
+
+    api_id, api_hash = load_credentials(args)
+    if not api_id or not api_hash:
+        print("[!] " + credentials_help(), file=sys.stderr)
+        return 2
+
+    is_bot = bot_mode(args)
+
+    if args.watch:
+        return await run_watch(args, api_id, api_hash, bot=is_bot)
+
+    if getattr(args, "non_interactive", False):
+        client, err = await open_client(api_id, api_hash, interactive=False,
+                                      session=args.session, bot=is_bot)
+    elif is_bot:
+        token = load_bot_token(args)
+        if not token:
+            print("[!] Chế độ bot cần --bot-token <token>.", file=sys.stderr)
+            return 2
+        client, err = await open_bot_client(api_id, api_hash, token, args.session)
+    else:
+        client, err = await open_client(api_id, api_hash, interactive=True,
+                                        session=args.session, bot=False)
+    if err:
+        print(f"[!] {err}", file=sys.stderr)
+        print("     (Thiếu api_id/api_hash? Chạy --login trước.)", file=sys.stderr)
+        return 2
+
+    if getattr(args, "linked_groups_only", False):
+        rows, seen = [], set()
+        try:
+            for target in args.channel or []:
+                try:
+                    entity = await client.get_entity(
+                        int(target) if isinstance(target, str) and re.fullmatch(r"-?\d{1,19}", target.strip()) else target)
+                except Exception as exc:
+                    print(f"    ! {target}: không truy cập được ({type(exc).__name__})")
+                    continue
+                group = await linked_group_entity(client, entity)
+                if group is None:
+                    print(f"    - {target}: không có group thảo luận công khai")
+                    continue
+                username = (getattr(group, "username", None) or "").lstrip("@")
+                key = username.lower() or f"id:{getattr(group, 'id', '')}"
+                if key in seen:
+                    continue
+                seen.add(key)
+                rows.append({"username": username, "name": getattr(group, "title", "") or username,
+                             "kind": "group", "telegram_id": getattr(group, "id", None),
+                             "peer_type": "channel", "linked_group_of": str(target),
+                             "keywords": [f"group của {str(target).lstrip('@')}"]})
+        finally:
+            await client.disconnect()
+        write_json(args.out, [], "telethon", noun="nguồn",
+                   extra={"usernames": rows, "source": "linked-groups"})
+        print(f"[i] Tìm thấy {len(rows)} group thảo luận từ {len(args.channel or [])} kênh/nhóm.")
+        return 0
+
     me = await client.get_me()
     kind = "BOT" if is_bot else "TÀI KHOẢN NGƯỜI DÙNG"
     print(f"[i] Đăng nhập: {getattr(me, 'first_name', '') or 'bot'} "
@@ -1201,6 +1538,8 @@ def _main() -> int:
                    help="kênh công khai / group kín / ID (lặp lại được)")
     p.add_argument("--include-linked-groups", action="store_true",
                    help="lấy thêm tin của group thảo luận gắn với từng --channel (nếu có và truy cập được)")
+    p.add_argument("--linked-groups-only", action="store_true",
+                   help="chỉ dò group thảo luận của các --channel rồi ghi danh sách nguồn (không lấy tin)")
     p.add_argument("--user", action="append", metavar="USERNAME",
                    help="tra cứu thông tin một tài khoản/kênh/nhóm theo username hoặc ID "
                         "(lặp lại được); kênh/nhóm còn được lấy luôn tin gần đây")

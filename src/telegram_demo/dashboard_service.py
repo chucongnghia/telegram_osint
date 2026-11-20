@@ -777,6 +777,7 @@ class DashboardApp:
             raise DashboardError("params phải là object.")
         supported = {
             "collect": {"backend", "channels", "limit", "session", "jev", "jev_limit", "demo", "linked_groups"},
+            "linked_groups": {"channels", "session", "backend"},
             "watch": {"channels", "session", "jev", "jev_limit", "minutes", "cycles", "once"},
             "classify": {"limit", "query", "username", "include_demo", "recheck"},
             "lookup": {"username", "limit", "backend", "session"},
@@ -856,6 +857,18 @@ class DashboardApp:
                 argv = ["search", *dbflag, "--api", "--keyword", keyword, "--limit", str(p["limit"]), "--api-search-limit", str(p["limit"]), "--out", output]
             if backend == "api" and not demo:
                 argv += ["--session", p["session"]]
+        elif kind == "linked_groups":
+            p["channels"] = _text(p.get("channels", ""), "channels", 2000, True)
+            names = self._names(p["channels"])
+            p["session"] = self._session(p.get("session", ""))
+            candidate = PROJECT_ROOT / ".venv-api" / "bin" / "python"
+            if not candidate.is_file():
+                raise DashboardError("Thiếu Python .venv-api; cấu hình môi trường bằng CLI trước.", "dependency", 409)
+            interpreter = str(candidate)
+            argv = ["api", *dbflag, "--out", output, "--no-photo", "--no-report", "--linked-groups-only"]
+            for name in names:
+                argv += ["--channel", name]
+            argv += ["--session", p["session"]]
         elif kind == "classify":
             self._require_jev()
             p["limit"] = _integer(p.get("limit", 10), "limit", 1, 100)

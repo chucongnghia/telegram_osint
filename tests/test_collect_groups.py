@@ -107,6 +107,44 @@ class LinkedGroupTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(records), 1)
 
 
+    async def test_discover_linked_groups_builds_source_rows(self):
+        group = make_group(username="discuss", group_id=77)
+        original = api.linked_group_entity
+        api.linked_group_entity = lambda client, entity: _async(group if entity.username != "nochan" else None)
+
+        class FakeClient:
+            async def get_entity(self, target):
+                return make_channel(username="nochan" if target == "nochan" else "chan")
+
+        try:
+            rows = await api.discover_linked_groups(FakeClient(), ["chan", "chan", "nochan"])
+        finally:
+            api.linked_group_entity = original
+        self.assertEqual(len(rows), 1, "dedupes by username and skips channels without a group")
+        row = rows[0]
+        self.assertEqual(row["username"], "discuss")
+        self.assertEqual(row["kind"], "group")
+        self.assertEqual(row["linked_group_of"], "chan")
+        self.assertEqual(row["keywords"], ["group của chan"])
+
+    async def test_discover_linked_groups_accepts_numeric_target(self):
+        seen = []
+
+        class FakeClient:
+            async def get_entity(self, target):
+                seen.append(target)
+                return make_channel(username="chan")
+
+        original_linked, original_rows = api.linked_group_entity, api.discover_linked_groups
+        api.linked_group_entity = lambda client, entity: _async(make_group())
+        api.discover_linked_groups = original_rows
+        try:
+            await api.discover_linked_groups(FakeClient(), ["-1001234567890"])
+        finally:
+            api.linked_group_entity = original_linked
+        self.assertEqual(seen, [-1001234567890])
+
+
 def _async(value):
     async def run():
         return value
