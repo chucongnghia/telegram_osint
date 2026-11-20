@@ -389,22 +389,24 @@ function collectSourcesPanel() {
   const sources = list(state.collectSources);
   const rows = sources.map((source, index) => `<tr><td><span class="source-name">${esc(sourceHandle(source))}</span><div class="source-meta">${esc(source.title || 'Không có tiêu đề')}</div></td><td><input id="collect-source-limit-${index}" class="collect-source-limit" type="number" min="1" max="${MAX_COLLECT_LIMIT}" step="1" inputmode="numeric" value="${esc(collectLimit(source.limit))}" data-collect-source="${esc(source.username)}" aria-label="Số tin tối đa cho ${esc(sourceHandle(source))}"></td><td><button type="button" class="icon-button" data-action="collect-remove" data-username="${esc(source.username)}" aria-label="Bỏ nguồn ${esc(sourceHandle(source))}">${icon('close', 18)}</button></td></tr>`).join('');
   const table = rows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th scope="col">Nguồn</th><th scope="col">Số tin tối đa</th><th scope="col"><span class="muted">Bỏ</span></th></tr></thead><tbody>${rows}</tbody></table></div>` : empty('Chưa chọn nguồn nào — tìm theo từ khóa rồi thêm.', 'Nguồn đã chọn chỉ tồn tại trong bộ nhớ trang này.');
-  return panel('Nguồn đã chọn', 'Giới hạn áp dụng riêng cho từng nguồn; không lưu vào tệp.', `<div class="toolbar">${field('collect-global-limit', 'Số tin tối đa mỗi nguồn', textInput('collect-global-limit', 'collect_global_limit', DEFAULT_COLLECT_LIMIT, 'type="number" min="1" max="1000" step="1" inputmode="numeric"'), 'Áp dụng cho mọi nguồn đã chọn; có thể sửa từng dòng.')}${button('Áp dụng cho tất cả', 'collect-apply-limit')}</div>${table}`);
+  const manual = `<div class="toolbar">${field('collect-manual-source', 'Thêm nguồn thủ công', textInput('collect-manual-source', 'manual_source', '', 'placeholder="@kênh, @group hoặc -100..." maxlength="200"'), 'Nhập username hoặc ID của kênh/nhóm đã tham gia.')}${button('Thêm nguồn', 'collect-add-manual', 'type="button"')}</div>`;
+  return panel('Nguồn đã chọn', 'Giới hạn áp dụng riêng cho từng nguồn; không lưu vào tệp.', `${manual}<div class="toolbar">${field('collect-global-limit', 'Số tin tối đa mỗi nguồn', textInput('collect-global-limit', 'collect_global_limit', DEFAULT_COLLECT_LIMIT, 'type="number" min="1" max="1000" step="1" inputmode="numeric"'), 'Áp dụng cho mọi nguồn đã chọn; có thể sửa từng dòng.')}${button('Áp dụng cho tất cả', 'collect-apply-limit')}</div>${table}`);
 }
 function collectRunPanel() {
   const sources = list(state.collectSources);
   const largest = sources.length ? Math.max(...sources.map((source) => collectLimit(source.limit))) : 0;
-  return panel('Thu thập & phân loại', 'Mỗi nguồn một tác vụ; Jev luôn bật và giới hạn do CLI áp dụng.', `<div class="detail-grid"><div><strong class="stat-value">${number(sources.length)}</strong><span class="muted"> nguồn đã chọn</span></div>${badge(sources.length ? `Tối đa ${number(largest)} tin mỗi nguồn` : 'Chưa chọn nguồn', 'blue')}</div><p class="hint">Giới hạn Jev tối đa 1000 yêu cầu mỗi nguồn mỗi lần chạy — giới hạn của CLI. Nội dung gửi mô hình có thể phát sinh chi phí.</p><div class="form-actions">${button(`Thu thập đã chọn (${sources.length})`, 'collect-selected', sources.length ? '' : 'disabled', true)}</div>`);
+  return panel('Thu thập & phân loại', 'Mỗi nguồn một tác vụ; Jev luôn bật và giới hạn do CLI áp dụng.', `<div class="detail-grid"><div><strong class="stat-value">${number(sources.length)}</strong><span class="muted"> nguồn đã chọn</span></div>${badge(sources.length ? `Tối đa ${number(largest)} tin mỗi nguồn` : 'Chưa chọn nguồn', 'blue')}</div><p class="hint">Giới hạn Jev tối đa 1000 yêu cầu mỗi nguồn mỗi lần chạy — giới hạn của CLI. Nội dung gửi mô hình có thể phát sinh chi phí.</p>${check('collect-linked-groups', 'linked_groups', 'Thu cả group thảo luận của kênh (nếu có)', true)}<div class="form-actions">${button(`Thu thập đã chọn (${sources.length})`, 'collect-selected', sources.length ? '' : 'disabled', true)}</div>`);
 }
 async function startSelectedCollection() {
   const sources = list(state.collectSources).map((source) => ({ ...source, limit: collectLimit(source.limit) }));
   if (!sources.length) { toast('Chưa chọn nguồn nào để thu thập.', true); return; }
   const session = $('form[data-form="collect-search"] [name="session"]')?.value || '';
+  const linkedGroups = $('input[name="linked_groups"]')?.checked ?? true;
   if (!window.confirm(`Gửi ${sources.length} tác vụ thu thập?\nJev luôn bật và có thể phát sinh chi phí.\nMỗi nguồn tối đa 1000 yêu cầu mỗi lần chạy — giới hạn của CLI.\nKết quả được ghi vào cơ sở dữ liệu đang chọn.`)) return;
   let sent = 0;
   try {
     for (const source of sources) {
-      await postJob('collect', { channels: source.username, backend: 'api', session, limit: source.limit, jev: true, jev_limit: Math.min(MAX_COLLECT_LIMIT, source.limit) });
+      await postJob('collect', { channels: source.username, backend: 'api', session, limit: source.limit, jev: true, jev_limit: Math.min(MAX_COLLECT_LIMIT, source.limit), linked_groups: linkedGroups });
       sent += 1;
     }
   } catch (error) {
@@ -931,6 +933,17 @@ async function handleAction(event) {
   try {
     if (Object.hasOwn(VIEWS, action)) { await navigate(action); return; }
     if (action === 'collect') { await navigate('collection'); return; }
+    if (action === 'collect-add-manual') {
+      const raw = $('#collect-manual-source')?.value || '';
+      const names = raw.split(/[,\n]/).map((item) => item.trim().replace(/^@/, '')).filter(Boolean);
+      if (!names.length) { toast('Nhập username hoặc ID của kênh/nhóm cần thêm.', true); return; }
+      const added = addCollectSources(names.map((username) => ({ username })), $('#collect-global-limit')?.value);
+      const input = $('#collect-manual-source');
+      if (input) input.value = '';
+      await loadView({ quiet: true });
+      toast(added ? `Đã thêm ${number(added)} nguồn vào danh sách chọn.` : 'Nguồn đã có trong danh sách chọn.');
+      return;
+    }
     if (action === 'collect-add') {
       const picked = $$('#view-root input[name="source-pick"]:checked').map((node) => state.searchResults[Number(node.dataset.index)]).filter(Boolean);
       if (!picked.length) { toast('Chưa chọn nguồn nào trong kết quả tìm kiếm.', true); return; }

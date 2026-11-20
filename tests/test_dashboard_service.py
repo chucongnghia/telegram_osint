@@ -629,6 +629,21 @@ class DashboardTest(unittest.TestCase):
             filtered = self.app.search_results(conn, 10, run_id=result["run_id"])
         self.assertEqual({item["username"] for item in filtered["items"]}, {"chanone"})
 
+    def test_collect_can_include_linked_discussion_groups(self):
+        (self.root / "sessions" / "tg_session_test.session").write_bytes(b"not read")
+        (self.root / ".venv-api" / "bin").mkdir(parents=True)
+        (self.root / ".venv-api" / "bin" / "python").write_text("fake")
+        argv, params, _ = self.app.build_job("collect", None,
+            {"channels": "@group, -1001234567890", "session": "tg_session_test", "limit": 7, "linked_groups": True}, "id")
+        self.assertIn("--include-linked-groups", argv)
+        self.assertIn("--channel", argv)
+        self.assertIn("-1001234567890", argv)
+        self.assertTrue(params["linked_groups"])
+        argv, params, _ = self.app.build_job("collect", None,
+            {"channels": "@group", "session": "tg_session_test", "limit": 7}, "id")
+        self.assertNotIn("--include-linked-groups", argv)
+        self.assertFalse(params["linked_groups"])
+
     def test_vision_settings_validation_and_job_consent(self):
         self.image_fixture()
         clip = self.root / "media" / "clip.mp4"

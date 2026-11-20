@@ -63,7 +63,8 @@ from ..storage import add_storage_arguments, configure_storage, persist_payload
 try:
     from telethon import TelegramClient, events, functions, utils as tl_utils
     from telethon.errors import RPCError
-    from telethon.tl.types import MessageMediaPhoto, MessageMediaDocument, Channel, Chat, User
+    from telethon.tl.types import (MessageMediaPhoto, MessageMediaDocument, Channel, Chat, User,
+                                   PeerChannel)
 except ImportError:                                        # pragma: no cover
     TelegramClient = None
     RPCError = Exception
@@ -398,9 +399,11 @@ def to_record(msg, entity) -> dict:
 # 5. Các chế độ thu thập
 # ---------------------------------------------------------------------------
 
-async def fetch_history(client, target: str, limit: int, progress=print,
+async def fetch_history(client, target: str | int, limit: int, progress=print,
                         prefer_username: str = "") -> list[dict]:
     """Lấy `limit` bài mới nhất của một kênh/nhóm (kể cả group kín nếu đã tham gia)."""
+    if isinstance(target, str) and re.fullmatch(r"-?\d{1,19}", target.strip()):
+        target = int(target.strip())       # ID số, không phải username
     try:
         entity = await client.get_entity(target)
     except Exception as exc:
@@ -597,6 +600,51 @@ async def lookup_entity(client, target: str | int, limit: int = 0, photo_dir: st
         prefer = profile["username"] if USERNAME_RE.match(profile["username"]) else ""
         records = await fetch_history(client, target, limit, prefer_username=prefer)
     return profile, records
+
+
+async def linked_group_entity(client, entity):
+    """Group thảo luận gắn với một kênh (linked chat), nếu có và tài khoản truy cập được."""
+    if not isinstance(entity, Channel):
+        return None
+    try:
+        full = await client(functions.channels.GetFullChannelRequest(channel=entity))
+    except Exception as exc:
+        print(f"    [group] không đọc được full info ({type(exc).__name__})")
+        return None
+    linked = getattr(full.full_chat, "linked_chat_id", None)
+    if not linked:
+        return None
+    try:
+        return await client.get_entity(PeerChannel(linked))
+    except Exception as exc:
+        print(f"    [group] không mở được group liên kết {linked} ({type(exc).__name__})")
+        return None
+
+
+async def fetch_linked_group(client, target, limit: int, parent_label: str) -> list[dict]:
+    """Lấy tin của group thảo luận thuộc kênh `target`; gắn nhãn để biết group của kênh nào."""
+    try:
+        entity = await client.get_entity(
+            int(target) if isinstance(target, str) and re.fullmatch(r"-?\d{1,19}", target.strip()) else target)
+    except Exception:
+        return []
+    group = await linked_group_entity(client, entity)
+    if group is None:
+        return []
+    try:
+        records = await fetch_history(client, group, limit)
+    except RuntimeError as exc:
+        print(f"    ! group của {parent_label}: {exc}")
+        return []
+    username = getattr(group, "username", None)
+    label = username or getattr(group, "title", None) or str(getattr(group, "id", "group"))
+    for rec in records:
+        rec["channel"] = label
+        rec["linked_group_of"] = parent_label
+        if username:
+            rec["url"] = f"https://t.me/{username}/{rec['message_id']}"
+    print(f"    [group] {label}: {len(records)} tin từ group thảo luận của {parent_label}")
+    return records
 
 
 async def search_global(client, keyword: str, limit: int, per_chat: int = 20) -> list[dict]:
@@ -1053,6 +1101,11 @@ async def run_async(args) -> int:
         sources.append(f"kênh/nhóm {target}")
         try:
             records += await fetch_history(client, target, args.limit)
+            if getattr(args, "include_linked_groups", False):
+                extra = await fetch_linked_group(client, target, args.limit, str(target))
+                if extra:
+                    sources.append(f"group của {target}")
+                    records += extra
         except RuntimeError as exc:
             print(f"    ! {exc}")
 
@@ -1146,6 +1199,8 @@ def _main() -> int:
     p.add_argument("--api-hash", help="api_hash lấy từ my.telegram.org")
     p.add_argument("--channel", action="append", metavar="@KENH",
                    help="kênh công khai / group kín / ID (lặp lại được)")
+    p.add_argument("--include-linked-groups", action="store_true",
+                   help="lấy thêm tin của group thảo luận gắn với từng --channel (nếu có và truy cập được)")
     p.add_argument("--user", action="append", metavar="USERNAME",
                    help="tra cứu thông tin một tài khoản/kênh/nhóm theo username hoặc ID "
                         "(lặp lại được); kênh/nhóm còn được lấy luôn tin gần đây")

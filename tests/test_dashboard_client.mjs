@@ -657,6 +657,9 @@ assert(control(sourcesHtml, 'collect-source-limit-1').includes('value="777"'));
 assert(sourcesHtml.includes('Thu thập đã chọn (2)'));
 assert(!sourcesHtml.includes('data-action="collect-selected" disabled'));
 assert(sourcesHtml.includes('data-action="collect-remove"') && sourcesHtml.includes('data-username="alpha"'));
+assert(sourcesHtml.includes('id="collect-manual-source"'), 'manual source field is available');
+assert(sourcesHtml.includes('data-action="collect-add-manual"'), 'manual add button is available');
+assert(sourcesHtml.includes('id="collect-linked-groups"') && sourcesHtml.includes('name="linked_groups" checked'), 'linked groups are collected by default');
 console.log('PASS collection panels, search job payload, and global per-source limits');
 
 client.state.collectSources = [{ username: 'alpha', title: 'Alpha', kind: 'user', limit: 999 }, { username: 'beta', title: 'Beta', kind: 'channel', limit: 1000 }];
@@ -678,6 +681,7 @@ for (const collectBody of collectBodies) {
   assert.equal(collectBody.params.session, 'tg_session');
   assert.equal(collectBody.params.jev, true);
   assert.equal(collectBody.params.jev_limit, Math.min(1000, collectBody.params.limit));
+  assert.equal(collectBody.params.linked_groups, true, 'discussion groups are collected by default');
   assert(!Object.hasOwn(collectBody.params, 'demo'));
 }
 assert.equal(client.state.collectSources.length, 0, 'selection clears after all jobs are accepted');
@@ -708,6 +712,20 @@ assert.equal(dedupeAdded, 2, 'username dedupe keeps the first occurrence');
 assert.deepEqual([...client.state.collectSources.map((source) => source.username)], ['Same', 'other']);
 assert.equal(client.state.collectSources[0].title, 'first');
 assert.deepEqual([...client.state.collectSources.map((source) => source.limit)], [42, 42]);
+client.state.collectSources = [];
+const manualInput = document.querySelector('#collect-manual-source');
+const manualGlobalLimit = document.querySelector('#collect-global-limit');
+manualGlobalLimit.value = '15';
+const addManualTarget = { dataset: { action: 'collect-add-manual' }, disabled: false, tagName: 'BUTTON' };
+addManualTarget.closest = (selector) => selector === '[data-action]' ? addManualTarget : null;
+manualInput.value = '@newgroup, -1001234567890';
+const requestsBeforeManual = requests.length;
+await client.handleAction({ target: addManualTarget });
+assert.equal(client.state.collectSources.length, 2, 'manual add accepts username and numeric id');
+assert.deepEqual([...client.state.collectSources.map((source) => source.username)], ['newgroup', '-1001234567890']);
+assert.deepEqual([...client.state.collectSources.map((source) => source.limit)], [15, 15]);
+assert.equal(manualInput.value, '', 'manual input is cleared after adding');
+assert.equal(requests.slice(requestsBeforeManual).filter((request) => request.options?.method === 'POST').length, 0, 'manual add does not start a job');
 client.state.collectSources = [];
 const pickedNodes = [{ dataset: { index: '0' }, checked: true }, { dataset: { index: '3' }, checked: true }];
 const originalQuerySelectorAll = document.querySelectorAll;

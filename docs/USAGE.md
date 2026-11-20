@@ -447,8 +447,12 @@ python3 main.py web --report posts_tg.json       # in lại báo cáo từ JSON 
 ```
 
 Không truyền nguồn nào thì mặc định chạy `--demo`. `--channel` nhận `durov`, `@durov`,
-`t.me/durov`, `https://t.me/s/durov`; `--limit` là số bài tối đa **cho mỗi kênh**
-(mặc định 20). `--out` mặc định là [`json_folder/posts_web.json`](<../json_folder/posts_web.json>) (cố ý khác
+`t.me/durov`, `https://t.me/s/durov` hoặc ID số (`-100…`); `--limit` là số bài tối đa **cho mỗi kênh**
+(mặc định 20). Thêm `--include-linked-groups` để lấy cả tin mới nhất của **group thảo luận gắn với
+kênh** (Telegram gọi là linked chat): mỗi kênh có group sẽ được lấy thêm `--limit` tin từ group, nhãn
+nguồn là username/tên group và trường `linked_group_of` cho biết group thuộc kênh nào. Kênh không có
+group, hoặc tài khoản không truy cập được, chỉ in cảnh báo và bỏ qua. `--out` mặc định là
+[`json_folder/posts_web.json`](<../json_folder/posts_web.json>) (cố ý khác
 [`posts_tg.json`](<../json_folder/posts_tg.json>) để không ghi đè file kết quả mẫu).
 
 ### Lấy dữ liệu bằng cách nào

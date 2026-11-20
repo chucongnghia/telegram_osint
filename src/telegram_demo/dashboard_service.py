@@ -776,7 +776,7 @@ class DashboardApp:
         if not isinstance(params, dict):
             raise DashboardError("params phải là object.")
         supported = {
-            "collect": {"backend", "channels", "limit", "session", "jev", "jev_limit", "demo"},
+            "collect": {"backend", "channels", "limit", "session", "jev", "jev_limit", "demo", "linked_groups"},
             "watch": {"channels", "session", "jev", "jev_limit", "minutes", "cycles", "once"},
             "classify": {"limit", "query", "username", "include_demo", "recheck"},
             "lookup": {"username", "limit", "backend", "session"},
@@ -820,7 +820,10 @@ class DashboardApp:
                     argv += ["--watch" if kind == "watch" else "--channel", name]
                 if kind == "collect":
                     p["limit"] = _integer(p.get("limit", 20), "limit", 1, 1000)
+                    p["linked_groups"] = _boolean(p.get("linked_groups", False), "linked_groups")
                     argv += ["--limit", str(p["limit"])]
+                    if p["linked_groups"]:
+                        argv += ["--include-linked-groups"]
                     if demo:
                         argv += ["--demo"]
                 else:
