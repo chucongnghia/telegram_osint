@@ -323,3 +323,14 @@ p.hint,
 /* Gợi ý của ô nhập và nút vẫn hiện khi trỏ chuột / focus. */
 .field > .hint,
 .form-actions > .hint { display: block !important; }
+
+/* Nhật ký tác vụ dạng bảng */
+.log-table-wrap { max-height: 420px; overflow: auto; }
+.log-table { min-width: 0; }
+.log-table th.log-index, .log-table td.log-index { width: 56px; color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+.log-table .log-line { font-family: var(--font-mono); font-size: 12.5px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.log-table tr.log-error td.log-line { color: #9b423b; }
+.log-table tr.log-warn td.log-line { color: #8a6528; }
+.log-table tr.log-info td.log-line { color: #3d5166; }
+.job-log-panel { margin-top: 18px; }
+.job-log-panel .section-heading { margin: 0 0 10px; font-size: 13px; color: var(--muted); font-weight: 500; letter-spacing: .01em; }

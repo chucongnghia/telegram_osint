@@ -54,6 +54,7 @@ DB picker liệt kê DB ứng dụng trong `data/`, bỏ qua bản backup và fi
 - Không hỗ trợ đăng nhập Telegram/bot, tìm kiếm username bằng backend web, discover/join nhóm riêng hoặc cấu hình nâng cao ngay trên form. OCR ảnh/frame video cục bộ đã có; đọc [hướng dẫn OCR](<IMAGE_OCR.md>). Các chức năng CLI vẫn giữ nguyên; xem [USAGE](<USAGE.md>).
 - Không upload video từ trình duyệt; chọn file đang có trong `media/` hoặc tải đúng link tin nhắn có video. Không nhận đường dẫn file tuỳ ý ngoài vùng cho phép.
 - Chỉ dành cho một người dùng cục bộ, không có tài khoản đăng nhập/phân quyền nhiều người. Không dùng reverse proxy mở ứng dụng ra Internet.
+- **Nhật ký tác vụ** hiển thị dạng bảng (số dòng, nội dung, tô màu dòng cảnh báo/lỗi) tối đa 500 dòng; mỗi tác vụ có thêm nút mở thẳng trang kết quả liên quan.
 - Hàng đợi và nhật ký tiến trình là dữ liệu RAM; khởi động lại server sẽ mất phần này, nhưng key đã lưu trong file cục bộ thì còn. Nội dung/kết quả đã được CLI ghi vào SQLite vẫn còn. Dừng một tác vụ không hoàn tác dữ liệu đã lưu hoặc request đã gửi.
 - Log, hàng đợi, kích thước batch và tham số đều có giới hạn. Các bảng SQLite/JSON chứa dữ liệu cá nhân dạng rõ; không chia sẻ `sessions/`, credential hoặc DB ra ngoài.
 

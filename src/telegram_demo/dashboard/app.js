@@ -526,11 +526,32 @@ export function jobResultTarget(job) {
       return null;
   }
 }
+function logLines(logs) {
+  const lines = [];
+  const push = (value) => String(value ?? '').split('\n').forEach((line) => lines.push(line));
+  if (Array.isArray(logs)) logs.forEach((item) => push(typeof item === 'string' ? item : pretty(item)));
+  else if (logs !== undefined && logs !== null) push(logs);
+  return lines;
+}
+function jobLogTable(logs) {
+  const all = logLines(logs);
+  const shown = all.slice(0, 500);
+  if (!shown.length) return '<p class="muted">Chưa có nhật ký được ghi nhận.</p>';
+  const rows = shown.map((line, index) => {
+    const tone = /^\[!\]|traceback|error|thất bại|lỗi/i.test(line) ? 'error'
+      : /^\[w\]/i.test(line) ? 'warn'
+        : /^\[i\]/i.test(line) ? 'info' : '';
+    return `<tr${tone ? ` class="log-${tone}"` : ''}><td class="log-index">${index + 1}</td><td class="log-line">${esc(line || ' ')}</td></tr>`;
+  }).join('');
+  const truncated = all.length > shown.length
+    ? `<p class="muted">Hiển thị ${number(shown.length)} / ${number(all.length)} dòng; xem đầy đủ qua CLI hoặc file log.</p>` : '';
+  return `<div class="table-wrap log-table-wrap" tabindex="0" role="region" aria-label="Nhật ký tiến trình">${truncated}<table class="data-table log-table"><thead><tr><th scope="col" class="log-index">#</th><th scope="col">Nội dung nhật ký</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
 function jobCard(job) {
   const opened = state.expandedJobs.has(String(job.id));
   const detail = state.expandedJobs.get(String(job.id));
   const logs = detail?.logs;
-  return `<article class="job-card" data-job-id="${esc(job.id)}"><div class="panel-header"><div><h2 class="panel-title">${esc(JOB_NAMES[job.kind] || job.kind || 'Tác vụ')} <span class="source-meta">#${esc(job.id)}</span></h2><p class="panel-subtitle">${esc(date(job.created_at))}${job.params?.db ? ` · ${esc(job.params.db)}` : ''}</p></div>${statusBadge(job.status)}</div><div class="panel-body"><div class="meta-list"><span>Bắt đầu: ${esc(date(job.started_at))}</span><span>Kết thúc: ${esc(date(job.ended_at))}</span><span>Mã thoát: ${job.exit_code === undefined || job.exit_code === null ? '—' : esc(job.exit_code)}</span></div><div class="quick-actions">${jobResultTarget(job) ? button(jobResultTarget(job).label, 'job-result', `data-id="${esc(job.id)}"`) : ''}${button(opened ? 'Ẩn nhật ký' : 'Xem nhật ký', 'job-log', `data-id="${esc(job.id)}" aria-expanded="${opened}" aria-controls="job-log-${esc(job.id)}"`)}${activeJob(job) ? button('Dừng tác vụ', 'cancel-job', `data-id="${esc(job.id)}"`) : ''}</div>${opened ? `<div id="job-log-${esc(job.id)}"><h3 class="section-heading">Tham số</h3><pre class="detail-text">${esc(pretty(detail?.params || job.params || {}))}</pre><h3 class="section-heading">Nhật ký tiến trình</h3><pre class="job-log" tabindex="0">${esc(Array.isArray(logs) ? logs.map((line) => typeof line === 'string' ? line : pretty(line)).join('\n') : logs || 'Chưa có nhật ký được ghi nhận.')}</pre></div>` : ''}</div></article>`;
+  return `<article class="job-card" data-job-id="${esc(job.id)}"><div class="panel-header"><div><h2 class="panel-title">${esc(JOB_NAMES[job.kind] || job.kind || 'Tác vụ')} <span class="source-meta">#${esc(job.id)}</span></h2><p class="panel-subtitle">${esc(date(job.created_at))}${job.params?.db ? ` · ${esc(job.params.db)}` : ''}</p></div>${statusBadge(job.status)}</div><div class="panel-body"><div class="meta-list"><span>Bắt đầu: ${esc(date(job.started_at))}</span><span>Kết thúc: ${esc(date(job.ended_at))}</span><span>Mã thoát: ${job.exit_code === undefined || job.exit_code === null ? '—' : esc(job.exit_code)}</span></div><div class="quick-actions">${jobResultTarget(job) ? button(jobResultTarget(job).label, 'job-result', `data-id="${esc(job.id)}"`) : ''}${button(opened ? 'Ẩn nhật ký' : 'Xem nhật ký', 'job-log', `data-id="${esc(job.id)}" aria-expanded="${opened}" aria-controls="job-log-${esc(job.id)}"`)}${activeJob(job) ? button('Dừng tác vụ', 'cancel-job', `data-id="${esc(job.id)}"`) : ''}</div>${opened ? `<div id="job-log-${esc(job.id)}" class="job-log-panel"><h3 class="section-heading">Tham số</h3><pre class="detail-text">${esc(pretty(detail?.params || job.params || {}))}</pre><h3 class="section-heading">Nhật ký tiến trình</h3>${jobLogTable(logs)}</div>` : ''}</div></article>`;
 }
 async function renderJobs(signal) {
   const data = await api('jobs', { signal, db: false });

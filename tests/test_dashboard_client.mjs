@@ -97,7 +97,7 @@ vm.runInContext(source.replace(/^export (?=(?:async )?function)/gm, '') + `
     jobCard, submitForm, schedulePoll, stopPoll, sourceDisplay,
     syncFormOptions, syncVisionForm, handleAction,
     addCollectSources, applyCollectLimit, collectLimit, sourceKindLabel, startSelectedCollection,
-    telegramApiPanel, telegramApiStatus, loadSourceResults, jobResultTarget, firstChannel,
+    telegramApiPanel, telegramApiStatus, loadSourceResults, jobResultTarget, firstChannel, jobLogTable,
   };`, context, { filename: 'dashboard/app.js' });
 const client = context.clientTest;
 client.state.bootstrap = fixtures.bootstrap;
@@ -753,5 +753,20 @@ await client.handleAction({ target: resultTarget });
 assert(location.hash.startsWith('#messages'), 'result link navigates to the messages view');
 location.hash = '#overview';
 console.log('PASS job cards link to the result view of each task');
+console.log('PASS job log renders as a table with severity and escaping');
+const logHtml = client.jobLogTable([
+  '[i] Dùng lại phiên tg_session', '[w] Flood wait 3s', '[!] Không lưu được: <script id=pwn>alert(1)</script>',
+  'traceback: boom', 'dòng thường',
+]);
+assert(logHtml.includes('<th scope="col" class="log-index">#</th>'), 'log table has an index column');
+assert(logHtml.includes('Nội dung nhật ký'), 'log table has a content column');
+assert.equal((logHtml.match(/<tr[ >]/g) || []).length, 6, 'one header row plus five log rows');
+assert(logHtml.includes('class="log-error"') && logHtml.includes('class="log-warn"') && logHtml.includes('class="log-info"'));
+assert(!logHtml.includes('<script id=pwn>'), 'log lines are escaped');
+assert(logHtml.includes('&lt;script id=pwn&gt;'), 'log markup is shown as text');
+assert(client.jobLogTable([]).includes('Chưa có nhật ký'), 'empty logs show a placeholder');
+const many = client.jobLogTable(Array.from({ length: 620 }, (_, index) => `[i] dòng ${index + 1}`));
+assert(many.includes('Hiển thị') && many.includes('620'), 'long logs are capped with a note');
+assert.equal((many.match(/<tr[ >]/g) || []).length, 501, 'cap keeps 500 rows plus the header');
 console.log('PASS visible-only 2-second job polling lifecycle');
 console.log('All dashboard client contract tests passed.');
