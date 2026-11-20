@@ -311,3 +311,15 @@ h3 { font-size: 16px; line-height: 1.45; letter-spacing: -.01em; }
    Xoá 3 quy tắc dưới đây để hiện lại; HTML/JS vẫn tạo đủ nội dung. */
 .info-banner { display: none !important; }
 .workspace-footer > span + span { display: none; }
+
+/* Ẩn chữ phụ ghim dưới các khối chính (yêu cầu 2026-11-20). Xoá khối này để hiện lại;
+   nội dung vẫn nằm trong DOM cho trợ năng/kiểm thử. */
+.panel-subtitle,
+.stat-meta,
+.empty-state p,
+#page-description,
+p.hint,
+.activity-row .source-meta { display: none !important; }
+/* Gợi ý của ô nhập và nút vẫn hiện khi trỏ chuột / focus. */
+.field > .hint,
+.form-actions > .hint { display: block !important; }
