@@ -489,11 +489,48 @@ async function renderVideo(signal) {
   return `<div class="section-stack">${keyWarning()}${!config.whisper_available ? info('Whisper chưa sẵn sàng trong môi trường máy chủ. Phân tích giọng nói có thể báo lỗi hoặc thiếu bước.') : ''}${!config.vision_configured ? info('Chưa có cấu hình mô hình thị giác. Bạn có thể bỏ qua; kết quả phải ghi nhận khoảng trống này ngay cả khi OCR thành công.') : ''}${config.vision_remote ? info('Mô hình thị giác đang ở xa: khung hình sẽ rời máy này và có thể phát sinh chi phí. Cần tự xác nhận đồng ý cho từng tác vụ.') : ''}<div class="split-grid">${panel('Thư viện video', `${number(files.length)} file trong thư mục media được máy chủ cho phép`, `${field('video-file-select', 'Video cục bộ', `<select id="video-file-select" data-action="select-video">${selectOptions(fileOptions.length ? fileOptions : [['', 'Chưa có video']], state.selectedVideo)}</select>`)}<div id="video-player">${player}</div>`)}${panel('Tải video từ Telegram', 'Một liên kết tin nhắn, sử dụng phiên đã đăng nhập.', `<form data-form="download"><div class="form-grid">${field('video-download-url', 'Liên kết tin nhắn chứa video', textInput('video-download-url', 'url', '', 'type="url" required placeholder="https://t.me/kenh/123"'), 'Chỉ một video, không tải playlist.', true)}${sessionField('video-download')}</div>${formEnd('Tải video', 'Dùng mạng; có thể tải file dung lượng lớn.', false)}</form>`)}</div>${panel('Phân tích lời nói và khung hình', 'Chọn file đã lưu. Tối đa 12 khung hình, không tự tải model.', `<form data-form="video_analyze"><div class="form-grid">${field('video-analysis-path', 'File cần phân tích', `<select id="video-analysis-path" name="path" required>${selectOptions(fileOptions.length ? fileOptions : [['', 'Chưa có video']], state.selectedVideo)}</select>`)}${field('video-language', 'Ngôn ngữ lời nói', `<select id="video-language" name="language" required>${selectOptions([['vi', 'Tiếng Việt'], ['en', 'Tiếng Anh'], ['auto', 'Tự nhận diện']])}</select>`)}${field('video-whisper-model', 'Mô hình Whisper cục bộ', `<select id="video-whisper-model" name="model">${selectOptions([['tiny', 'Whisper tiny'], ['base', 'Whisper base']])}</select>`)}${field('video-max-frames', 'Ngân sách khung hình tối đa', textInput('video-max-frames', 'max_frames', 12, 'type="number" min="1" max="12" required'), 'Mỗi khung hình có thể tạo một yêu cầu thị giác. Chi phí tùy nhà cung cấp.')}${check('video-ocr', 'ocr', 'Đọc chữ trong khung hình bằng Tesseract cục bộ', true)}${ocrLanguageField('video')}${check('video-skip-vision', 'skip_vision', 'Bỏ qua thị giác ngữ nghĩa · kết quả thiếu một phần', !config.vision_configured)}${config.vision_remote ? check('video-allow-remote', 'allow_remote', 'Tôi đồng ý gửi khung hình tới model từ xa (có thể tính phí)', false, config.vision_configured ? '' : 'disabled') : ''}</div>${formEnd('Phân tích video', 'OCR mặc định bật tại dashboard; không hiểu cảnh hoặc thay thế thị giác ngữ nghĩa.')}</form>`)}<div class="split-grid">${panel('Phân loại một bản phân tích', 'Chỉ dùng analysis ID đã lưu, không gán nhãn từ tên file.', mediaClassificationForm('video', analyses))}${panel('Phạm vi bằng chứng', 'Một kết quả mô hình không xác nhận danh tính hay hành vi.', `<div class="pipeline-strip"><div class="pipeline-step">Video đã lưu</div><div class="pipeline-step">Lời nói / khung hình</div><div class="pipeline-step">Bằng chứng</div><div class="pipeline-step">Nhãn Jev</div></div><p class="hint">Kiểm tra trạng thái từng bước, lỗi và phần chưa được quan sát trước khi đọc nhãn. Nội dung ngoài các khung lấy mẫu vẫn chưa được kiểm chứng.</p>`)}</div>${panel('Bản phân tích đã lưu', `${number(analyses.length)} bản phân tích · ${number(list(data.classifications).length)} kết quả phân loại`, `${analyses.length ? field('saved-video-analysis', 'Xem bản phân tích', `<select id="saved-video-analysis" data-action="select-analysis">${selectOptions(analyses.map((analysis) => [analysis.id, `#${analysis.id} · ${analysis.source_path || ''} · ${STATUS_NAMES[analysis.status] || analysis.status}`]), selectedAnalysisId)}</select>`) : ''}${selectedAnalysis ? videoDetails(selectedAnalysis, data.classifications) : empty('Chưa có phân tích video', 'Phân tích một file trong thư viện để xem bằng chứng và trạng thái tại đây.')}`)}</div>`;
 }
 function activeJob(job) { return ['queued', 'pending', 'running', 'cancelling'].includes(job.status); }
+function firstChannel(raw) {
+  return String(raw || '').split(/[,\n]/).map((item) => item.trim().replace(/^@/, '')).filter(Boolean)[0] || '';
+}
+export function jobResultTarget(job) {
+  const params = job?.params || {};
+  switch (job?.kind) {
+    case 'collect':
+    case 'watch': {
+      const username = firstChannel(params.channels);
+      return { view: 'messages', params: username ? { username } : {}, label: 'Xem tin đã thu thập' };
+    }
+    case 'classify':
+      return { view: 'messages', params: {}, label: 'Xem kết quả phân loại' };
+    case 'search':
+      return { view: 'collection', params: {}, label: 'Xem nguồn tìm được' };
+    case 'lookup': {
+      const query = firstChannel(params.username);
+      return { view: 'profiles', params: query ? { query } : {}, label: 'Xem hồ sơ đã tra' };
+    }
+    case 'download':
+      return { view: 'video', params: {}, label: 'Xem video đã tải' };
+    case 'image_analyze':
+    case 'image_classify': {
+      const analysis = params.image_id ? { analysis: params.image_id } : {};
+      return { view: 'image', params: analysis, label: 'Xem kết quả ảnh' };
+    }
+    case 'video_analyze':
+    case 'video_classify': {
+      const analysis = params.analysis_id ? { analysis: params.analysis_id } : {};
+      return { view: 'video', params: analysis, label: 'Xem kết quả video' };
+    }
+    case 'db_backup':
+      return { view: 'settings', params: {}, label: 'Xem dữ liệu và sao lưu' };
+    default:
+      return null;
+  }
+}
 function jobCard(job) {
   const opened = state.expandedJobs.has(String(job.id));
   const detail = state.expandedJobs.get(String(job.id));
   const logs = detail?.logs;
-  return `<article class="job-card" data-job-id="${esc(job.id)}"><div class="panel-header"><div><h2 class="panel-title">${esc(JOB_NAMES[job.kind] || job.kind || 'Tác vụ')} <span class="source-meta">#${esc(job.id)}</span></h2><p class="panel-subtitle">${esc(date(job.created_at))}${job.params?.db ? ` · ${esc(job.params.db)}` : ''}</p></div>${statusBadge(job.status)}</div><div class="panel-body"><div class="meta-list"><span>Bắt đầu: ${esc(date(job.started_at))}</span><span>Kết thúc: ${esc(date(job.ended_at))}</span><span>Mã thoát: ${job.exit_code === undefined || job.exit_code === null ? '—' : esc(job.exit_code)}</span></div><div class="quick-actions">${button(opened ? 'Ẩn nhật ký' : 'Xem nhật ký', 'job-log', `data-id="${esc(job.id)}" aria-expanded="${opened}" aria-controls="job-log-${esc(job.id)}"`)}${activeJob(job) ? button('Dừng tác vụ', 'cancel-job', `data-id="${esc(job.id)}"`) : ''}</div>${opened ? `<div id="job-log-${esc(job.id)}"><h3 class="section-heading">Tham số</h3><pre class="detail-text">${esc(pretty(detail?.params || job.params || {}))}</pre><h3 class="section-heading">Nhật ký tiến trình</h3><pre class="job-log" tabindex="0">${esc(Array.isArray(logs) ? logs.map((line) => typeof line === 'string' ? line : pretty(line)).join('\n') : logs || 'Chưa có nhật ký được ghi nhận.')}</pre></div>` : ''}</div></article>`;
+  return `<article class="job-card" data-job-id="${esc(job.id)}"><div class="panel-header"><div><h2 class="panel-title">${esc(JOB_NAMES[job.kind] || job.kind || 'Tác vụ')} <span class="source-meta">#${esc(job.id)}</span></h2><p class="panel-subtitle">${esc(date(job.created_at))}${job.params?.db ? ` · ${esc(job.params.db)}` : ''}</p></div>${statusBadge(job.status)}</div><div class="panel-body"><div class="meta-list"><span>Bắt đầu: ${esc(date(job.started_at))}</span><span>Kết thúc: ${esc(date(job.ended_at))}</span><span>Mã thoát: ${job.exit_code === undefined || job.exit_code === null ? '—' : esc(job.exit_code)}</span></div><div class="quick-actions">${jobResultTarget(job) ? button(jobResultTarget(job).label, 'job-result', `data-id="${esc(job.id)}"`) : ''}${button(opened ? 'Ẩn nhật ký' : 'Xem nhật ký', 'job-log', `data-id="${esc(job.id)}" aria-expanded="${opened}" aria-controls="job-log-${esc(job.id)}"`)}${activeJob(job) ? button('Dừng tác vụ', 'cancel-job', `data-id="${esc(job.id)}"`) : ''}</div>${opened ? `<div id="job-log-${esc(job.id)}"><h3 class="section-heading">Tham số</h3><pre class="detail-text">${esc(pretty(detail?.params || job.params || {}))}</pre><h3 class="section-heading">Nhật ký tiến trình</h3><pre class="job-log" tabindex="0">${esc(Array.isArray(logs) ? logs.map((line) => typeof line === 'string' ? line : pretty(line)).join('\n') : logs || 'Chưa có nhật ký được ghi nhận.')}</pre></div>` : ''}</div></article>`;
 }
 async function renderJobs(signal) {
   const data = await api('jobs', { signal, db: false });
@@ -890,6 +927,13 @@ async function handleAction(event) {
       if (action === 'label-filter') { if (target.dataset.label) params.label = target.dataset.label; else delete params.label; params.offset = 0; }
       else params.offset = target.dataset.offset;
       await navigate('messages', params); return;
+    }
+    if (action === 'job-result') {
+      const job = state.jobs.find((item) => item.id === target.dataset.id);
+      const destination = job && jobResultTarget(job);
+      if (!destination) { toast('Tác vụ này không có trang kết quả riêng.', true); return; }
+      await navigate(destination.view, destination.params);
+      return;
     }
     if (action === 'job-log') {
       const id = target.dataset.id;

@@ -97,7 +97,7 @@ vm.runInContext(source.replace(/^export (?=(?:async )?function)/gm, '') + `
     jobCard, submitForm, schedulePoll, stopPoll, sourceDisplay,
     syncFormOptions, syncVisionForm, handleAction,
     addCollectSources, applyCollectLimit, collectLimit, sourceKindLabel, startSelectedCollection,
-    telegramApiPanel, telegramApiStatus, loadSourceResults,
+    telegramApiPanel, telegramApiStatus, loadSourceResults, jobResultTarget, firstChannel,
   };`, context, { filename: 'dashboard/app.js' });
 const client = context.clientTest;
 client.state.bootstrap = fixtures.bootstrap;
@@ -732,5 +732,26 @@ client.state.jobs = [];
 client.schedulePoll();
 assert.equal(client.state.pollTimer, null, 'no active jobs means no polling timer');
 client.stopPoll();
+assert.equal(JSON.stringify(client.jobResultTarget({ kind: 'collect', params: { channels: '@alpha, beta' } })),
+  JSON.stringify({ view: 'messages', params: { username: 'alpha' }, label: 'Xem tin đã thu thập' }));
+assert.equal(client.jobResultTarget({ kind: 'watch', params: { channels: '' } }).params.username, undefined);
+assert.equal(client.jobResultTarget({ kind: 'classify', params: {} }).view, 'messages');
+assert.equal(client.jobResultTarget({ kind: 'search', params: {} }).view, 'collection');
+assert.equal(JSON.stringify(client.jobResultTarget({ kind: 'lookup', params: { username: '@durov' } }).params), JSON.stringify({ query: 'durov' }));
+assert.equal(client.jobResultTarget({ kind: 'download', params: {} }).view, 'video');
+assert.equal(JSON.stringify(client.jobResultTarget({ kind: 'image_classify', params: { image_id: 5 } }).params), JSON.stringify({ analysis: 5 }));
+assert.equal(JSON.stringify(client.jobResultTarget({ kind: 'video_analyze', params: { analysis_id: 7 } }).params), JSON.stringify({ analysis: 7 }));
+assert.equal(client.jobResultTarget({ kind: 'db_backup', params: {} }).view, 'settings');
+assert.equal(client.jobResultTarget({ kind: 'unknown', params: {} }), null);
+const jobsHtml = await client.renderJobs();
+assert(jobsHtml.includes('data-action="job-result"'), 'job card offers a result link');
+assert(jobsHtml.includes('Xem tin đã thu thập'), 'collect result link names the messages view');
+const resultTarget = { dataset: { action: 'job-result', id: 'saved' }, disabled: false, tagName: 'BUTTON' };
+resultTarget.closest = (selector) => selector === '[data-action]' ? resultTarget : null;
+location.hash = '#jobs';
+await client.handleAction({ target: resultTarget });
+assert(location.hash.startsWith('#messages'), 'result link navigates to the messages view');
+location.hash = '#overview';
+console.log('PASS job cards link to the result view of each task');
 console.log('PASS visible-only 2-second job polling lifecycle');
 console.log('All dashboard client contract tests passed.');
