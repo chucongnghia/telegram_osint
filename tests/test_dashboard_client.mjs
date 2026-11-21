@@ -808,7 +808,7 @@ client.schedulePoll();
 assert.equal(client.state.pollTimer, null, 'no active jobs means no polling timer');
 client.stopPoll();
 assert.equal(JSON.stringify(client.jobResultTarget({ kind: 'collect', params: { channels: '@alpha, beta' } })),
-  JSON.stringify({ view: 'messages', params: { username: 'alpha' }, label: 'Xem tin đã thu thập' }));
+  JSON.stringify({ view: 'messages', params: { username: 'alpha', highlight: 'source' }, label: 'Xem tin đã thu thập' }));
 assert.equal(client.jobResultTarget({ kind: 'watch', params: { channels: '' } }).params.username, undefined);
 assert.equal(client.jobResultTarget({ kind: 'classify', params: {} }).view, 'messages');
 assert.equal(JSON.stringify(client.jobResultTarget({ kind: 'classify', params: { message_ids: [31, 32] } }).params),
@@ -820,7 +820,9 @@ assert(client.messageRows([{ id: 31, channel: 'kenh', text: 'Tin A', score: 0, l
   'targeted message row is highlighted');
 client.state.highlightIds = new Set();
 assert.equal(client.jobResultTarget({ kind: 'search', params: {} }).view, 'collection');
-assert.equal(JSON.stringify(client.jobResultTarget({ kind: 'lookup', params: { username: '@durov' } }).params), JSON.stringify({ query: 'durov' }));
+assert.equal(JSON.stringify(client.jobResultTarget({ kind: 'lookup', params: { username: '@durov' } }).params), JSON.stringify({ query: 'durov', highlight: 'durov' }));
+assert.equal(client.jobResultTarget({ kind: 'search', params: { keyword: 'binh' } }).params.highlight, 'binh');
+assert.equal(client.jobResultTarget({ kind: 'collect', params: { channels: '@alpha' } }).params.highlight, 'source');
 assert.equal(client.jobResultTarget({ kind: 'download', params: {} }).view, 'video');
 assert.equal(JSON.stringify(client.jobResultTarget({ kind: 'image_classify', params: { image_id: 5 } }).params), JSON.stringify({ analysis: 5 }));
 assert.equal(JSON.stringify(client.jobResultTarget({ kind: 'video_analyze', params: { analysis_id: 7 } }).params), JSON.stringify({ analysis: 7 }));
