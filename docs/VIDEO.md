@@ -283,29 +283,46 @@ chính xác. JSON request/result không tự chứng minh công cụ đã thật
   phải mã hoá. Chỉ xử lý media được phép, tự quản lý retention/backup và cân nhắc kỹ
   trước `--allow-remote`. Jev HTTP gửi **evidence văn bản** (gồm transcript/OCR/mô tả)
   ra nhà cung cấp, khác với upload JPEG của vision.
-- Năm nhãn: `scam_indicators` (có dấu hiệu), `advertising_unverified` (quảng cáo chưa
-  xác minh), `reporting_warning` (tin tức/cảnh báo/trích dẫn), `other` (khác),
-  `insufficient_information` (thiếu thông tin). Không có nhãn nào là bảo đảm an toàn.
+- Bảy nhãn: `call_to_violence` (kêu gọi bạo lực), `call_to_property_damage` (kêu gọi phá
+  hoại tài sản), `obstruct_officials` (chống người thi hành công vụ), `call_against_state`
+  (kêu gọi chống chính quyền), `threat` (đe doạ), `criticism` (phê bình/chính kiến, không
+  phải kêu gọi), `insufficient_information` (thiếu thông tin). Không có nhãn nào là bảo
+  đảm an toàn hay kết luận pháp lý.
+- Ba mức hiển thị: “Rủi ro cao”, “Cần xem xét”, “Thông thường” (khóa lưu vẫn là
+  `High-risk`/`Suspicious`/`Normal`); điểm 0–100 chỉ là tín hiệu, kết quả kèm `evidence`,
+  `context` và `requires_review`.
 - ASR/OCR/mô tả có thể sai; mẫu ảnh bỏ sót diễn biến. Không nhận diện khuôn mặt/xác minh
   danh tính, không kết luận tội/pháp lý; xác suất/confidence **chưa được hiệu chuẩn**.
   Chất lượng thực tế/độ chính xác: **chưa đo**; không coi ví dụ này là smoke test live
   toàn pipeline hoặc phép đo độ chính xác.
 
-## 6. Kiểm chứng bản triển khai
+## 6. Phạm vi và giới hạn
 
-- Bộ **243 test**: venv API thành công toàn bộ; Python hệ thống bỏ qua 1 test cần
-  Telethon. Có **85 test video** cho media/model giả lập, HTTP loopback cục bộ,
-  orchestration, migration, cache, partial/error và bridge. Suite không gọi API có phí,
-  tải weights hoặc đụng dữ liệu thật.
+- Chỉ xử lý media công khai mà bạn được phép; không tự động báo cáo hay kết luận thay cơ
+  quan có thẩm quyền.
+- Jev chỉ trả nhãn/mức và evidence; kết quả có `requires_review` và cần người có thẩm quyền
+  duyệt. Nhãn `criticism` được tách khỏi kêu gọi; nội dung tường thuật/cảnh báo bị hạ điểm.
+- Transcript/OCR/mô tả có thể sai và mẫu khung hình bỏ sót diễn biến; không coi kết quả là
+  kết luận pháp lý hay xác suất đã hiệu chuẩn.
+- Lịch sử phân loại, rubric và evidence được lưu để audit; `--recheck` tạo bản ghi mới thay
+  vì ghi đè kết quả cũ.
+
+## 7. Kiểm chứng bản triển khai
+
+- **495 test** ở lần chạy gần nhất (venv API đạt toàn bộ; Python hệ thống bỏ qua 9 test cần Telethon/thị giác); backend đã thêm test cho
+  rubric kêu gọi). Mốc lịch sử trước khi đổi trọng tâm: **243 test**, venv API thành công
+  toàn bộ; Python hệ thống bỏ qua 1 test cần Telethon; khi đó có **85 test video** cho
+  media/model giả lập, HTTP loopback cục bộ, orchestration, migration, cache, partial/error
+  và bridge. Suite không gọi API có phí, tải weights hoặc đụng dữ liệu thật.
 - Smoke riêng đã dùng FFmpeg thật tạo clip 11 giây từ [mẫu JFK của faster-whisper](https://github.com/SYSTRAN/faster-whisper/blob/master/tests/data/jfk.flac),
   lấy 3 JPEG và WAV mono 16 kHz. Whisper `tiny` CPU/int8 phiên âm thành công, có đoạn
   `[0, 11]`: “And so my fellow Americans, ask not what your country can do for you,
   ask what you can do for your country.” Đây là mẫu tiếng Anh kiểm tra đường xử lý,
   **không phải benchmark tiếng Việt**.
-- Bằng chứng này được gửi thật tới công cụ Jev của DSH (`jev-1.14.0`), nhận `other`,
-  lưu và replay qua bridge thành công mà không nhân đôi. Vision trong smoke này
-  **được bỏ qua tường minh** và analysis là `partial`; không tuyên bố đã chạy Gemini/
-  Qwen-VL thật. Các adapter vision đã được kiểm thử bằng mock và HTTP loopback;
+- Bằng chứng này được gửi thật tới công cụ Jev của DSH (`jev-1.14.0`), nhận `other` (nhãn
+  cũ, trước khi đổi trọng tâm), lưu và replay qua bridge thành công mà không nhân đôi.
+  Vision trong smoke này **được bỏ qua tường minh** và analysis là `partial`; không tuyên bố
+  đã chạy Gemini/Qwen-VL thật. Các adapter vision đã được kiểm thử bằng mock và HTTP loopback;
   cần API key hoặc server local của bạn để chạy inference thị giác thực tế.
 - DB production được backup trước nâng v2 → v3 tại
   [pre-video-v3-backup.sqlite3](<../data/pre-video-v3-backup.sqlite3>) (artifact cục bộ).

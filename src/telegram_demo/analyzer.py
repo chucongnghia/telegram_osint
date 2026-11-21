@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""analyzer.py — "nguồn chân lý" duy nhất cho bộ từ điển + chấm điểm lừa đảo.
+"""analyzer.py — "nguồn chân lý" cho from điển + chấm điểm kêu gọi hành vi phạm pháp.
 
 Module này gom phần phân tích đã từng bị **copy 2 lần** trong `demo_telegram.py`
 (bản web) và `demo_telegram_api.py` (bản API), để hai bản không lệch nhau nữa:
 
-    1. Từ điển  : SCAM_GROUPS (6 nhóm lừa đảo) + ACTION_SIGNALS (4 nhóm tín hiệu)
+    1. Từ điển  : nhóm hành động + dấu hiệu kêu gọi (xem `incitement.py`)
     2. Ngưỡng   : THRESHOLD_SUSPICIOUS / THRESHOLD_HIGH_RISK (+ ngưỡng cho group)
     3. Regex    : URL, SĐT, số tài khoản, hashtag, mention, link mời nhóm
     4. Chuẩn hoá : normalize() (chữ thường) và no_accent() (bỏ dấu)
@@ -28,6 +28,8 @@ import json
 import re
 import unicodedata
 from collections import Counter
+
+from . import incitement
 from datetime import datetime, timedelta, timezone
 
 from .storage import persist_payload
@@ -36,65 +38,17 @@ from .storage import persist_payload
 # 1. Bộ từ điển
 # ---------------------------------------------------------------------------
 
-SCAM_GROUPS = {
-    "Investment": ("Đầu tư / lợi nhuận cao", 22, [
-        "đầu tư", "lợi nhuận", "sinh lời", "cam kết lợi nhuận", "làm giàu",
-        "kiếm tiền online", "thu nhập thụ động", "sàn đầu tư", "forex",
-        "tiền ảo", "usdt", "gấp 3 lần", "gấp 5 lần", "x2 tài khoản",
-        "kèo thơm", "bao lời", "cam kết hoàn vốn", "phiên tín hiệu",
-    ]),
-    "Job": ("Việc làm online giả", 18, [
-        "việc làm online", "việc nhẹ lương cao", "tuyển cộng tác viên", "ctv",
-        "làm tại nhà", "chốt đơn", "hoàn tiền", "làm nhiệm vụ",
-        "không cần kinh nghiệm", "thu nhập 20 triệu", "tuyển gấp", "đa cấp",
-        "tuyển đại lý", "cộng tác viên chốt đơn",
-    ]),
-    "Loan": ("Cho vay trực tuyến", 20, [
-        "cho vay", "vay vốn", "vay nhanh", "vay tiền online", "không thế chấp",
-        "giải ngân trong ngày", "chỉ cần cccd", "app vay", "lãi suất 0%",
-        "vay tín chấp", "tín dụng đen", "bùng nợ", "hỗ trợ nợ xấu",
-    ]),
-    "Giveaway": ("Trúng thưởng / quà tặng", 16, [
-        "trúng thưởng", "nhận quà", "quà tặng miễn phí", "tri ân khách hàng",
-        "minigame", "quay số", "nhận thưởng", "phần thưởng", "airdrop",
-        "chỉ cần bình luận", "chỉ cần chia sẻ", "like và share", "tặng code",
-    ]),
-    "Impersonation": ("Giả mạo tổ chức / cá nhân", 20, [
-        "giả mạo", "chính chủ", "hotline chính thức", "công an", "tòa án",
-        "cơ quan thuế", "cán bộ thuế", "nhân viên thuế",
-        "shipper", "nhân viên ngân hàng", "chuyên gia tài chính",
-        "mentor", "fanpage chính thức", "tổng đài", "admin chính thức",
-    ]),
-    "Shopping": ("Mua sắm / bán hàng đáng ngờ", 14, [
-        "sale sốc", "giảm giá 90%", "thanh lý", "xả kho", "cọc trước",
-        "chuyển khoản trước", "không ship cod", "sỉ giá gốc",
-    ]),
-}
-
-ACTION_SIGNALS = {
-    "money_transfer": ("Yêu cầu chuyển tiền", 20, [
-        "chuyển khoản", "cọc trước", "nạp tiền", "nộp phí", "phí xác nhận",
-        "stk", "số tài khoản", "momo", "zalopay", "ví điện tử", "nạp usdt",
-    ]),
-    "commission": ("Hứa hẹn hoa hồng", 14, [
-        "hoa hồng", "chiết khấu cao", "thưởng nóng", "giới thiệu người", "ref",
-    ]),
-    "offplatform": ("Điều hướng sang kênh/nhóm khác", 18, [
-        "link bio", "telegram", "zalo", "whatsapp", "inbox", "ib",
-        "link đăng ký", "truy cập link", "tải app", "nhóm kín", "sđt",
-        "số điện thoại", "join nhóm", "vào nhóm", "add tele",
-    ]),
-    "urgency": ("Thúc ép / khan hiếm giả tạo", 10, [
-        "duy nhất hôm nay", "chỉ còn", "nhanh tay", "số lượng có hạn",
-        "cơ hội cuối", "đừng bỏ lỡ", "trong 24h", "slot cuối",
-    ]),
-}
+#: Từ điển chấm điểm nằm ở `incitement.py` (chủ đề: kêu gọi hành vi phạm pháp).
+#: Giữ các tên cũ dưới đây như bí danh để mã/báo cáo cũ không vỡ, nhưng điểm số
+#: bây giờ là "mức kêu gọi/kích động", không còn là "mức lừa đảo".
+SCAM_GROUPS = incitement.ACTION_GROUPS
+ACTION_SIGNALS = {}
 
 # ---------------------------------------------------------------------------
 # 2. Ngưỡng + quy ước
 # ---------------------------------------------------------------------------
 
-THRESHOLD_SUSPICIOUS, THRESHOLD_HIGH_RISK = 25, 60
+THRESHOLD_SUSPICIOUS, THRESHOLD_HIGH_RISK = incitement.THRESHOLD_SUSPICIOUS, incitement.THRESHOLD_HIGH_RISK
 
 #: Điểm rủi ro ở mức group dùng lại đúng hai ngưỡng trên.
 GROUP_THRESHOLD_SUSPICIOUS, GROUP_THRESHOLD_HIGH_RISK = THRESHOLD_SUSPICIOUS, THRESHOLD_HIGH_RISK
@@ -201,31 +155,19 @@ def extract_entities(text: str) -> dict:
 
 
 def analyze(post: dict, ocr_text: str = "") -> dict:
-    """Chấm điểm nghi ngờ 0-100. `ocr_text`: chữ đọc được từ ảnh (nếu bật --ocr)."""
+    """Chấm mức kêu gọi/kích động hành vi phạm pháp (0-100).
+
+    `ocr_text`: chữ đọc được từ ảnh (nếu bật `--ocr`). Kết quả luôn kèm câu bằng
+    chứng và cờ `requires_review`; máy không kết luận thay người duyệt.
+    """
     text = post.get("text") or ""
-    haystack = normalize(" ".join([text, ocr_text or "",
-                                   post.get("channel_title") or "", post.get("channel") or ""]))
-    plain = no_accent(haystack)
-
-    score, signals, group_scores = 0.0, [], {}
-
-    for label, (name_vi, weight, keywords) in SCAM_GROUPS.items():
-        found = hits(keywords, haystack, plain)
-        if found:
-            pts = weight * min(1.0, 0.6 + 0.2 * (len(found) - 1))
-            group_scores[label] = pts
-            signals.append((name_vi, pts, found[:6]))
-
-    if group_scores:
-        ranked = sorted(group_scores.items(), key=lambda kv: -kv[1])
-        score += ranked[0][1] + sum(p * 0.5 for _, p in ranked[1:3])
-
-    for name_vi, weight, keywords in ACTION_SIGNALS.values():
-        found = hits(keywords, haystack, plain)
-        if found:
-            pts = weight * min(1.0, 0.6 + 0.2 * (len(found) - 1))
-            score += pts
-            signals.append((name_vi, pts, found[:6]))
+    verdict = incitement.assess(
+        text,
+        ocr_text or "",
+        channel=str(post.get("channel") or ""),
+        has_media=bool(post.get("has_media")),
+        forwarded=bool(post.get("forwarded_from")),
+    )
 
     ent = extract_entities(text)
     if post.get("link_preview"):
@@ -234,48 +176,24 @@ def analyze(post: dict, ocr_text: str = "") -> dict:
         ocr_ent = extract_entities(ocr_text)
         for key in ("urls", "phones", "bank_accounts", "invite_links"):
             ent[key] = list(dict.fromkeys(ent[key] + ocr_ent[key]))
-    if ent["urls"]:
-        score += 12
-        signals.append(("Có đường link ngoài nền tảng", 12.0, ent["urls"]))
-    if ent["phones"] or ent["bank_accounts"]:
-        score += 15
-        signals.append(("Số điện thoại / số tài khoản trong bài", 15.0,
-                        (ent["phones"] + ent["bank_accounts"])[:4]))
-    if ent["invite_links"]:
-        score += 12
-        signals.append(("Link mời vào nhóm/kênh riêng (t.me/+...)", 12.0, ent["invite_links"]))
-    if post.get("forwarded_from"):
-        score += 6
-        signals.append(("Bài đăng forward từ nguồn khác", 6.0, [post["forwarded_from"]]))
-    if post.get("has_media") and hits(["kết quả", "lệnh", "lợi nhuận", "biến động"],
-                                      haystack, plain):
-        score += 5
-        signals.append(("Ảnh/video kèm nội dung tài chính", 5.0, ["media + nội dung tài chính"]))
-    if ocr_text:
-        score += 5
-        signals.append(("Có chữ đọc được từ ảnh (OCR)", 5.0, [ocr_text[:80]]))
-
-    score = int(round(min(100.0, score)))
-    level = level_of(score)
-    category = None
-    if group_scores and level != "Normal":
-        category = max(group_scores.items(), key=lambda kv: kv[1])[0]
-
-    top = sorted(signals, key=lambda s: -s[1])[:3]
-    summary = ("Nhóm nghi ngờ: " + SCAM_GROUPS[category][0] if category
-               else "Không có nhóm rõ ràng")
-    if top:
-        summary += " | Tín hiệu chính: " + "; ".join(n for n, _, _ in top)
-    else:
-        summary = "Không phát hiện tín hiệu đáng ngờ."
 
     return {
-        "scam_score": score, "level": level,
-        "scam_category": category,
-        "scam_category_vi": SCAM_GROUPS[category][0] if category else None,
-        "signals": [{"label_vi": n, "points": round(p, 1), "matched": m} for n, p, m in
-                    sorted(signals, key=lambda s: -s[1])],
-        "entities": ent, "summary": summary,
+        # Tên khoá giữ nguyên để SQLite/dashboard/báo cáo cũ đọc được; ý nghĩa mới là
+        # "mức kêu gọi hành vi phạm pháp".
+        "scam_score": verdict["score"],
+        "risk_score": verdict["score"],
+        "level": verdict["level"],
+        "scam_category": verdict["category"],
+        "scam_category_vi": verdict["category_vi"],
+        "incitement_category": verdict["category"],
+        "incitement_category_vi": verdict["category_vi"],
+        "signals": verdict["signals"],
+        "entities": ent,
+        "summary": verdict["summary"],
+        "evidence": verdict["evidence"],
+        "context": verdict["context"],
+        "requires_review": verdict["requires_review"],
+        "rubric_version": verdict["rubric_version"],
     }
 
 
@@ -285,27 +203,13 @@ def analyze(post: dict, ocr_text: str = "") -> dict:
 
 
 def level_of(score: float) -> str:
-    """0-24 Normal, 25-59 Suspicious, 60-100 High-risk."""
-    return ("High-risk" if score >= THRESHOLD_HIGH_RISK
-            else "Suspicious" if score >= THRESHOLD_SUSPICIOUS else "Normal")
+    """0-24 Normal, 25-59 Suspicious, 60-100 High-risk (mức kêu gọi hành vi phạm pháp)."""
+    return incitement.level_of(score)
 
 
 def verdict_of(level: str) -> str:
-    """Câu kết luận tiếng Việt cho một mức rủi ro."""
-    return {
-        "High-risk": "Có dấu hiệu lừa đảo — cần kiểm tra kỹ",
-        "Suspicious": "Nghi ngờ",
-    }.get(level, "Chưa thấy dấu hiệu bất thường")
-
-
-def icon_of(level: str) -> str:
-    return {"High-risk": "🔴", "Suspicious": "🟠"}.get(level, "🟢")
-
-
-def _pct(ratio: float) -> str:
-    """0.008 -> '0.8', 1.0 -> '100' (bỏ số 0 thừa)."""
-    s = f"{ratio * 100:.1f}"
-    return s.rstrip("0").rstrip(".") if "." in s else s
+    """Câu kết luận tiếng Việt cho một mức."""
+    return incitement.verdict_of(level)
 
 
 # ---------------------------------------------------------------------------
@@ -496,10 +400,20 @@ def _public(record: dict) -> dict:
     return {k: v for k, v in record.items() if k != "_msg_ref"}
 
 
+def icon_of(level: str) -> str:
+    return {"High-risk": "🔴", "Suspicious": "🟠"}.get(level, "🟢")
+
+
+def _pct(ratio: float) -> str:
+    """0.008 -> '0.8', 1.0 -> '100' (bỏ số 0 thừa)."""
+    s = f"{ratio * 100:.1f}"
+    return s.rstrip("0").rstrip(".") if "." in s else s
+
+
 def print_report(records: list[dict], sources: list[str] | None = None,
                  title: str = "BÁO CÁO THU THẬP TELEGRAM", noun: str = NOUN_WEB,
                  width: int = 74) -> None:
-    """In báo cáo [1]–[5]: tổng quan, nhóm lừa đảo, top kênh, top bài, điểm theo group."""
+    """In báo cáo [1]–[5]: tổng quan, nhóm hành vi, top kênh, top bài, điểm theo group."""
     total = len(records)
     levels = Counter((r.get("analysis") or {}).get("level", "Normal") for r in records)
     cats = Counter((r.get("analysis") or {}).get("scam_category_vi") for r in records
@@ -605,55 +519,49 @@ def write_json(path: str, records: list[dict], backend: str, noun: str = NOUN_WE
 # ---------------------------------------------------------------------------
 # Cấu trúc: (username, tên hiển thị, số người đăng ký, [tin nhắn]).
 # Mỗi tin: (nội dung, số media, có forward?, lượt xem).
-# 5 kênh đầu là kênh lừa đảo, 3 kênh cuối là kênh sạch (để kiểm chứng công cụ
-# không báo động giả).
+# Ba kênh đầu mô phỏng kêu gọi/đe doạ thật; ba kênh cuối là tin tức, cảnh báo,
+# bình luận đời thường — để kiểm chứng công cụ không gắn cờ phê bình hay bản tin.
 # dialect="web" (bản t.me/s) KHÔNG có `forwards`/`replies`; dialect="api" thì có.
 
 DEMO_ITEMS = [
-    ("dautu.sieuloinhuan", "Đầu tư tài chính - Lợi nhuận 30%/tháng", 48200, [
-        ("Cam kết lợi nhuận 30%/tháng, đầu tư chỉ từ 2 triệu, rút tiền trong ngày! "
-         "Anh em vào nhóm kín để nhận kèo: https://t.me/+AbCdEf123 #dautu #loinhuan", 2, True, 1446),
-        ("Kết quả tuần này: 12 lệnh thắng liên tiếp, tài khoản x2 sau 7 ngày. "
-         "Nạp tối thiểu 5 triệu, hoa hồng giới thiệu 20%. Inbox @admin_dautu_pro", 3, False, 3856),
-        ("Chỉ còn 5 slot cuối cho gói VIP tháng 11, cam kết hoàn vốn 100%. "
-         "Chuyển khoản STK 1234567890 (Vietcombank) rồi báo admin để kích hoạt.", 1, False, 6266),
+    ("kichdong.bienhoa", "Nhóm kêu gọi hành động - Biên Hoà", 12400, [
+        ("Hãy cùng nhau tập trung tại trụ sở uỷ ban lúc 20h đêm nay, mang theo bom xăng "
+         "và đốt sạch chúng nó! Ai không đi là hèn. Liên hệ @admin_kichdong, "
+         "nhóm kín: https://t.me/+AbCdEf123", 2, True, 1546),
+        ("Sáng mai 7h, đồng loạt chặn đường và bao vây chốt công an ở ngã tư. "
+         "Mang gậy gộc, đá, chai xăng để tự vệ.", 1, False, 2456),
+        ("Đập phá hết cửa kính ngân hàng trên phố chính, đốt xe của bọn chúng. "
+         "Hẹn 21h thứ bảy này, mang theo xăng.", 3, False, 5646),
     ]),
-    ("vieclam.ctv.hoantien", "Tuyển CTV chốt đơn - Hoàn tiền 100%", 96400, [
-        ("Tuyển cộng tác viên chốt đơn tại nhà, không cần kinh nghiệm, thu nhập 20 triệu/tháng. "
-         "Làm nhiệm vụ hoàn tiền 100% đơn hàng. Đăng ký: https://t.me/vieclam_bot", 1, True, 2892),
-        ("Hướng dẫn làm nhiệm vụ: nạp 500k vào ví, chốt 3 đơn là rút được cả gốc lẫn lãi. "
-         "Liên hệ zalo 0987654321 để được hỗ trợ.", 1, False, 7712),
+    ("keugoi.xungdot", "Tiếng nói xóm - Kêu gọi biểu tình", 33200, [
+        ("Toàn thể bà con hãy kêu gọi chiếm trụ sở chính quyền huyện để đòi quyền lợi. "
+         "Tập trung 19h ngày mai, ai có xe thì chở thêm người.", 1, True, 2862),
+        ("Hãy chặn xe của cán bộ, không cho họ vào uỷ ban làm việc. Cần lắm người tham gia "
+         "vào sáng mai ở cổng huyện.", 1, False, 7712),
+        ("Đập phá vài cửa hàng cho chúng nó sợ.", 0, False, 940),
     ]),
-    ("vayvon.nhanh365", "Hỗ trợ vay vốn online", 27300, [
-        ("Vay tiền online chỉ cần CCCD, không thế chấp, giải ngân trong ngày, lãi suất 0% tháng đầu. "
-         "Đăng ký app vay: https://vay365.example.com/dangky", 2, False, 819),
-        ("Hỗ trợ nợ xấu, bùng nợ vẫn vay được. Hồ sơ đơn giản, duyệt trong 5 phút. "
-         "SĐT 0912345678 (call/zalo).", 1, False, 2184),
+    ("dedoa.canhan", "Cảnh báo an ninh khu phố", 8900, [
+        ("Nếu mày còn đăng bài về tao thì tao sẽ cho mày biết tay. Biết nhà mày rồi đấy.", 0, False, 819),
+        ("Tao sẽ giết mày nếu mày không xin lỗi trước 10h tối nay.", 0, False, 2184),
+        ("Đừng để tao gặp lại mày, sẽ có hậu quả đấy.", 0, False, 410),
     ]),
-    ("quatang.trian2026", "Sự kiện tri ân - Trúng thưởng", 143000, [
-        ("Chúc mừng 100 khách hàng may mắn trúng thưởng iPhone 16 Pro Max! "
-         "Chỉ cần chia sẻ bài viết và bình luận. Nhận quà miễn phí, số lượng có hạn.", 3, True, 4290),
-        ("Danh sách trúng thưởng đã có, ai có tên thì chuyển phí vận chuyển 150k "
-         "để nhận quà. STK: 9876543210 - Momo: 0987654321", 1, False, 11440),
+    ("tintuc.phantich", "Tin tức - Phân tích xã hội", 143000, [
+        ("Cơ quan chức năng đang điều tra vụ việc một nhóm kêu gọi đốt trụ sở trên mạng. "
+         "Cảnh báo người dân không chia sẻ thông tin sai lệch.", 3, True, 4290),
+        ("Bài phân tích: vì sao các lời kêu gọi bạo lực trên mạng thường bắt đầu từ tin giả "
+         "và cách nhận diện chúng.", 1, False, 11440),
+        ("Tôi phản đối chính sách thuế mới vì nó ảnh hưởng tới người lao động. "
+         "Đề nghị đối thoại công khai thay vì đàn áp ý kiến.", 0, False, 2670),
     ]),
-    ("hotro.nganhang.vn", "Hỗ trợ tài khoản ngân hàng", 8900, [
-        ("Thông báo: tài khoản của bạn có giao dịch bất thường. Vui lòng xác nhận "
-         "số tài khoản và chuyển phí xác nhận 500.000đ để mở lại dịch vụ. "
-         "Hotline chính thức 0912345678.", 1, False, 267),
+    ("canhbao.antoan", "Cảnh báo an toàn thông tin", 5100, [
+        ("Cảnh báo: tin giả lan truyền kêu gọi đốt trụ sở, cơ quan chức năng đã khởi tố "
+         "các đối tượng liên quan.", 1, True, 640),
+        ("Đừng đốt trụ sở, hãy bình tĩnh và đối thoại với chính quyền theo quy định.", 0, False, 320),
     ]),
-    ("tintuc.congnghe", "Tin tức công nghệ", 245000, [
-        ("Telegram ra mắt tính năng mới cho phép tìm kiếm trong kênh và nhóm, "
-         "cùng nhiều cải tiến về bảo mật.", 1, False, 7350),
-        ("Tổng hợp các mẫu điện thoại tầm trung đáng mua trong tháng này.", 2, False, 19600),
-        ("Cách bật xác thực hai lớp để bảo vệ tài khoản Telegram của bạn.", 1, False, 31850),
-    ]),
-    ("hocpython.mienphi", "Học lập trình Python miễn phí", 31200, [
-        ("Bài 1: Biến và kiểu dữ liệu trong Python. Tài liệu tham khảo ở phần bình luận.", 2, False, 936),
-        ("Bài 2: Vòng lặp for/while, bài tập cuối bài có đáp án.", 1, False, 2496),
-    ]),
-    ("amthuc.mebap", "Ẩm thực mỗi ngày", 58700, [
-        ("Công thức phở bò nước dùng trong 8 tiếng, chi tiết từng bước.", 3, False, 1761),
-        ("Mẹo chọn thịt tươi ngon khi đi chợ.", 2, False, 4696),
+    ("binhluan.doisong", "Chuyện đời thường", 2100, [
+        ("Hôm nay trời đẹp, cả nhà đi ăn phở. Chúc mọi người cuối tuần vui vẻ.", 2, False, 120),
+        ("Mình mới mua được cái xe đạp cũ, sửa lại chạy ngon lành. Cảm ơn anh hàng xóm.", 1, False, 89),
+        ("Cuối tuần này cả nhà mình đi cắm trại ở hồ, ai rảnh tham gia cho vui.", 1, False, 64),
     ]),
 ]
 

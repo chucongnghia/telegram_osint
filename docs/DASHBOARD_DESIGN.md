@@ -8,7 +8,7 @@ Deal: centred hero; blue-black-cornflower / Geist; pinned-chapters. Adaptation: 
 - Audience: the operator of this local Telegram collection and content-classification project.
 - Main action: Thu thập dữ liệu.
 - Existing material: real SQLite messages, entities, heuristic analyses, Jev judgments, runs, profiles, local videos and extracted frames. Never seed production to decorate the interface.
-- Fact: data counts and charts come from the selected SQLite database. Blank/error/partial states remain explicit. Jev findings indicate content signals, not a legal determination or calibrated fraud probability.
+- Fact: data counts and charts come from the selected SQLite database. Blank/error/partial states remain explicit. Jev findings indicate content signals (seven call/incitement labels, three display levels), not a legal determination or a calibrated probability of unlawful conduct; every result needs review by an authorized person.
 - Enemy: switching between CLI commands and raw SQLite tables without knowing which table holds a result.
 - Voice: technical-dry, Vietnamese; precise rather than accusatory; short labels; explain what gets sent to Jev. The product uses 'tin nhắn', 'nguồn', 'nhãn Jev', 'điểm từ khoá' and 'tác vụ' consistently.
 
@@ -35,3 +35,7 @@ Taste's marketing-only checks (centred sales hero, one promotional section per v
 # Runtime
 
 A separate project dashboard listens only on http://127.0.0.1:8765. It is not a replacement for the DeepSeek Harness GUI at port 3080. Python stdlib backend and local static assets keep the existing CLI dependency-light. Model/network jobs require an explicit action; browsing data does not classify or download anything.
+
+# Scope (Phạm vi và giới hạn)
+
+Public data only; the dashboard never reports or concludes automatically. Call/incitement findings are review signals (`requires_review`) that need an authorized human decision; lawful criticism (`criticism`) stays distinct from calls to action, and narrative/warning content is score-reduced. Classification and audit history are retained so a reviewer can override a result.

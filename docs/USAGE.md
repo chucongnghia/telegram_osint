@@ -1,18 +1,21 @@
-# Hướng dẫn đầy đủ: Telegram + sàng lọc dấu hiệu lừa đảo
+# Hướng dẫn đầy đủ: Telegram + sàng lọc nội dung kêu gọi hành vi phạm pháp
 
-Bộ công cụ nhỏ để: **thu thập bài đăng Telegram → chấm điểm nghi ngờ lừa đảo (0–100) →
-tính điểm rủi ro cho cả group/kênh → in báo cáo**. Có hai backend thu thập độc lập dùng
-chung một bộ chấm điểm.
+Bộ công cụ nhỏ để: **thu thập bài đăng Telegram → chấm mức kêu gọi/kích động hành vi phạm
+pháp (0–100, ba mức) → tính mức cho cả group/kênh → in báo cáo**. Có hai backend thu thập
+độc lập dùng chung một bộ chấm điểm. Điểm chỉ là **tín hiệu hỗ trợ rà soát**, không phải kết
+luận pháp lý; người có thẩm quyền phải duyệt.
 
 > Bắt đầu nhanh tại [README](<../README.md>). Các lệnh dưới đây chạy từ thư mục gốc
 > project, qua [điểm vào chung](<../main.py>): `web`, `api`, `groups`, `search`,
-> `profile`, `db`, `classify`, `video`, `download`, `dashboard`. Dùng [`python3 main.py COMMAND --help`](<../main.py>) để xem cờ.
+> `profile`, `db`, `classify`, `video`, `image`, `download`, `dashboard`. Dùng [`python3 main.py COMMAND --help`](<../main.py>) để xem cờ.
 > Không còn script CLI ở thư mục gốc; mã triển khai nằm trong [gói nguồn](<../src/telegram_demo/>).
 
 ## Mục lục
 
 - [Dashboard trình duyệt: `python3 main.py dashboard --open`](<DASHBOARD.md>)
 - [Phân tích video: FFmpeg → Whisper/thị giác → Jev](<VIDEO.md>)
+- [Bảy nhãn Jev và ba mức heuristic](#bảy-nhãn-jev-và-ba-mức-heuristic)
+- [Phạm vi và giới hạn](#phạm-vi-và-giới-hạn)
 - [Phân loại văn bản bằng Jev](#bản-đầu-tin-nhắn-văn-bản--jev--sqlite)
   - [Opt-in Jev trong collector: cờ, ngân sách và watch](#opt-in-jev-ngay-trong-lệnh-thu-thập)
 - [SQLite: lưu trữ, truy vấn và sao lưu](#lưu-trữ-sqlite-triển-khai-và-tra-cứu)
@@ -131,7 +134,7 @@ python3 main.py classify run --run-id N --limit 10
 python3 main.py classify run --run-id N --limit 10 --recheck
 ```
 
-Kiểm chứng sau tích hợp: **344 test** trên venv API đều đạt; Python hệ thống đạt cùng suite
+Kiểm chứng sau tích hợp (mốc lịch sử trước khi đổi trọng tâm): **344 test** trên venv API đều đạt; Python hệ thống đạt cùng suite
 với 1 test cần Telethon được bỏ qua. Gồm [32 test runner](<../tests/test_collection_jev.py>)
 và [28 test tích hợp](<../tests/test_collection_integration.py>): 5 collector, ngân sách
 chung, cache, không giữ writer lock khi chờ HTTP, backlog 80+ sự kiện, worker lỗi và Ctrl+C.
@@ -141,18 +144,30 @@ không dùng dịch vụ thật.
 Không có key hợp lệ trong môi trường kiểm chứng của agent nên **chưa thử tích hợp này
 với API Jev thật**; không suy ra chất lượng hoặc độ chính xác từ test mock/offline.
 
-### Năm nhãn
+### Bảy nhãn Jev và ba mức heuristic
+
+Jev dùng đúng bảy nhãn sau (rubric văn bản `text-v2:sha256:…`; video `video-v3:sha256:…`;
+ảnh `image-v2:sha256:…`). Hash trong tên rubric đổi khi câu hỏi/nhãn thay đổi, nên manifest
+cũ phải `prepare` lại; không sửa evidence cũ.
 
 | Nhãn | Ý nghĩa |
 |---|---|
-| `scam_indicators` | Có dấu hiệu cụ thể như xin OTP, phí mở khoá thưởng/rút tiền, lợi nhuận phi thực tế. |
-| `advertising_unverified` | Quảng cáo nhưng chưa có dấu hiệu lừa đảo cụ thể; **không có nghĩa đã xác minh an toàn**. |
-| `reporting_warning` | Tin tức, cảnh báo, trích dẫn/ví dụ về lừa đảo, không phải lời mời tham gia thực tế. |
-| `other` | Nội dung khác đủ rõ. |
-| `insufficient_information` | Thiếu bối cảnh, hoặc cần ảnh/video/link chưa được cung cấp. |
+| `call_to_violence` | Kêu gọi/xúi giục tấn công, đánh, giết, đốt người hoặc dùng vũ khí. |
+| `call_to_property_damage` | Kêu gọi đập phá, đốt tài sản, cướp hoặc phá hoại công trình. |
+| `obstruct_officials` | Kêu gọi chặn, bao vây, tấn công người thi hành công vụ; cản trở cơ quan nhà nước. |
+| `call_against_state` | Kêu gọi lật đổ chính quyền, đảo chính, chiếm cơ quan nhà nước. |
+| `threat` | Đe doạ trực tiếp một người/tổ chức: giết, đánh, trả thù, biết nhà. |
+| `criticism` | Phê bình chính sách, bày tỏ quan điểm, phản đối ôn hoà, tường thuật/cảnh báo/lên án. |
+| `insufficient_information` | Thiếu ngữ cảnh để xác định có phải kêu gọi hay không. |
+
+Ba mức heuristic giữ khoá cũ `High-risk` / `Suspicious` / `Normal` cho SQLite/dashboard,
+nhưng hiển thị là **“Rủi ro cao”** (≥60), **“Cần xem xét”** (25–59) và **“Thông thường”**
+(0–24). Điểm 0–100 chỉ là tín hiệu xếp hạng; mỗi kết quả kèm `evidence`, `requires_review`
+và `context` (`reporting`/`neutral`). Nội dung tường thuật/cảnh báo bị hạ điểm, còn phê bình
+hợp pháp phải rơi vào `criticism`, không bị coi là kêu gọi.
 
 Rubric có phiên bản và hướng dẫn không làm theo chỉ dẫn nằm trong tin nhắn. Đây là
-**sàng lọc dấu hiệu**, không phải kết luận pháp lý. Xác suất/confidence của Jev **không
+**sàng lọc tín hiệu**, không phải kết luận pháp lý. Xác suất/confidence của Jev **không
 được xem là độ chính xác đã hiệu chuẩn**, không dùng một ngưỡng cố định để tự kết tội.
 
 ### Chạy độc lập bằng API key TypeSafe
@@ -175,7 +190,7 @@ unset TYPESAFE_API_KEY
 
 # Xem lịch sử offline:
 python3 main.py classify results --limit 20
-python3 main.py classify results --label scam_indicators
+python3 main.py classify results --label call_to_violence
 python3 main.py classify --db data/thu_nghiem.sqlite3 run --limit 10 --dry-run
 ```
 
@@ -246,10 +261,11 @@ chờ API. Không chạy nhiều classifier cùng lúc nếu cần tránh gọi 
 Schema v1 được nâng cấp cộng thêm bảng khi mở DB; nên dùng lệnh backup trước nâng cấp.
 Các artifact `jev_*.json` và DB bị git-ignore vì chứa nội dung tin nhắn.
 
-Đã smoke-test Jev thật qua công cụ DSH trên **6 tin tổng hợp**, bao phủ đủ năm nhãn,
-cảnh báo có trích dẫn và thử chèn chỉ dẫn: kết quả lưu/replay thành công với model
-`jev-1.14.0`. Đây **không phải phép đo độ chính xác trên dữ liệu thực tế**. Nhánh HTTP
-được test offline bằng mock; chạy HTTP có xác thực cần API key của bạn.
+Mốc lịch sử trước khi đổi trọng tâm: đã smoke-test Jev thật qua công cụ DSH trên **6 tin
+tổng hợp** theo rubric cũ (khi đó còn năm nhãn), gồm cảnh báo có trích dẫn và thử chèn chỉ
+dẫn; kết quả lưu/replay thành công với model `jev-1.14.0`. **Chưa smoke lại bộ bảy nhãn mới
+với Jev thật**; đây không phải phép đo độ chính xác trên dữ liệu thực tế. Nhánh HTTP được
+test offline bằng mock; chạy HTTP có xác thực cần API key của bạn.
 
 Mốc kiểm thử trước khi sắp xếp thư mục: bộ **139 test** bản Jev chạy bằng venv API đều thành công; cùng bộ test
 trên Python hệ thống thành công với 1 test cần Telethon được bỏ qua. Các test không
@@ -352,11 +368,12 @@ Chạy qua dispatcher với tên lệnh ở cột mô tả.
 
 | File | Việc |
 |---|---|
-| [main.py](<../main.py>) | Điểm vào chung: `web`, `api`, `groups`, `search`, `profile`, `db`, `classify`, `video`, `download`. |
+| [main.py](<../main.py>) | Điểm vào chung: `web`, `api`, `groups`, `search`, `profile`, `db`, `classify`, `video`, `image`, `download`, `dashboard`. |
 | [paths.py](<../src/telegram_demo/paths.py>) | Neo đường dẫn mặc định theo `PROJECT_ROOT`. |
 | [`keyword_usernames.py`](<../src/telegram_demo/cli/keyword_usernames.py>) | `search` — **Chức năng 1, tách riêng**: nhập keyword → in danh sách username liên quan. |
 | [`username_info.py`](<../src/telegram_demo/cli/username_info.py>) | `profile` — **Chức năng 2, tách riêng**: nhập username → in thông tin tài khoản đó. |
 | [`analyzer.py`](<../src/telegram_demo/analyzer.py>) | **Nguồn chân lý dùng chung**: từ điển, trọng số, regex, `analyze()`, `group_summary()`, `print_report()`, `write_json()`, `username_payload()` / `related_usernames()` (`--keyword`), `make_profile()` / `print_profile()` (`--user`), dữ liệu mẫu `demo_posts()`. Chỉ thư viện chuẩn. |
+| [`incitement.py`](<../src/telegram_demo/incitement.py>) | Rubric `incitement-v1:2026-11-21`, bảy nhãn và ngưỡng ba mức kêu gọi/kích động hành vi phạm pháp; trích `evidence`, `context`, `requires_review`. |
 | [`demo_telegram.py`](<../src/telegram_demo/cli/demo_telegram.py>) | `web` — Backend **web**: đọc trang công khai `https://t.me/s/<kênh>` (và `https://t.me/<username>` cho `--user`). **Chỉ thư viện chuẩn** — không cần cài gì, không cần API key, không cần đăng nhập. |
 | [`demo_telegram_api.py`](<../src/telegram_demo/cli/demo_telegram_api.py>) | `api` — Backend **Telegram API (Telethon)**: group kín, tìm kiếm toàn cục, tra cứu username/ID, tìm chat theo từ khoá, tải media, OCR, chế độ bot, `--watch`. |
 | [`find_private_groups.py`](<../src/telegram_demo/cli/find_private_groups.py>) | `groups` — Tìm & đọc **group kín** qua link mời, chia 3 bước `--discover` / `--join` / `--crawl`. |
@@ -485,8 +502,8 @@ python3 main.py api --user durov --user @tennhom # bản API: thêm ID/verified
   `participants_count`, và group kín mà tài khoản đã tham gia.
 - **Chi tiết hơn ở bản API** (`--api`): **số điện thoại** (chỉ hiện khi đối tượng là danh bạ
   hoặc họ để công khai), **trạng thái hoạt động** ("đang online", "truy cập lần cuối …"),
-  **ngày tạo** kênh/nhóm, **các username khác**, **cờ tài khoản** (Premium / bị gắn cờ lừa đảo
-  / giả mạo / bị hạn chế / liên hệ hai chiều), **lệnh bot**, và **nhóm/kênh dùng chung**
+  **ngày tạo** kênh/nhóm, **các username khác**, **cờ tài khoản** (Premium / **cờ do Telegram
+  gắn** như lừa đảo, giả mạo, bị hạn chế / liên hệ hai chiều), **lệnh bot**, và **nhóm/kênh dùng chung**
   (`GetCommonChats`), chỉ trong phạm vi phiên đang đăng nhập nhìn thấy được.
 - **Ảnh đại diện** được tải về [media/profile_photos](<../media/profile_photos/>), theo mẫu `<username>.jpg` (bản web lấy từ `og:image`,
   bản API qua `download_profile_photo`). Đổi thư mục bằng `--photo-dir DIR`, tắt bằng
@@ -513,7 +530,7 @@ python3 main.py api --keyword "chiến sự"          # thêm: tìm chat theo t�
 
 Mỗi dòng cho biết username được gặp **vì lý do gì**: `@nhắc` (được mention trong bài),
 `link t.me` (link trong bài), `nguồn forward`, `bài đăng trong kênh`, `kết quả tìm chat`
-(chỉ bản API). Kèm **điểm nghi ngờ cao nhất** của các bài chứa username đó, nên dễ ưu tiên
+(chỉ bản API). Kèm **mức kêu gọi cao nhất** của các bài chứa username đó, nên dễ ưu tiên
 rà soát. Mục `[6]` chỉ hiện khi bạn truyền `--keyword`, hoặc khi mở lại file JSON đã lưu
 sẵn kết quả (dùng `--report`). Nếu chỉ truyền `--keyword` mà không có nguồn nào, bản web
 chạy dữ liệu mẫu offline để minh hoạ.
@@ -565,7 +582,7 @@ python3 main.py search --keyword "đầu tư" --demo --out usernames.json
 ```
 
 Nguồn dữ liệu chọn được: `--demo`, `--channel`, `--seed-file`, `--json`, `--api`
-(trộn nhiều nguồn cũng được). Kết quả xếp theo điểm nghi ngờ cao nhất, mỗi dòng ghi rõ
+(trộn nhiều nguồn cũng được). Kết quả xếp theo mức kêu gọi cao nhất, mỗi dòng ghi rõ
 username được gặp vì `@nhắc` / `link t.me` / `nguồn forward` / `bài đăng trong kênh` /
 `kết quả tìm chat`, kèm link mời nhóm kín nếu có. Lọc thêm bằng `--min-score`, `--top`.
 
@@ -595,7 +612,7 @@ In loại tài khoản (Kênh / Nhóm / Bot / Người dùng), tên hiển thị
 **ảnh đại diện** tải về [media/profile_photos](<../media/profile_photos/>), theo mẫu `<username>.jpg` (`--photo-dir DIR`, tắt bằng
 `--no-photo`). `--api` thì thêm **ID, verified, is_bot**, **số điện thoại** (chỉ khi là danh
 bạ/công khai), **trạng thái hoạt động**, **ngày tạo**, **username khác**, **cờ tài khoản**
-(Premium/lừa đảo/giả mạo/bị hạn chế), **lệnh bot**, **nhóm/kênh dùng chung** (`--common-limit N`)
+(Premium / cờ do Telegram gắn: lừa đảo, giả mạo, bị hạn chế), **lệnh bot**, **nhóm/kênh dùng chung** (`--common-limit N`)
 và tra được **group kín** đã tham gia. Nếu tài khoản là kênh/nhóm, `--limit N` lấy thêm N bài
 gần đây để in thống kê (điểm TB, cao nhất, số bài cần rà soát, mức rủi ro). `--from-json` đọc
 danh sách username do chức năng 1 xuất ra.
@@ -609,27 +626,49 @@ giới hạn quyền truy cập của Telegram, không phải lỗi cú pháp.
 
 ## Chấm điểm
 
-- 6 nhóm lừa đảo (Investment, Job, Loan, Giveaway, Impersonation, Shopping)
-  + 4 nhóm tín hiệu (chuyển tiền, hoa hồng, điều hướng sang kênh/nhóm khác, thúc ép).
+Heuristic (`incitement.py`, rubric `incitement-v1:2026-11-21`) chỉ xếp hạng và trích bằng
+chứng; kết luận pháp lý do con người quyết.
+
+- Bốn nhóm hành động: kêu gọi bạo lực, kêu gọi phá hoại tài sản, chống người thi hành công
+  vụ, kêu gọi chống chính quyền — cộng tín hiệu **đe doạ** có cấu trúc.
+- Tín hiệu ngữ cảnh chỉ cộng điểm khi đã có nhóm hành động: lời kêu gọi/hiệu triệu, dấu hiệu
+  chuẩn bị vũ khí/công cụ, thời điểm, địa điểm, mục tiêu là lực lượng/cơ quan cụ thể.
+- Ngữ cảnh tường thuật/cảnh báo (tin giả, điều tra, lên án, cảnh báo) bị **hạ điểm** và đánh
+  dấu `context="reporting"`; câu phủ định hành vi cũng bị trừ điểm. Nhờ vậy bài phân tích về
+  hành vi không bị chấm như lời kêu gọi thật.
 - Trích xuất URL, số điện thoại, số tài khoản, `@mention`, **link mời nhóm** `t.me/+...`,
-  link preview. Thêm tín hiệu đặc thù Telegram: bài **forward** từ nguồn khác, ảnh/video
-  kèm nội dung tài chính.
-- Chuẩn hóa chữ thường + **bỏ dấu**, nên bắt được cả nội dung viết không dấu (`dautu`, `loinhuan`).
+  link preview. Thêm tín hiệu đặc thù Telegram: bài **forward** từ nguồn khác, ảnh/video.
+- Chuẩn hóa chữ thường + **bỏ dấu**, nên bắt được cả nội dung viết không dấu (`keu goi`, `dap pha`).
 - Từ khoá khớp theo **ranh giới từ** (`(?<!\w)...(?!\w)`), nên `ib` không còn khớp trong
   "herm**ib**ooks", `stk` không khớp trong chuỗi base64, `công an` không khớp trong
   "phân công anh ta". Số tài khoản phải đứng tách khỏi dấu chấm/phẩy nên số tiền
   (`1.500.000`) không bị nhận nhầm.
-- Điểm 0–100 → mức 1: `Normal` (<25), `Suspicious` (25–59), `High-risk` (≥60);
-  mức 2: nhóm lừa đảo điểm cao nhất. Điểm chỉ là **tín hiệu hỗ trợ rà soát**.
+- Điểm 0–100 → ba mức: `Normal` (“Thông thường”, <25), `Suspicious` (“Cần xem xét”, 25–59),
+  `High-risk` (“Rủi ro cao”, ≥60); nhóm chính là nhóm hành động điểm cao nhất. Kết quả kèm
+  `evidence`, `requires_review`, `context` và phiên bản rubric. Khoá cũ `scam_score` /
+  `scam_category_vi` vẫn được ghi để SQLite/dashboard cũ đọc được, nhưng ý nghĩa là **mức
+  kêu gọi**, không phải mức lừa đảo. Điểm chỉ là **tín hiệu hỗ trợ rà soát**.
+
+## Phạm vi và giới hạn
+
+- Chỉ dữ liệu công khai mà bạn có quyền xử lý; không tự động báo cáo, không gửi cảnh báo và
+  không kết luận thay cơ quan có thẩm quyền.
+- Máy chỉ xếp hạng và trích `evidence`; mọi kết quả có `requires_review`. Người có thẩm quyền
+  duyệt và có thể sửa/ghi đè quyết định khi xử lý.
+- Phân biệt phê bình hợp pháp (`criticism`) với kêu gọi hành động; nội dung tường thuật/cảnh
+  báo bị hạ điểm và gắn `context="reporting"`, không bị coi là kêu gọi.
+- Lịch sử phân loại (batch, rubric, model, thời điểm) được lưu để audit; `--recheck` tạo bản
+  ghi mới thay vì ghi đè kết quả cũ.
 
 ## Kết quả lịch sử (chạy thật 2026-10-11, trước khi sắp xếp thư mục)
 
 Các ví dụ đã đổi sang cú pháp dispatcher mới để dễ tra cứu; số liệu bên dưới là mốc
-cũ, không phải tuyên bố đã chạy lại CLI hay kiểm chứng live sau lần tổ chức này.
+cũ, không phải tuyên bố đã chạy lại CLI hay kiểm chứng live sau lần tổ chức này. Riêng
+dòng `--demo` đã đo lại offline bằng rubric kêu gọi hiện hành (không gọi mạng).
 
 | Lệnh | Kết quả |
 |---|---|
-| `--demo` | 17 bài → 7 Normal / 8 Suspicious / 2 High-risk (10/17 = 58.8% cần rà soát) |
+| `--demo` | 17 bài, rubric kêu gọi hiện hành → 9 Normal / 3 Suspicious / 5 High-risk (8/17 = 47.1% cần rà soát); bản lịch sử trước đổi trọng tâm là 7/8/2 |
 | `--channel durov --limit 25` | 25 bài thật (2 trang), 10.4M người đăng ký, view 325K–6.87M, 11 bài có media, 6 link preview → group `@durov` **11/100 Normal** |
 | `--channel baomoi --channel tintucvtv --limit 20` | 40 bài thật tiếng Việt (20 + 20) → `@baomoi` **11/100**, `@tintucvtv` **2/100** (đều Normal) |
 | `--channel vnexpress` | báo lỗi rõ ràng (kênh không có bản xem trước công khai) |
@@ -654,11 +693,12 @@ qua CLI. Trang *Thu thập dữ liệu*: tìm nguồn theo từ khoá (tác vụ
 `search_results`), tick nhiều nguồn, đặt số tin tối đa chung hoặc riêng từng nguồn, rồi thu thập —
 mỗi nguồn một tác vụ `collect` với `--jev` luôn bật và ngân sách `min(1000, số tin)` request.
 Xem [hướng dẫn dashboard](<DASHBOARD.md>).
-Suite hiện tại sau cấu hình phiên và thu thập theo nguồn: **467 test** trong venv API đều đạt; Python hệ thống
-chạy cùng suite và bỏ qua 1 test cần Telethon. Bổ sung 83 test cho ảnh/OCR/video/collector/
-dashboard: 31 OCR, 23 image pipeline, 9 video OCR/migration, 16 collector OCR và các test
-HTTP dashboard (kể cả ca argv thật qua parser `image`). Các contract UI
-kiểm cả 10 màn hình, allowlist/bounds của form, OCR/partial consent, escaping, lỗi API và polling.
+Backend đã thêm test cho rubric kêu gọi; suite hiện tại có **495 test** (venv API đạt toàn bộ,
+Python hệ thống bỏ qua 9 test cần Telethon/thị giác). Mốc lịch sử **467 test** trong venv API đều đạt; Python hệ thống chạy cùng suite và bỏ qua 1 test cần
+Telethon. Khi đó có thêm 83 test cho ảnh/OCR/video/collector/dashboard: 31 OCR, 23 image
+pipeline, 9 video OCR/migration, 16 collector OCR và các test HTTP dashboard (kể cả ca argv
+thật qua parser `image`). Các contract UI kiểm cả 10 màn hình, allowlist/bounds của form,
+OCR/partial consent, escaping, lỗi API và polling.
 Không gọi API có phí hoặc ghi DB/session thật; có smoke worker thực tế trên DB tạm,
 chạy CLI demo offline → SQLite. Xem [dashboard QA và giới hạn Taste](<DASHBOARD_QA.md>).
 
@@ -678,15 +718,17 @@ HTTP loopback cục bộ, migration v1/v2 → v3, cache/partial/error, evidence 
 chọn đúng message, private channel ID theo Telethon, file riêng tư/chống ghi đè,
 lỗi/hủy/kích thước và phiên đăng nhập giả lập. Không tải Telegram thật trong suite.
 Không tải model trong test suite. Smoke FFmpeg + Whisper + Jev thực tế được ghi riêng
-ở [hướng dẫn video](<VIDEO.md#6-kiểm-chứng-bản-triển-khai>).
+ở [hướng dẫn video](<VIDEO.md#7-kiểm-chứng-bản-triển-khai>).
 
-Test khoá lại: điểm 17 bài demo khớp [`posts_tg.json`](<../json_folder/posts_tg.json>); công thức group tái tạo đúng 8 nhóm
+Test khoá lại (mốc lịch sử trước khi đổi trọng tâm): điểm 17 bài demo khớp [`posts_tg.json`](<../json_folder/posts_tg.json>); công thức group tái tạo đúng 8 nhóm
 demo + nhóm thật 1000 bài; các báo động giả nổi tiếng không còn; tin tức thật chỉ còn
 1/1000 bài bị gắn cờ; bộ đọc HTML tách đúng bài/views/media/link preview; phân loại trang
 `t.me/<username>` (kênh/nhóm/bot/người dùng/không tồn tại); chi tiết hồ sơ (`photo_url`,
 `save_photo`, dòng số điện thoại/ảnh/nhóm chung/lệnh bot, helper `_status_line` /
 `_usernames_of` / `_chat_row`); `--keyword` → `usernames` + `invite_links` và `--report`
-đọc lại được.
+đọc lại được. Các kỳ vọng điểm/group này thuộc rubric cũ; rubric kêu gọi hiện hành cho
+9 Normal / 3 Suspicious / 5 High-risk trên cùng 17 bài, nên fixture cần tạo lại khi cập
+nhật test, còn các test parser/HTML/profile vẫn giữ nguyên.
 
 Các test bổ sung trong [`tests/test_storage.py`](<../tests/test_storage.py>) dùng DB tạm và
 nguồn giả lập, không dùng phiên Telegram / DB thật: schema v4, WAL / khóa ngoại / quyền
@@ -758,19 +800,20 @@ hoặc file [`json_folder/tg_api.json`](<../json_folder/tg_api.json>). **Bot tok
 hoặc khóa `bot_token` trong [`json_folder/tg_api.json`](<../json_folder/tg_api.json>). [`tg_api.json`](<../json_folder/tg_api.json>) và file phiên
 **không được commit** (đã có trong [`.gitignore`](<../.gitignore>)).
 
-## Đánh giá RỦI RO ở mức GROUP (không chỉ từng bài đăng)
+## Đánh giá mức KÊU GỌI ở mức GROUP (không chỉ từng bài đăng)
 
-Yêu cầu chính khi thu thập lịch sử chat là trả lời câu hỏi *"cả nhóm này có phải lừa đảo
-không?"*, nên cả hai bản đều tính **điểm rủi ro cho từng group/kênh**, in ở mục **[5]**
-của báo cáo và lưu trong khóa `groups` của file JSON:
+Yêu cầu chính khi thu thập lịch sử chat là trả lời câu hỏi *"cả nhóm này có kêu gọi/kích
+động hành vi phạm pháp không?"*, nên cả hai bản đều tính **mức cho từng group/kênh**, in ở
+mục **[5]** của báo cáo và lưu trong khóa `groups` của file JSON. Ví dụ dưới đây lấy từ dữ
+liệu demo hiện hành, chỉ minh hoạ cấu trúc — không phải kết luận về nhóm thật:
 
 ```
 [5] ĐIỂM RỦI RO THEO GROUP/KÊNH
-    🔴 [ 81/100 | High-risk ] Đầu tư tài chính - Lợi nhuận 30%/tháng (@dautu.sieuloinhuan)
-        Có dấu hiệu lừa đảo — cần kiểm tra kỹ — 3 bài, điểm TB 59.7, cao nhất 71,
-        3 bài cần rà soát (100%)
-        Lý do: 3/3 bài (100%) ở mức cần rà soát; loại hình nổi bật: Đầu tư / lợi nhuận cao (3 bài);
-               có bài đạt 71/100 (High-risk); điểm trung bình 60/100
+    🔴 [ 100/100 | High-risk ] Nhóm kêu gọi hành động - Biên Hoà (@kichdong.bienhoa)
+        Có lời kêu gọi/kích động hành vi phạm pháp — cần xử lý ngay — 3 bài, điểm TB 96, cao nhất
+        100, 3 bài cần rà soát (100%)
+        Lý do: 3/3 bài (100%) ở mức cần rà soát; loại hình nổi bật: Kêu gọi bạo lực (2 bài); có bài
+               đạt 100/100 (High-risk); điểm trung bình 96/100
 ```
 
 Công thức điểm group (0–100):
@@ -779,13 +822,14 @@ Công thức điểm group (0–100):
 |---|---|---|
 | Điểm trung bình các bài | 60% | mức độ nặng trung bình của cả nhóm |
 | Mật độ bài cần rà soát | tối đa 25 | tỷ lệ Suspicious + High-risk trên tổng số bài |
-| Độ tập trung loại hình | tối đa 10 | cùng một loại lừa đảo lặp lại nhiều lần (mẫu số = **tổng số bài**) |
+| Độ tập trung loại hình | tối đa 10 | cùng một nhóm hành vi kêu gọi lặp lại nhiều lần (mẫu số = **tổng số bài**) |
 | Bài nặng nhất | tối đa 15 | bằng chứng nặng nhất trong nhóm |
 
-Kèm theo **lý do** (bao nhiêu bài bị gắn cờ, loại hình nổi bật, có spam lặp nội dung
-không) và `verdict`: *Có dấu hiệu lừa đảo* / *Nghi ngờ* / *Chưa thấy dấu hiệu bất thường*.
-Trong JSON còn có `levels`, `categories`, `flagged_ratio`, `repeat_top_text` (số nội dung
-khác nhau bị lặp ≥3 lần). Thứ tự `groups` là giảm dần theo `group_score`.
+Kèm theo **lý do** (bao nhiêu bài bị gắn cờ, nhóm hành vi nổi bật, có spam lặp nội dung
+không) và `verdict`: *Có lời kêu gọi/kích động hành vi phạm pháp — cần xử lý ngay* /
+*Cần xem xét: có dấu hiệu kêu gọi hành vi phạm pháp* / *Chưa thấy dấu hiệu kêu gọi hành vi
+phạm pháp*. Trong JSON còn có `levels`, `categories`, `flagged_ratio`, `repeat_top_text` (số
+nội dung khác nhau bị lặp ≥3 lần). Thứ tự `groups` là giảm dần theo `group_score`.
 
 Ghi chú về chữ "bài"/"tin": bản web dùng "bài", bản API/[`nhom1.json`](<../json_folder/nhom1.json>) dùng "tin" — đúng
 theo dữ liệu lịch sử đã lưu, đổi được qua tham số `noun`.
@@ -861,12 +905,16 @@ Hỗ trợ cả link mời mới (`t.me/+hash`) và cũ (`t.me/joinchat/hash`).
   **Ảnh → OCR** và **video → Whisper + OCR frame** có pipeline/evidence riêng, không
   tự bật khi thu thập hoặc ghi đè `pipeline_status` lịch sử. Hiểu cảnh cần model thị giác
   được cấu hình; OCR không thay vision. Xem [IMAGE_OCR](<IMAGE_OCR.md>).
-- Điểm số là heuristic theo từ khoá: bài tin tức thật vẫn có thể bị gắn cờ (chấm lại 1000
-  bài của [`nhom1.json`](<../json_folder/nhom1.json>) bằng code hiện tại còn **1 bài**, id 157495, 30 điểm Suspicious do
-  `công an` + link + forward) — luôn đọc `signals`/`reasons` để rà soát thủ công.
+- Điểm số là heuristic theo từ khoá và ngữ cảnh, nên vẫn có thể bỏ sót hoặc gắn cờ nhầm;
+  luôn đọc `signals`, `evidence`, `context` và `requires_review` để rà soát thủ công.
+  Mốc lịch sử trước khi đổi trọng tâm: chấm lại 1000 bài của
+  [`nhom1.json`](<../json_folder/nhom1.json>) bằng bộ từ khoá cũ còn 1 bài (id 157495,
+  30 điểm Suspicious do `công an` + link + forward); rubric kêu gọi chỉ cộng điểm mục tiêu
+  khi đã có nhóm hành động nên con số này không còn đại diện.
 - [`nhom1.json`](<../json_folder/nhom1.json>) là dữ liệu **lịch sử**: `analysis`/`groups` trong đó được tính bằng bộ từ
-  khoá cũ (trước khi siết `thuế` và khớp ranh giới từ), nên chấm lại sẽ ra số hơi khác.
-  [`posts_tg.json`](<../json_folder/posts_tg.json>) đã được tạo lại bằng code hiện tại.
+  khoá cũ và rubric lừa đảo trước đây, nên chấm lại sẽ ra số khác. [`posts_tg.json`](<../json_folder/posts_tg.json>)
+  cũng giữ `analysis` lịch sử; rubric kêu gọi hiện hành cho 9 Normal / 3 Suspicious /
+  5 High-risk trên cùng 17 bài, nên fixture cần được tạo lại khi cập nhật test.
 
 ## Tài liệu liên quan
 

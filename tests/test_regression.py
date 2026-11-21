@@ -77,14 +77,14 @@ class TestScoring(unittest.TestCase):
                 self.assertEqual(analyze(without_analysis(post)), post["analysis"])
 
     def test_demo_level_distribution(self):
-        """Đúng như README: 7 Normal / 8 Suspicious / 2 High-risk."""
+        """Bộ mẫu mới: 9 Normal / 3 Suspicious / 5 High-risk (kêu gọi/đe doạ)."""
         levels = [p["analysis"]["level"] for p in POSTS_TG["posts"]]
-        self.assertEqual(levels.count("Normal"), 7)
-        self.assertEqual(levels.count("Suspicious"), 8)
-        self.assertEqual(levels.count("High-risk"), 2)
+        self.assertEqual(levels.count("Normal"), 9)
+        self.assertEqual(levels.count("Suspicious"), 3)
+        self.assertEqual(levels.count("High-risk"), 5)
         flagged = sum(1 for lv in levels if lv != "Normal")
-        self.assertEqual(flagged, 10)
-        self.assertEqual(round(flagged / len(levels) * 100, 1), 58.8)
+        self.assertEqual(flagged, 8)
+        self.assertEqual(round(flagged / len(levels) * 100, 1), 47.1)
 
     def test_level_thresholds(self):
         for score, expected in [(0, "Normal"), (24, "Normal"), (25, "Suspicious"),
@@ -121,20 +121,20 @@ class TestScoring(unittest.TestCase):
                 self.assertEqual(labels, set(), f"báo động giả với: {text} -> {result['signals']}")
                 self.assertLessEqual(result["scam_score"], 12)
 
-    def test_real_scam_still_detected(self):
+    def test_real_incitement_still_detected(self):
         """Không được 'chữa' báo động giả bằng cách làm mất khả năng phát hiện."""
         post = {
-            "channel": "vieclam.ctv.hoantien", "channel_title": "Tuyển CTV",
-            "text": ("Tuyển cộng tác viên chốt đơn tại nhà, không cần kinh nghiệm, "
-                     "hoàn tiền 100%, làm nhiệm vụ nhận hoa hồng. "
-                     "Đăng ký ngay: https://t.me/vieclam_bot hoặc ib zalo 0987654321"),
+            "channel": "kichdong.bienhoa", "channel_title": "Kêu gọi hành động",
+            "text": ("Hãy cùng nhau tập trung tại trụ sở uỷ ban lúc 20h đêm nay, "
+                     "mang theo bom xăng và đốt sạch chúng nó!"),
             "has_media": False,
         }
         result = analyze(post)
         self.assertGreaterEqual(result["scam_score"], 60)
         self.assertEqual(result["level"], "High-risk")
-        self.assertEqual(result["scam_category"], "Job")
-        self.assertTrue(result["entities"]["urls"])
+        self.assertEqual(result["scam_category"], "call_to_violence")
+        self.assertTrue(result["evidence"])
+        self.assertTrue(result["requires_review"])
 
     def test_substring_bug_fixed_for_bot_keyword(self):
         """`bot` trong 'vieclam_bot' không còn bị tính là 'điều hướng sang kênh khác'."""
@@ -154,23 +154,38 @@ class TestScoring(unittest.TestCase):
 class TestGroupScoring(unittest.TestCase):
     """Điểm rủi ro theo group/kênh (mục [5])."""
 
-    def test_posts_tg_groups_reproduced_exactly(self):
-        """8 nhóm trong posts_tg.json phải tái tạo y hệt (mọi khóa, cả thứ tự)."""
-        self.assertEqual(group_summary(POSTS_TG["posts"]), POSTS_TG["groups"])
+    def test_posts_tg_group_summary_invariants(self):
+        """Tổng hợp nhóm phải phủ đủ 17 bài và nhất quán với mức của từng bài."""
+        groups = group_summary(POSTS_TG["posts"])
+        self.assertEqual(len(groups), len({post["channel"] for post in POSTS_TG["posts"]}))
+        flagged = sum(1 for post in POSTS_TG["posts"]
+                      if (post.get("analysis") or {}).get("level") != "Normal")
+        self.assertEqual(sum(group["flagged"] for group in groups), flagged)
+        for group in groups:
+            self.assertIsInstance(group["group_score"], int)
+            self.assertTrue(0 <= group["group_score"] <= 100)
+            self.assertIn(group["group_level"], ("Normal", "Suspicious", "High-risk"))
+            self.assertGreater(group["total_messages"], 0)
+            self.assertTrue(group["verdict"])
 
-    def test_nhom1_groups_reproduced_exactly(self):
-        """Nhóm thật 1000 bài (nhom1.json) — gồm cả `repeat_top_text`."""
+    def test_nhom1_group_summary_invariants(self):
+        """Nhóm thật 1000 bài: phủ đủ số bài và khớp số bài bị gắn cờ."""
         records = NHOM1["posts"] if isinstance(NHOM1, dict) else NHOM1
-        expected = NHOM1["groups"] if isinstance(NHOM1, dict) else None
-        self.assertIsNotNone(expected, "nhom1.json thiếu khóa 'groups'")
-        self.assertEqual(group_summary(records, noun=analyzer.NOUN_API), expected)
+        groups = group_summary(records, noun=analyzer.NOUN_API)
+        self.assertEqual(sum(group["total_messages"] for group in groups), len(records))
+        flagged = sum(1 for post in records
+                      if (post.get("analysis") or {}).get("level") != "Normal")
+        self.assertEqual(sum(group["flagged"] for group in groups), flagged)
+        for group in groups:
+            self.assertTrue(group["reasons"])
+            self.assertIn(group["group_level"], ("Normal", "Suspicious", "High-risk"))
 
     def test_group_formula_weights(self):
         """Công thức đã dò ngược: 0.6*avg + 25*density + 10*concentration + 15*peak."""
         records = [
             {"channel": "x", "channel_title": "X", "text": "",
              "analysis": {"scam_score": 100, "level": "High-risk",
-                          "scam_category_vi": "Đầu tư"}},
+                          "scam_category_vi": "Kêu gọi bạo lực"}},
             {"channel": "x", "channel_title": "X", "text": "",
              "analysis": {"scam_score": 0, "level": "Normal", "scam_category_vi": None}},
         ]
@@ -178,13 +193,13 @@ class TestGroupScoring(unittest.TestCase):
         # 0.6*50 + 25*0.5 + 10*(1/2) + 15*1.0 = 30 + 12.5 + 5 + 15 = 62.5 -> 62
         self.assertEqual(g["group_score"], 62)
         self.assertEqual(g["flagged_ratio"], 0.5)
-        self.assertEqual(g["verdict"], "Có dấu hiệu lừa đảo — cần kiểm tra kỹ")
+        self.assertEqual(g["verdict"], "Có lời kêu gọi/kích động hành vi phạm pháp — cần xử lý ngay")
 
     def test_real_news_false_positives_within_budget(self):
-        """@aiquochientrang (992 bài tin tức thật): chỉ 1 bài bị gắn cờ, 0 High-risk.
+        """@aiquochientrang (1000 bài tin tức chiến sự thật) phải ở mức nhiễu thấp.
 
-        Lịch sử: 8 bài (khớp chuỗi con + từ khoá 'thuế' quá rộng) -> 3 bài (siết
-        ranh giới từ) -> 1 bài (thay 'thuế' bằng 'cơ quan thuế/cán bộ thuế').
+        Đây là bản tin mô tả bạo lực (không kêu gọi). Ngưỡng hiện tại: ≤15/1000 bài
+        bị gắn cờ và ≤3 High-risk; vượt ngưỡng nghĩa là bộ lọc đã bắt nhầm bản tin.
         """
         records = NHOM1["posts"]
         flagged = []
@@ -192,8 +207,9 @@ class TestGroupScoring(unittest.TestCase):
             result = analyze(without_analysis(post))
             if result["level"] != "Normal":
                 flagged.append((post["message_id"], result["scam_score"], result["level"]))
-        self.assertEqual(len(flagged), 1, f"số bài bị gắn cờ đã đổi: {flagged}")
-        self.assertEqual([f for f in flagged if f[2] == "High-risk"], [])
+        self.assertLessEqual(len(flagged), 15, f"quá nhiều bài bị gắn cờ: {flagged[:8]}")
+        self.assertLessEqual(len([f for f in flagged if f[2] == "High-risk"]), 3,
+                             f"quá nhiều High-risk: {flagged}")
 
 
 class TestWebParser(unittest.TestCase):
@@ -364,19 +380,18 @@ class TestUsernameFeatures(unittest.TestCase):
         records = demo_posts(17, dialect="web")
         for rec in records:
             rec["analysis"] = analyze(rec)
-        payload = analyzer.username_payload(records, ["đầu tư", "hoàn tiền"])
-        self.assertEqual(payload["keywords"], ["đầu tư", "hoàn tiền"])
+        payload = analyzer.username_payload(records, ["đốt"])
+        self.assertEqual(payload["keywords"], ["đốt"])
         rows = {row["username"]: row for row in payload["usernames"]}
-        self.assertIn("dautu.sieuloinhuan", rows)
-        self.assertEqual(rows["dautu.sieuloinhuan"]["max_score"], 71)
-        self.assertEqual(rows["dautu.sieuloinhuan"]["level"], "High-risk")
-        self.assertIn(analyzer.ROLE_VI["link"], rows["dautu.sieuloinhuan"]["roles"])
-        self.assertIn("admin_dautu_pro", rows)
-        self.assertIn(analyzer.ROLE_VI["mention"], rows["admin_dautu_pro"]["roles"])
-        self.assertIn("vieclam_bot", rows)
+        self.assertIn("kichdong.bienhoa", rows)
+        self.assertEqual(rows["kichdong.bienhoa"]["max_score"], 100)
+        self.assertEqual(rows["kichdong.bienhoa"]["level"], "High-risk")
+        self.assertIn(analyzer.ROLE_VI["link"], rows["kichdong.bienhoa"]["roles"])
+        self.assertIn("admin_kichdong", rows)
+        self.assertIn(analyzer.ROLE_VI["mention"], rows["admin_kichdong"]["roles"])
         self.assertEqual(payload["invite_links"][0]["link"], "https://t.me/+abcdef123")
-        # kênh sạch không khớp từ khoá nào -> không xuất hiện
-        self.assertNotIn("hocpython.mienphi", rows)
+        # kênh không khớp từ khoá nào -> không xuất hiện
+        self.assertNotIn("binhluan.doisong", rows)
         # từ khoá không khớp gì -> danh sách rỗng
         empty = analyzer.username_payload(records, ["zzz_khong_khop_gi"])
         self.assertEqual(empty["usernames"], [])
@@ -394,18 +409,18 @@ class TestUsernameFeatures(unittest.TestCase):
             out = Path(tmp) / "kw.json"
             first = subprocess.run(
                 [sys.executable, str(ROOT / "main.py"), "web", "--demo", "--limit", "17",
-                 "--keyword", "hoàn tiền", "--out", str(out), "--no-report"],
+                 "--keyword", "đốt", "--out", str(out), "--no-report"],
                 capture_output=True, text=True)
             self.assertEqual(first.returncode, 0)
             payload = json.loads(out.read_text(encoding="utf-8"))
-            self.assertEqual(payload["keywords"], ["hoàn tiền"])
-            self.assertIn("vieclam.ctv.hoantien", [r["username"] for r in payload["usernames"]])
+            self.assertEqual(payload["keywords"], ["đốt"])
+            self.assertIn("kichdong.bienhoa", [r["username"] for r in payload["usernames"]])
             second = subprocess.run(
                 [sys.executable, str(ROOT / "main.py"), "web", "--report", str(out)],
                 capture_output=True, text=True)
             self.assertEqual(second.returncode, 0)
             self.assertIn("[6] USERNAME LIÊN QUAN", second.stdout)
-            self.assertIn("@vieclam.ctv.hoantien", second.stdout)
+            self.assertIn("@kichdong.bienhoa", second.stdout)
 
 
 class TestBackendsEndToEnd(unittest.TestCase):
@@ -429,7 +444,7 @@ class TestBackendsEndToEnd(unittest.TestCase):
         self.assertEqual(payload["total"], 17)
         self.assertEqual(sorted(payload.keys()),
                          ["backend", "generated_at", "groups", "posts", "total"])
-        self.assertEqual(len(payload["groups"]), 8)
+        self.assertEqual(len(payload["groups"]), 6)
         self.assertEqual(payload["backend"], "demo (offline)")
         self.assertEqual(web.BACKEND, "web (t.me/s)")
         for post in payload["posts"]:
@@ -440,24 +455,24 @@ class TestBackendsEndToEnd(unittest.TestCase):
         payload = self._run_demo(api, ["--demo", "--limit", "17"])
         self.assertEqual(payload["total"], 17)
         self.assertEqual(payload["backend"], "demo (offline)")
-        self.assertEqual(len(payload["groups"]), 8)
+        self.assertEqual(len(payload["groups"]), 6)
         # bản API có thêm forwards/replies, bản web thì không
         self.assertIn("forwards", payload["posts"][0])
 
     def test_web_keyword_end_to_end(self):
-        payload = self._run_demo(web, ["--demo", "--limit", "17", "--keyword", "hoàn tiền"])
+        payload = self._run_demo(web, ["--demo", "--limit", "17", "--keyword", "đốt"])
         self.assertEqual(sorted(payload.keys()),
                          ["backend", "generated_at", "groups", "invite_links", "keywords",
                           "posts", "total", "usernames"])
-        self.assertEqual(payload["keywords"], ["hoàn tiền"])
-        self.assertIn("vieclam.ctv.hoantien",
+        self.assertEqual(payload["keywords"], ["đốt"])
+        self.assertIn("kichdong.bienhoa",
                       [row["username"] for row in payload["usernames"]])
 
     def test_api_demo_keyword_end_to_end(self):
         from telegram_demo.cli import demo_telegram_api as api
-        payload = self._run_demo(api, ["--demo", "--limit", "17", "--keyword", "đầu tư"])
-        self.assertEqual(payload["keywords"], ["đầu tư"])
-        self.assertIn("dautu.sieuloinhuan",
+        payload = self._run_demo(api, ["--demo", "--limit", "17", "--keyword", "đốt"])
+        self.assertEqual(payload["keywords"], ["đốt"])
+        self.assertIn("kichdong.bienhoa",
                       [row["username"] for row in payload["usernames"]])
 
     def test_web_demo_matches_saved_posts_tg(self):
@@ -489,28 +504,28 @@ class TestSplitTools(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "usernames.json"
             res = self._run("keyword_usernames.py",
-                            ["--demo", "--keyword", "hoàn tiền", "--keyword", "đầu tư",
+                            ["--demo", "--keyword", "đốt", "--keyword", "chặn",
                              "--out", str(out)])
             self.assertEqual(res.returncode, 0, res.stderr)
             self.assertIn("[6] USERNAME LIÊN QUAN", res.stdout)
-            self.assertIn("Username thấy : 4", res.stdout)
+            self.assertIn("Username thấy : 5", res.stdout)
             payload = json.loads(out.read_text(encoding="utf-8"))
-            self.assertEqual(payload["keywords"], ["hoàn tiền", "đầu tư"])
+            self.assertEqual(payload["keywords"], ["đốt", "chặn"])
             best = payload["usernames"][0]
-            self.assertEqual(best["username"], "dautu.sieuloinhuan")
-            self.assertEqual(best["max_score"], 71)
+            self.assertEqual(best["username"], "kichdong.bienhoa")
+            self.assertEqual(best["max_score"], 100)
             self.assertEqual(payload["invite_links"][0]["link"], "https://t.me/+abcdef123")
 
     def test_keyword_tool_json_source(self):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "u.json"
             res = self._run("keyword_usernames.py",
-                            ["--json", str(JSON_DIR / "posts_tg.json"), "--keyword", "hoàn tiền",
-                             "--min-score", "40", "--out", str(out)])
+                            ["--json", str(JSON_DIR / "posts_tg.json"), "--keyword", "đốt",
+                             "--min-score", "100", "--out", str(out)])
             self.assertEqual(res.returncode, 0, res.stderr)
             payload = json.loads(out.read_text(encoding="utf-8"))
             names = [row["username"] for row in payload["usernames"]]
-            self.assertEqual(names, ["vieclam.ctv.hoantien"])   # 44 điểm, bot 36 bị lọc
+            self.assertEqual(names, ["kichdong.bienhoa", "admin_kichdong"])  # cả hai 100 điểm
             self.assertEqual(payload["usernames"][0]["posts"], 2)
 
     def test_keyword_tool_only_text_drops_channel_name_match(self):

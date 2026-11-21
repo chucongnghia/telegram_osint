@@ -62,7 +62,7 @@ Cách khác: bật `networkingMode=mirrored` trong `%UserProfile%\.wslconfig` r�
 | Tin nhắn | Tìm kiếm, lọc, phân trang; mở chi tiết nội dung, điểm heuristic và lịch sử Jev. Nhãn cũ sau khi text thay đổi được đánh dấu, không tính như kết quả hiện hành. |
 | Nguồn thu thập | Nguồn và số tin thực tế; mở danh sách tin của nguồn. |
 | Thu thập dữ liệu | Tìm nguồn theo từ khoá qua Telegram API, chọn nhiều nguồn, đặt số tin tối đa chung hoặc riêng từng nguồn; mỗi nguồn chạy một tác vụ có Jev bật sẵn. Watch chạy được vô hạn hoặc giới hạn theo phút. |
-| Phân loại Jev | Chọn giới hạn và chủ động gửi batch văn bản. Không tự gọi mô hình khi mở trang. |
+| Phân loại Jev | Chọn giới hạn và chủ động gửi batch văn bản. Nhãn thuộc bộ bảy nhãn kêu gọi/kích động hành vi phạm pháp; kết quả kèm mức và yêu cầu rà soát. Không tự gọi mô hình khi mở trang. |
 | Phân tích video | Xem/phát video trong `media/`, tải theo link, Whisper + OCR frame (mặc định bật), chọn ngôn ngữ auto; gọi Jev riêng. |
 | Phân tích ảnh | Chọn PNG/JPEG/WebP trong `media/`, OCR Việt/Anh cục bộ, xem original/evidence, Jev riêng với đồng ý partial/key. |
 | Tra cứu hồ sơ | Xem hồ sơ đã lưu, lookup hoặc tìm username bằng các CLI hiện có. |
@@ -84,7 +84,14 @@ DB picker liệt kê DB ứng dụng trong `data/`, bỏ qua bản backup và fi
 Tùy chọn **Thu cả group thảo luận của kênh** (bật mặc định) khiến mỗi kênh được lấy thêm tin từ group thảo luận gắn với nó — nhãn nguồn của các tin đó là group, kèm trường `linked_group_of` cho biết group thuộc kênh nào. Ngân sách Jev của mỗi nguồn là `min(1000, số tin)` request — 1000 là mức trần CLI, không phải chi phí tiền tệ; mỗi tác vụ vẫn xác nhận trước khi chạy và có thể phát sinh chi phí.
 
 - **Video:** cần FFmpeg và runtime Whisper riêng đã mô tả trong [VIDEO](<VIDEO.md>). Dashboard không tự tải model. Bản giao diện này hỗ trợ bỏ qua vision hoặc cấu hình vision cục bộ qua môi trường; không tự bật quyền gửi frame tới dịch vụ từ xa. Thiếu âm thanh/thị giác phải hiện rõ; `partial` không phải kết quả kiểm tra đầy đủ.
-- Điểm từ khoá, nhãn Jev và trạng thái xử lý là ba khái niệm riêng. Tin chưa phân loại không đồng nghĩa an toàn; nhãn không phải kết luận pháp lý hay xác suất gian lận đã hiệu chuẩn.
+- Điểm từ khoá, nhãn Jev và trạng thái xử lý là ba khái niệm riêng. Tin chưa phân loại không đồng nghĩa an toàn; nhãn không phải kết luận pháp lý hay xác suất đã hiệu chuẩn về hành vi phạm pháp.
+
+## Phạm vi và giới hạn
+
+- Dashboard làm việc trên dữ liệu công khai đã thu thập hoặc tác vụ do bạn chủ động chạy; không tự báo cáo, không gửi cảnh báo và không kết luận thay cơ quan có thẩm quyền.
+- Mức “Rủi ro cao”/“Cần xem xét” chỉ là tín hiệu hỗ trợ rà soát; mọi kết quả có `requires_review` và cần người có thẩm quyền duyệt trước khi dùng.
+- Phê bình hợp pháp (`criticism`) khác với kêu gọi hành động; nội dung tường thuật/cảnh báo bị hạ điểm và gắn `context="reporting"`, nên đọc `evidence`/`context` thay vì chỉ nhìn điểm.
+- Lịch sử phân loại và nhật ký tác vụ được lưu để audit; chạy lại tạo bản ghi mới thay vì ghi đè kết quả cũ.
 
 ## Giới hạn bản đầu
 

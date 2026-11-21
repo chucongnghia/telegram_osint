@@ -11,18 +11,31 @@ const date = (value) => {
   return Number.isNaN(parsed.getTime()) ? String(value) : parsed.toLocaleString('vi-VN');
 };
 const LABELS = Object.freeze({
-  scam_indicators: 'Có dấu hiệu lừa đảo',
-  advertising_unverified: 'Quảng cáo chưa xác minh',
-  reporting_warning: 'Tin tức / cảnh báo',
-  other: 'Nội dung khác',
-  insufficient_information: 'Thiếu thông tin',
+  call_to_violence: 'Kêu gọi bạo lực',
+  call_to_property_damage: 'Kêu gọi phá hoại tài sản',
+  obstruct_officials: 'Chống người thi hành công vụ',
+  call_against_state: 'Kêu gọi chống chính quyền',
+  threat: 'Đe doạ',
+  criticism: 'Phê bình / chính kiến (không phải kêu gọi)',
+  insufficient_information: 'Không đủ thông tin',
 });
+const LABEL_TONES = Object.freeze({
+  call_to_violence: 'danger',
+  call_to_property_damage: 'danger',
+  obstruct_officials: 'warning',
+  call_against_state: 'danger',
+  threat: 'danger',
+  criticism: 'blue',
+  insufficient_information: 'neutral',
+});
+const LEVEL_LABELS = Object.freeze({ 'High-risk': 'Rủi ro cao', Suspicious: 'Cần xem xét', Normal: 'Thông thường' });
+const levelLabel = (level) => LEVEL_LABELS[level] || level || 'Chưa chấm';
 const VIEWS = Object.freeze({
   overview: ['Tổng quan', 'Dữ liệu Telegram, trong một góc nhìn.'],
-  messages: ['Tin nhắn', 'Tìm nội dung, đối chiếu tín hiệu và xem kết quả phân loại.'],
+  messages: ['Tin nhắn', 'Tìm nội dung kêu gọi/kích động hành vi phạm pháp và xem tín hiệu cần người duyệt.'],
   sources: ['Nguồn dữ liệu', 'Các kênh và nhóm đã có trong cơ sở dữ liệu.'],
   collection: ['Thu thập dữ liệu', 'Chọn nguồn công khai và giới hạn trước khi bắt đầu.'],
-  classify: ['Phân loại với Jev', 'Đánh giá nội dung đã lưu với ngân sách yêu cầu rõ ràng.'],
+  classify: ['Phân loại với Jev', 'Phát hiện nội dung kêu gọi/kích động hành vi phạm pháp trong dữ liệu đã lưu; ngân sách yêu cầu rõ ràng.'],
   image: ['Ảnh và OCR', 'Đọc chữ trong ảnh cục bộ, đối chiếu bằng chứng và giữ riêng đánh giá Jev.'],
   video: ['Phân tích video', 'Đối chiếu lời nói, khung hình và các khoảng trống bằng chứng.'],
   profiles: ['Hồ sơ công khai', 'Tra cứu hồ sơ đã lưu hoặc gửi một lần tra cứu mới.'],
@@ -83,7 +96,7 @@ function labelBadge(label, status) {
   if (['error', 'failed'].includes(status)) return badge('Lỗi phân loại', 'danger');
   if (status === 'stale') return badge('Kết quả cũ · cần phân loại lại', 'warning');
   if (!label || !Object.hasOwn(LABELS, label)) return badge(status === 'skipped' ? 'Đã bỏ qua' : 'Chưa phân loại');
-  return badge(LABELS[label], label === 'scam_indicators' ? 'danger' : label === 'advertising_unverified' ? 'warning' : label === 'reporting_warning' ? 'blue' : 'neutral');
+  return badge(LABELS[label], LABEL_TONES[label] || 'neutral');
 }
 function demoBadge(namespace) { return namespace === 'demo' ? badge('Dữ liệu thử', 'blue') : ''; }
 function panel(title, subtitle, content, action = '') {
@@ -236,14 +249,14 @@ function messageRows(items) {
     <td data-label="Nguồn"><div class="source-name">${esc(message.channel || message.username || 'Không rõ nguồn')}</div><div class="source-meta">${esc(message.username ? `@${String(message.username).replace(/^@/, '')}` : '')} ${demoBadge(message.namespace)}</div></td>
     <td data-label="Nội dung" class="text-cell"><button type="button" class="row-button" data-action="message" data-id="${esc(message.id)}">${esc(String(message.text || '(Tin không có nội dung chữ)').slice(0, 150))}${String(message.text || '').length > 150 ? '…' : ''}</button></td>
     <td data-label="Jev">${labelBadge(message.label, message.classification_stale ? 'stale' : message.classification_status)}${message.classification_model ? `<div class="source-meta">${esc(message.classification_model)}</div>` : ''}</td>
-    <td data-label="Heuristic"><span class="risk-score">${number(message.score)}</span><div class="source-meta">${esc(message.level || 'Chưa chấm')}</div></td>
+    <td data-label="Heuristic"><span class="risk-score">${number(message.score)}</span><div class="source-meta">${esc(levelLabel(message.level))}</div></td>
     <td data-label="Thời gian" class="source-meta">${esc(date(message.posted_at || message.collected_at))}</td>
     <td data-label="Chi tiết"><button type="button" class="icon-button" data-action="message" data-id="${esc(message.id)}" aria-label="Xem chi tiết tin ${esc(message.id)}">${icon('arrow', 18)}</button></td>
   </tr>`).join('');
 }
 function messageTable(items) {
   if (!list(items).length) return empty('Chưa có tin nhắn phù hợp', 'Thử bộ lọc khác hoặc thu thập một nguồn công khai.', button('Thu thập dữ liệu', 'collect'));
-  return `<div class="table-wrap"><table class="data-table message-table"><thead><tr><th scope="col">Nguồn</th><th scope="col">Nội dung tin nhắn</th><th scope="col">Kết quả Jev</th><th scope="col">Heuristic</th><th scope="col">Thời gian</th><th scope="col"><span class="muted">Chi tiết</span></th></tr></thead><tbody>${messageRows(items)}</tbody></table></div>`;
+  return `<div class="table-wrap"><table class="data-table message-table"><thead><tr><th scope="col">Nguồn</th><th scope="col">Nội dung tin nhắn</th><th scope="col">Kết quả Jev</th><th scope="col">Heuristic</th><th scope="col">Thời gian</th><th scope="col"><span class="muted">Chi tiết</span></th></tr></thead><tbody>${messageRows(items)}</tbody></table></div><p class="hint">Nhãn Jev là tín hiệu cần người duyệt, không phải kết luận pháp lý.</p>`;
 }
 function dailyChart(daily) {
   const values = list(daily).map((item) => ({ day: String(item.day ?? ''), count: Math.max(0, Number(item.count) || 0) }));
@@ -271,8 +284,8 @@ async function renderOverview(signal) {
   const stats = [
     ['Tổng tin nhắn', counts.messages, 'Đã lưu trong SQLite', 'message'],
     ['Nguồn dữ liệu', counts.entities, 'Kênh, nhóm và hồ sơ đã lưu', 'sources'],
-    ['Jev đã phân loại', counts.classified, 'Kết quả phân loại đã ghi nhận', 'scan'],
-    ['Dấu hiệu lừa đảo', counts.scam_indicators, 'Theo nhãn Jev mới nhất · không phải kết luận', 'alert'],
+    ['Kết quả Jev', counts.classified, 'Kết quả phân loại đã ghi nhận', 'scan'],
+    ['Cần xem xét', counts.flagged, 'Tín hiệu cần người duyệt · không phải kết luận pháp lý', 'alert'],
   ].map(([label, value, meta, name]) => `<article class="stat-card"><div class="stat-label">${esc(label)}<span class="stat-icon">${icon(name)}</span></div><div class="stat-value">${number(value)}</div><div class="stat-meta">${esc(meta)}</div></article>`).join('');
   const sources = list(data.sources).slice(0, 5).map((source, index) => `<div class="source-row"><span class="avatar">${esc(String(source.title || source.username || '?').slice(0, 1).toLocaleUpperCase('vi'))}</span><div><button class="row-button source-name" type="button" data-action="source-messages" data-username="${esc(source.username || source.title || '')}">${esc(source.title || source.username || source.id)}</button><div class="source-meta">${esc(source.username ? `@${String(source.username).replace(/^@/, '')}` : source.kind || 'Nguồn đã lưu')}</div></div><div><strong>${number(source.message_count)}</strong><span class="source-meta"> tin nhắn</span></div><span class="muted">${String(index + 1).padStart(2, '0')}</span></div>`).join('');
   const runs = list(data.recent_runs).slice(0, 4).map((run) => `<div class="activity-row">${icon('clock', 18)}<div><div class="source-name">${esc(run.kind || run.command || sourceDisplay(run.source) || 'Lần thu thập')}</div><div class="source-meta">${esc(date(run.created_at || run.started_at))}</div></div>${run.status ? statusBadge(run.status) : badge(run.backend || 'Bản ghi đã lưu')}</div>`).join('');
@@ -299,8 +312,8 @@ async function renderMessages(signal) {
   const data = await api(`messages?${params}`, { signal });
   const total = Number(data.total) || 0, offset = Number(data.offset ?? params.get('offset')) || 0;
   const currentLabel = state.params.get('label') || '';
-  const tabs = [['', 'Tất cả'], ['scam_indicators', 'Dấu hiệu lừa đảo'], ['advertising_unverified', 'Quảng cáo'], ['reporting_warning', 'Cảnh báo']].map(([value, label]) => `<button type="button" class="filter-tab${currentLabel === value ? ' active' : ''}" data-action="label-filter" data-label="${value}" aria-pressed="${currentLabel === value}">${label}</button>`).join('');
-  return `<div class="section-stack">${panel('Kho tin nhắn', `${number(total)} tin nhắn phù hợp`, `<form id="messages-filter" class="toolbar" data-form="messages-filter">${field('messages-query', 'Tìm nội dung', textInput('messages-query', 'query', state.params.get('query') || '', 'type="search" maxlength="256" placeholder="Nội dung hoặc từ khóa"'))}${field('messages-username', 'Tên nguồn', textInput('messages-username', 'username', state.params.get('username') || '', 'maxlength="256" placeholder="@kenh"'))}${field('messages-label', 'Nhãn Jev', `<select id="messages-label" name="label">${selectOptions([['', 'Mọi nhãn'], ...Object.entries(LABELS), ['unclassified', 'Chưa phân loại'], ['error', 'Lỗi phân loại']], currentLabel)}</select>`)}${field('messages-level', 'Mức heuristic', `<select id="messages-level" name="level">${selectOptions([['', 'Mọi mức'], ['High-risk', 'Rủi ro cao'], ['Suspicious', 'Đáng chú ý'], ['Normal', 'Thông thường']], state.params.get('level') || '')}</select>`)}<button type="submit" class="btn btn--secondary">${icon('search', 18)} Lọc tin nhắn</button></form><div class="filter-tabs" aria-label="Bộ lọc nhãn Jev">${tabs}</div>${messageTable(data.items)}<div class="pagination"><span class="muted">${total ? `${number(offset + 1)}–${number(Math.min(offset + list(data.items).length, total))}` : '0'} / ${number(total)} tin nhắn</span><div class="quick-actions">${button('Trang trước', 'page', `data-offset="${Math.max(0, offset - 20)}"${offset === 0 ? ' disabled' : ''}`)}${button('Trang sau', 'page', `data-offset="${offset + 20}"${offset + 20 >= total ? ' disabled' : ''}`)}</div></div>`)}${info('Heuristic là điểm theo quy tắc. Nhãn Jev là đánh giá của mô hình. Cả hai không xác nhận một tài khoản hay cá nhân lừa đảo.')}</div>`;
+  const tabs = [['', 'Tất cả'], ...Object.entries(LABELS)].map(([value, label]) => `<button type="button" class="filter-tab${currentLabel === value ? ' active' : ''}" data-action="label-filter" data-label="${value}" aria-pressed="${currentLabel === value}">${label}</button>`).join('');
+  return `<div class="section-stack">${panel('Kho tin nhắn', `${number(total)} tin nhắn phù hợp`, `<form id="messages-filter" class="toolbar" data-form="messages-filter">${field('messages-query', 'Tìm nội dung', textInput('messages-query', 'query', state.params.get('query') || '', 'type="search" maxlength="256" placeholder="Nội dung hoặc từ khóa"'))}${field('messages-username', 'Tên nguồn', textInput('messages-username', 'username', state.params.get('username') || '', 'maxlength="256" placeholder="@kenh"'))}${field('messages-label', 'Nhãn Jev', `<select id="messages-label" name="label">${selectOptions([['', 'Mọi nhãn'], ...Object.entries(LABELS), ['unclassified', 'Chưa phân loại'], ['error', 'Lỗi phân loại']], currentLabel)}</select>`)}${field('messages-level', 'Mức heuristic', `<select id="messages-level" name="level">${selectOptions([['', 'Mọi mức'], ...Object.entries(LEVEL_LABELS)], state.params.get('level') || '')}</select>`)}<button type="submit" class="btn btn--secondary">${icon('search', 18)} Lọc tin nhắn</button></form><div class="filter-tabs" aria-label="Bộ lọc nhãn Jev">${tabs}</div>${messageTable(data.items)}<div class="pagination"><span class="muted">${total ? `${number(offset + 1)}–${number(Math.min(offset + list(data.items).length, total))}` : '0'} / ${number(total)} tin nhắn</span><div class="quick-actions">${button('Trang trước', 'page', `data-offset="${Math.max(0, offset - 20)}"${offset === 0 ? ' disabled' : ''}`)}${button('Trang sau', 'page', `data-offset="${offset + 20}"${offset + 20 >= total ? ' disabled' : ''}`)}</div></div>`)}${info('Heuristic là điểm theo quy tắc. Nhãn Jev là tín hiệu cần người duyệt, không phải kết luận pháp lý. Cả hai đều không xác nhận một cá nhân vi phạm pháp luật.')}</div>`;
 }
 async function renderSources(signal) {
   const data = await api('sources', { signal });
@@ -436,7 +449,7 @@ async function renderCollection() {
 }
 async function renderClassify(signal) {
   const data = await api('messages?limit=8&offset=0', { signal });
-  return `<div class="section-stack">${keyWarning()}${panel('Chọn nội dung phân loại', 'Chỉ gửi tin nhắn đã lưu. Dữ liệu thử bị loại trừ nếu chưa bật cho phép.', `<form id="classify-form" data-form="classify"><div class="form-grid">${field('classify-limit', 'Ngân sách yêu cầu tối đa', textInput('classify-limit', 'limit', 10, 'type="number" min="1" max="100" required'), 'Mỗi tin được chọn có thể tạo một yêu cầu mô hình; có thể phát sinh chi phí.')}${field('classify-query', 'Từ khóa nội dung', textInput('classify-query', 'query', '', 'type="search" maxlength="256"'))}${field('classify-username', 'Tên nguồn (tùy chọn)', textInput('classify-username', 'username', '', 'maxlength="100"'))}${check('classify-demo', 'include_demo', 'Cho phép phân loại dữ liệu thử')}${check('classify-recheck', 'recheck', 'Phân loại lại tin đã có kết quả')}</div>${formEnd('Gửi phân loại', 'Cần xác nhận gửi nội dung tới mô hình. Không bảo đảm một kết luận về cá nhân.')}</form>`)}${panel('Nội dung và nhãn mới nhất', 'Mỗi nhãn đi kèm trạng thái thực tế; chưa phân loại không được gán là an toàn.', messageTable(data.items), button('Mở kho tin nhắn', 'messages'))}</div>`;
+  return `<div class="section-stack">${keyWarning()}${panel('Chọn nội dung phân loại', 'Chỉ gửi tin nhắn đã lưu. Dữ liệu thử bị loại trừ nếu chưa bật cho phép.', `<form id="classify-form" data-form="classify"><div class="form-grid">${field('classify-limit', 'Ngân sách yêu cầu tối đa', textInput('classify-limit', 'limit', 10, 'type="number" min="1" max="100" required'), 'Mỗi tin được chọn có thể tạo một yêu cầu mô hình; có thể phát sinh chi phí.')}${field('classify-query', 'Từ khóa nội dung', textInput('classify-query', 'query', '', 'type="search" maxlength="256"'))}${field('classify-username', 'Tên nguồn (tùy chọn)', textInput('classify-username', 'username', '', 'maxlength="100"'))}${check('classify-demo', 'include_demo', 'Cho phép phân loại dữ liệu thử')}${check('classify-recheck', 'recheck', 'Phân loại lại tin đã có kết quả')}</div>${formEnd('Gửi phân loại', 'Cần xác nhận gửi nội dung tới mô hình. Nhãn là tín hiệu cần người duyệt, không phải kết luận pháp lý.')}</form>`)}${panel('Nội dung và nhãn mới nhất', 'Mỗi nhãn đi kèm trạng thái thực tế; chưa phân loại không được gán là an toàn.', messageTable(data.items), button('Mở kho tin nhắn', 'messages'))}</div>`;
 }
 async function renderProfiles(signal) {
   const query = state.params.get('query') || '';
@@ -726,7 +739,7 @@ async function openMessage(id, trigger) {
     if (revision !== state.drawerRevision || db !== state.db || !drawer.open) return;
     const message = data.message || {};
     const url = externalUrl(message.url);
-    content.innerHTML = `<div class="section-stack"><div><p class="section-heading">Tin nhắn #${esc(message.id || id)}</p><h2 id="message-detail-title">${esc(message.channel || message.username || 'Chi tiết nội dung')}</h2><div class="quick-actions">${demoBadge(message.namespace)}${labelBadge(message.label, message.classification_stale ? 'stale' : message.classification_status)}</div></div><div class="detail-text">${esc(message.text || '(Không có nội dung chữ)')}</div><dl class="meta-list"><dt>Username</dt><dd>${esc(message.username || '—')}</dd><dt>Đăng lúc</dt><dd>${esc(date(message.posted_at))}</dd><dt>Thu thập lúc</dt><dd>${esc(date(message.collected_at))}</dd><dt>Telegram message ID</dt><dd>${esc(message.message_id ?? '—')}</dd><dt>Heuristic (không phải Jev)</dt><dd>${number(message.score)} · ${esc(message.level || 'Chưa chấm')} · ${esc(message.heuristic_category || '')}</dd><dt>Mô hình Jev</dt><dd>${esc(message.classification_model || 'Chưa có')}</dd></dl>${url ? `<a class="btn btn--secondary" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${icon('external', 16)} Mở tin nhắn gốc</a>` : ''}${panel('Lịch sử phân loại Jev', 'Bản ghi từ cơ sở dữ liệu, không phải kết luận danh tính.', list(data.classifications).length ? list(data.classifications).map((classification) => `<div class="detail-block">${statusBadge(classification.status)} ${labelBadge(classification.label, classification.status)}<pre class="detail-text">${esc(pretty(classification))}</pre></div>`).join('') : '<p class="muted">Chưa có lịch sử phân loại.</p>')}${panel('Phân tích heuristic', 'Quy tắc và mô hình được giữ riêng.', `<pre class="detail-text">${esc(pretty(data.analyses || []))}</pre>`)}${data.entity ? panel('Nguồn đã lưu', '', `<pre class="detail-text">${esc(pretty(data.entity))}</pre>`) : ''}</div>`;
+    content.innerHTML = `<div class="section-stack"><div><p class="section-heading">Tin nhắn #${esc(message.id || id)}</p><h2 id="message-detail-title">${esc(message.channel || message.username || 'Chi tiết nội dung')}</h2><div class="quick-actions">${demoBadge(message.namespace)}${labelBadge(message.label, message.classification_stale ? 'stale' : message.classification_status)}</div></div><div class="detail-text">${esc(message.text || '(Không có nội dung chữ)')}</div><dl class="meta-list"><dt>Username</dt><dd>${esc(message.username || '—')}</dd><dt>Đăng lúc</dt><dd>${esc(date(message.posted_at))}</dd><dt>Thu thập lúc</dt><dd>${esc(date(message.collected_at))}</dd><dt>Telegram message ID</dt><dd>${esc(message.message_id ?? '—')}</dd><dt>Heuristic (không phải Jev)</dt><dd>${number(message.score)} · ${esc(levelLabel(message.level))} · ${esc(message.heuristic_category || '')}</dd><dt>Mô hình Jev</dt><dd>${esc(message.classification_model || 'Chưa có')}</dd></dl>${url ? `<a class="btn btn--secondary" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${icon('external', 16)} Mở tin nhắn gốc</a>` : ''}${panel('Lịch sử phân loại Jev', 'Bản ghi từ cơ sở dữ liệu; nhãn là tín hiệu cần người duyệt, không phải kết luận pháp lý.', list(data.classifications).length ? list(data.classifications).map((classification) => `<div class="detail-block">${statusBadge(classification.status)} ${labelBadge(classification.label, classification.status)}<pre class="detail-text">${esc(pretty(classification))}</pre></div>`).join('') : '<p class="muted">Chưa có lịch sử phân loại.</p>')}${panel('Phân tích heuristic', 'Quy tắc và mô hình được giữ riêng.', `<pre class="detail-text">${esc(pretty(data.analyses || []))}</pre>`)}${data.entity ? panel('Nguồn đã lưu', '', `<pre class="detail-text">${esc(pretty(data.entity))}</pre>`) : ''}</div>`;
     drawer.setAttribute('aria-labelledby', 'message-detail-title');
   } catch (error) { if (revision === state.drawerRevision) content.innerHTML = `<div role="alert">${info(error.message)}</div>`; }
 }

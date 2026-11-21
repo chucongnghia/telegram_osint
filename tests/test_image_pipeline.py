@@ -79,7 +79,7 @@ class ImagePipelineTests(unittest.TestCase):
         item = self.store.item(aid, True)
         self.store.save_judgment(item, batch_id=str(uuid.uuid4()), provider='fixture',
             model='fixture', backend_key=backend or tool_backend('jev-latest'), status=status,
-            label='other' if status == 'success' else None,
+            label='criticism' if status == 'success' else None,
             error_code='network' if status == 'error' else None)
         return item
 
@@ -247,7 +247,7 @@ class ImagePipelineTests(unittest.TestCase):
         aid = self.save()
         item = self.store.item(aid)
         kwargs = dict(batch_id=str(uuid.uuid4()), provider='test', model='fixture', backend_key='test',
-                      status='success', label='other')
+                      status='success', label='criticism')
         changed = copy.deepcopy(item); changed['source']['image_sha256'] = 'fake'
         with self.assertRaises(ValueError): self.store.save_judgment(changed, **kwargs)
         for invalid in ({'label': 'bogus'}, {'status': 'error'}, {'probabilities': {'other': 1}},
@@ -321,10 +321,10 @@ class ImagePipelineTests(unittest.TestCase):
 
     def test_cli_jev_no_lock_cache_full_precision_and_error_no_fallback(self):
         aid = self.save()
-        probs = {label: 0.025 for label in ip.LABELS}
-        probs['other'] = 0.9
+        probs = {label: 0.1 / (len(ip.LABELS) - 1) for label in ip.LABELS}
+        probs['criticism'] = 0.9
         answer = {'model': 'jev-fixture', 'answers': {'classification': {
-            'choice': 'other', 'probabilities': probs}}}
+            'choice': 'criticism', 'probabilities': probs}}}
         def ask(*args):
             self.assert_unlocked()
             return answer
@@ -356,7 +356,7 @@ class ImagePipelineTests(unittest.TestCase):
         self.assertEqual(request.stat().st_mode & 0o777, 0o600)
         self.assertEqual(self.cli('prepare', aid, '--out', request)[0], 2)
         manifest = json.loads(request.read_text())
-        output = 'Jev jev-1.14.0\nclassification: other (confidence: 0.99)'
+        output = 'Jev jev-1.14.0\nclassification: criticism (confidence: 0.99)'
         response = {'format': ip.RESULT_FORMAT, 'batch_id': manifest['batch_id'],
             'image_analysis_id': aid, 'evidence_sha256': manifest['item']['evidence_sha256'],
             'tool_output': output}

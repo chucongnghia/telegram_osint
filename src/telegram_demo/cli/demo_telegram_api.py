@@ -772,7 +772,7 @@ async def download_media(client, records: list[dict], media_dir: str, do_ocr: bo
 # ---------------------------------------------------------------------------
 # Dữ liệu mẫu offline cho --demo  ->  nay nằm ở analyzer.py (dùng chung 2 bản)
 # ---------------------------------------------------------------------------
-# analyzer.DEMO_ITEMS: 17 bài của 8 kênh (5 kênh lừa đảo + 3 kênh sạch).
+# analyzer.DEMO_ITEMS: 17 bài của 6 kênh (3 kênh kêu gọi/đe doạ + 3 kênh tin tức, cảnh báo).
 # Bản API thêm `forwards`/`replies`; bản web (t.me/s) thì không có 2 khóa này.
 
 def demo_posts(limit: int) -> list[dict]:
@@ -1514,7 +1514,7 @@ async def run_async(args) -> int:
 
 def _main() -> int:
     p = argparse.ArgumentParser(
-        description="Demo thu thập bài đăng Telegram qua API (Telethon) + chấm điểm lừa đảo.",
+        description="Demo thu thập bài đăng Telegram qua API (Telethon) + chấm mức kêu gọi hành vi phạm pháp.",
         formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__)
     p.add_argument("--demo", action="store_true",
                    help="chạy dữ liệu mẫu offline (không cần api_id/api_hash)")

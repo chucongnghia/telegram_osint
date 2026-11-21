@@ -1,9 +1,11 @@
-# Telegram Demo — thu thập và sàng lọc dấu hiệu lừa đảo
+# Telegram Demo — thu thập và sàng lọc nội dung kêu gọi hành vi phạm pháp
 
 Thu thập bài đăng Telegram, tìm username, xem hồ sơ và lưu lịch sử SQLite. Bộ chấm điểm
-heuristic dùng chung cho backend **web công khai** và **Telegram API (Telethon)**;
-phân loại văn bản bằng **Jev** chỉ chạy khi bạn bật `--jev` lúc thu thập hoặc gọi lệnh
-`classify` riêng. Mặc định không gửi nội dung tới Jev.
+heuristic dùng chung cho backend **web công khai** và **Telegram API (Telethon)** đánh giá
+**mức kêu gọi/kích động hành vi phạm pháp** (0–100, ba mức), kèm câu bằng chứng và cờ
+`requires_review`; phân loại văn bản bằng **Jev** dùng bảy nhãn hành vi, chỉ chạy khi bạn bật
+`--jev` lúc thu thập hoặc gọi lệnh `classify` riêng. Mặc định không gửi nội dung tới Jev.
+Đây là **tín hiệu hỗ trợ rà soát**, không phải kết luận pháp lý; người có thẩm quyền phải duyệt.
 
 ## Dashboard trên trình duyệt
 
@@ -14,7 +16,7 @@ python3 main.py dashboard --share           # chia sẻ WiFi/LAN (máy này vẫ
 ```
 
 **Telegram OSINT System** dùng dữ liệu SQLite thật: xem tin/nguồn/hồ sơ, thu thập và watch, phân loại
-Jev, ảnh/OCR, video và nhật ký tác vụ. Logo máy bay giấy riêng, không phải sản phẩm Telegram.
+Jev theo nhãn kêu gọi/kích động, ảnh/OCR, video và nhật ký tác vụ. Logo máy bay giấy riêng, không phải sản phẩm Telegram.
 Mở trang chỉ đọc dữ liệu; tác vụ mạng/mô hình cần bạn chủ động xác nhận. Server chỉ
 nghe trên máy cục bộ, không cần cài frontend dependencies.
 
@@ -139,7 +141,8 @@ link bình luận `?comment=...` không được hỗ trợ. Xem [chi tiết](<d
 │   ├── cli/                      # 11 CLI, gồm image, dashboard và download theo link
 │   ├── dashboard/                # HTML/CSS/JS, logo và font cục bộ
 │   ├── dashboard_service.py      # HTTP loopback, đọc DB và quản lý tác vụ
-│   ├── analyzer.py               # heuristic và xuất báo cáo dùng chung
+│   ├── analyzer.py               # heuristic mức kêu gọi và xuất báo cáo dùng chung
+│   ├── incitement.py             # rubric, nhãn và ngưỡng mức kêu gọi hành vi phạm pháp
 │   ├── storage.py                # SQLite, snapshot, truy vấn và sao lưu
 │   ├── paths.py                  # các đường dẫn mặc định neo ở gốc project
 │   ├── text_classifier.py        # rubric, cache và lịch sử Jev
@@ -169,10 +172,20 @@ Mặc định dữ liệu neo theo **gốc project**, không theo thư mục đa
 chọn có thư mục vẫn tương đối với **cwd người gọi**; tên JSON trần được đặt trong
 [json_folder](<json_folder/>). Danh sách kênh mẫu ở [channels.txt](<config/channels.txt>).
 
-## Quyền riêng tư và giới hạn
+## Phạm vi và giới hạn
 
-- Điểm heuristic và nhãn Jev chỉ hỗ trợ rà soát, **không phải kết luận lừa đảo/pháp lý**;
-  confidence không phải độ chính xác đã hiệu chuẩn.
+- Chỉ xử lý dữ liệu công khai mà bạn có quyền thu thập; dự án **không tự động báo cáo**,
+  không gửi cảnh báo và không kết luận thay cơ quan có thẩm quyền.
+- Điểm heuristic (0–100) và nhãn Jev chỉ là **tín hiệu hỗ trợ rà soát**, không phải kết luận
+  pháp lý; confidence không phải độ chính xác đã hiệu chuẩn. Mọi kết quả có `evidence`,
+  `requires_review` và `context` (`reporting`/`neutral`).
+- Phê bình, chính kiến hợp pháp (`criticism`) được tách khỏi lời kêu gọi hành động; nội dung
+  tường thuật/cảnh báo bị hạ điểm và gắn `context="reporting"`.
+- Lịch sử phân loại (batch, rubric, model, thời điểm) được lưu để audit; người duyệt có thẩm
+  quyền quyết định và có thể sửa/ghi đè khi xử lý — hệ thống không tự kết luận thay.
+
+## Quyền riêng tư và dữ liệu
+
 - Thu thập chỉ gọi Jev khi bật **`--jev`**; mặc định không gọi. API trực tiếp cần
   **TypeSafe API key riêng**, có thể tốn phí và gửi **chỉ văn bản** tới dịch vụ bên ngoài,
   không tự tải media/video hay gọi vision. Bridge công cụ DSH là nguồn kết quả khác,
@@ -180,10 +193,12 @@ chọn có thư mục vẫn tương đối với **cwd người gọi**; tên JS
 - [DB](<data/>) và [JSON](<json_folder/>) có thể chứa dữ liệu cá nhân, không mã hoá.
   Không chia sẻ [credential](<json_folder/tg_api.json>) hay [phiên Telethon](<sessions/>):
   ai có phiên có thể chiếm quyền tài khoản. Chỉ thu thập dữ liệu bạn được phép xử lý.
-- **467 test** thành công trong venv API; Python hệ thống chạy cùng suite với 2 test
-  cần Telethon được bỏ qua. Thêm 83 test cho OCR/ảnh/video/collector/dashboard;
-  contract frontend 10 route được kiểm tra bằng Node VM.
+- Suite hiện tại: **495 test** (venv API đạt toàn bộ; Python hệ thống bỏ qua 9 test cần
+  Telethon/thị giác). Mốc lịch sử trước khi đổi trọng tâm: **467 test** thành
+  công trong venv API, Python hệ thống chạy cùng suite với 2 test cần Telethon được bỏ qua;
+  khi đó có thêm 83 test cho OCR/ảnh/video/collector/dashboard và contract frontend 10 route
+  kiểm tra bằng Node VM.
   Suite không gọi API có phí/tải model; CLI → HTTP giả lập cục bộ → SQLite đã kiểm chứng,
   nhưng nhánh thu thập → Jev mới chưa thử với key thật.
   Chất lượng phân loại video thực tế **chưa đo**;
-  xem [kiểm thử](<docs/USAGE.md#chạy-test>) và [smoke video](<docs/VIDEO.md#6-kiểm-chứng-bản-triển-khai>).
+  xem [kiểm thử](<docs/USAGE.md#chạy-test>) và [smoke video](<docs/VIDEO.md#7-kiểm-chứng-bản-triển-khai>).

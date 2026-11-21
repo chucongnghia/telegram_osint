@@ -27,8 +27,8 @@ from telegram_demo.text_classifier import ClassifierStore, LABELS, MAX_TEXT_CHAR
 
 def response():
     return {"model": "resolved-model", "answers": {"classification": {
-        "type": "choice", "choice": "other", "confidence": 0.2,
-        "probabilities": {key: (1 if key == "other" else 0) for key in LABELS}}},
+        "type": "choice", "choice": "criticism", "confidence": 0.2,
+        "probabilities": {key: (1 if key == "criticism" else 0) for key in LABELS}}},
         "usage": {"input_tokens": 12, "output_tokens": 3},
         "extra": {"raw": "unaltered provider evidence"}}
 

@@ -63,7 +63,7 @@ class VideoPipelineTests(unittest.TestCase):
         item = self.store.item(aid, True)
         self.store.save_judgment(item, batch_id=str(uuid.uuid4()), provider='test', model='fixture',
             backend_key=backend or tool_backend('jev-latest'), status=status,
-            label='other' if status == 'success' else None,
+            label='criticism' if status == 'success' else None,
             error_code='network' if status == 'error' else None)
         return item
 
@@ -214,7 +214,7 @@ class VideoPipelineTests(unittest.TestCase):
     def test_cli_direct_judgment_cache_and_error_without_fallback(self):
         aid = self.save()
         answer = {'model': 'jev-fixture', 'answers': {'classification': {
-            'choice': 'other', 'probabilities': {label: float(label == 'other') for label in vp.LABELS}}}}
+            'choice': 'criticism', 'probabilities': {label: float(label == 'other') for label in vp.LABELS}}}}
         with patch('telegram_demo.jev_client.JevClient') as client:
             client.return_value.backend_key = 'test-direct'
             client.return_value.model = 'jev-latest'
@@ -239,7 +239,7 @@ class VideoPipelineTests(unittest.TestCase):
         manifest = json.loads(request.read_text())
         result.write_text(json.dumps({'format': vp.RESULT_FORMAT, 'batch_id': manifest['batch_id'],
             'video_analysis_id': aid, 'evidence_sha256': manifest['item']['evidence_sha256'],
-            'tool_output': 'Jev jev-1.14.0\nclassification: other (confidence: 0.99)'}))
+            'tool_output': 'Jev jev-1.14.0\nclassification: criticism (confidence: 0.99)'}))
         self.assertEqual(self.cli('apply', '--requests', request, '--results', result)[0], 0)
         self.assertEqual(self.cli('apply', '--requests', request, '--results', result)[0], 0)
         self.assertEqual(self.db.stats()['video_classifications'], 1)
@@ -267,7 +267,7 @@ class VideoPipelineTests(unittest.TestCase):
                     text_store = ClassifierStore(migrated)
                     item = text_store.candidates(backend_key='legacy', limit=1)[0]
                     text_store.save(item, batch_id=str(uuid.uuid4()), provider='fixture', model='fixture',
-                                    backend_key='legacy', status='success', label='other')
+                                    backend_key='legacy', status='success', label='criticism')
                 migrated.conn.execute('DROP TABLE video_classifications')
                 migrated.conn.execute('DROP TABLE video_analyses')
                 if version == 1:

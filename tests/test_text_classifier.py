@@ -28,8 +28,8 @@ from telegram_demo.text_classifier import (ClassifierStore, LABELS, MAX_TEXT_CHA
 
 TOOL_OUTPUT = ("Jev jev-1.14.0 (requested alias jev-latest resolved to this version), 123 input tokens. "
                "Probabilities are not calibrated.\n\n"
-               "classification: scam_indicators (highest probability, confidence 0.987)\n"
-               "    distribution: scam_indicators 0.987 / other 0.013")
+               "classification: call_to_violence (highest probability, confidence 0.987)\n"
+               "    distribution: call_to_violence 0.987 / criticism 0.013")
 
 
 def post(mid, text="Cam kết lãi 30% mỗi ngày. Chuyển tiền ngay.", **fields):
@@ -56,7 +56,7 @@ class ClassifierTests(unittest.TestCase):
 
     def save(self, item=None, **changes):
         params = dict(batch_id="test-batch", provider="test-jev", model="jev-1.14.0",
-                      backend_key=self.backend, status="success", label="scam_indicators",
+                      backend_key=self.backend, status="success", label="call_to_violence",
                       response={"test": True})
         params.update(changes)
         return self.store.save(item or self.item(), **params)
@@ -80,14 +80,16 @@ class ClassifierTests(unittest.TestCase):
 
     def test_rubric_covers_context_and_prompt_injection(self):
         self.assertEqual(set(QUESTIONS["classification"]["criteria"]), set(LABELS))
-        self.assertIn("dữ liệu không đáng tin", QUESTIONS["classification"]["instructions"])
-        self.assertIn("không xác minh", QUESTIONS["classification"]["instructions"])
+        instructions = QUESTIONS["classification"]["instructions"]
+        self.assertIn("không suy đoán", instructions)
+        self.assertIn("HÀNH ĐỘNG", instructions)
+        self.assertNotIn("lừa đảo", instructions)
         self.assertEqual(len(RUBRIC_VERSION.split(":")[-1]), 64)
 
     def test_preserves_heuristic_and_original_run(self):
         self.save()
         row = self.store.results()[0]
-        self.assertEqual(row["label"], "scam_indicators")
+        self.assertEqual(row["label"], "call_to_violence")
         self.assertEqual(row["rubric"], QUESTIONS)
         self.assertEqual(row["input_text"], self.payload["posts"][0]["text"])
         self.assertEqual(self.db.payload(self.run_id), self.payload)
@@ -134,7 +136,7 @@ class ClassifierTests(unittest.TestCase):
 
     def test_results_filters_bound(self):
         self.save()
-        self.assertEqual(len(self.store.results(label="scam_indicators", status="success")), 1)
+        self.assertEqual(len(self.store.results(label="call_to_violence", status="success")), 1)
         self.assertEqual(self.store.results(label="' OR 1=1 --"), [])
 
     def test_schema_v1_migration_preserves_payload(self):
@@ -240,7 +242,7 @@ class ClassifierTests(unittest.TestCase):
         self.assertEqual(self.db.stats()["message_classifications"], 1)
 
     def test_invalid_tool_output_rejected(self):
-        for output in ("", "made up", TOOL_OUTPUT.replace("scam_indicators (", "unlisted ("), TOOL_OUTPUT + "\nclassification: other (highest probability)"):
+        for output in ("", "made up", TOOL_OUTPUT.replace("call_to_violence (", "unlisted ("), TOOL_OUTPUT + "\nclassification: criticism (highest probability)"):
             with self.assertRaises(ValueError):
                 cli.parse_tool_output(output)
 
@@ -258,15 +260,15 @@ class ClassifierTests(unittest.TestCase):
 
     def test_cli_results_json(self):
         self.save()
-        code, out, err = self.call("results", "--label", "scam_indicators")
+        code, out, err = self.call("results", "--label", "call_to_violence")
         self.assertEqual((code, err), (0, ""))
-        self.assertEqual(json.loads(out)[0]["label"], "scam_indicators")
+        self.assertEqual(json.loads(out)[0]["label"], "call_to_violence")
 
     def test_direct_api_success_and_resume(self):
         from telegram_demo.jev_client import JevClient
         response = {"model": "jev-1.14.0", "answers": {"classification": {
-            "type": "choice", "choice": "scam_indicators", "confidence": 0.9,
-            "probabilities": {key: (0.9 if key == "scam_indicators" else 0.025) for key in LABELS}}},
+            "type": "choice", "choice": "call_to_violence", "confidence": 0.9,
+            "probabilities": {key: (0.9 if key == "call_to_violence" else 0.1 / (len(LABELS) - 1)) for key in LABELS}}},
             "usage": {"input_tokens": 100, "output_tokens": 10}}
         with patch.object(JevClient, "ask", return_value=response) as ask:
             self.assertEqual(self.call("run", "--model", "jev-latest")[0], 0)
@@ -274,7 +276,7 @@ class ClassifierTests(unittest.TestCase):
             self.assertEqual(self.call("run", "--model", "jev-latest")[0], 0)
             self.assertEqual(ask.call_count, 1)
         row = self.store.results()[0]
-        self.assertEqual(row["probabilities"]["scam_indicators"], 0.9)
+        self.assertEqual(row["probabilities"]["call_to_violence"], 0.9)
         self.assertEqual(row["response"]["requested_model"], "jev-latest")
 
     def test_direct_api_failure_stored_no_fallback_and_retry_possible(self):
@@ -300,8 +302,8 @@ class ClassifierTests(unittest.TestCase):
         from telegram_demo.jev_client import JevClient
         self.db.save_payload({"posts": [post(2, "a" * (MAX_TEXT_CHARS + 1))]})
         response = {"model": "jev-1.14.0", "answers": {"classification": {
-            "type": "choice", "choice": "other", "confidence": 1.0,
-            "probabilities": {key: float(key == "other") for key in LABELS}}},
+            "type": "choice", "choice": "criticism", "confidence": 1.0,
+            "probabilities": {key: float(key == "criticism") for key in LABELS}}},
             "usage": {"input_tokens": 100, "output_tokens": 10}}
         with patch.object(JevClient, "ask", return_value=response) as ask:
             self.assertEqual(self.call("run", "--limit", "1")[0], 1)

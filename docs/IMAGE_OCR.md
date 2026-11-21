@@ -4,7 +4,8 @@ OCR đọc chữ, không hiểu trọn vẹn bối cảnh hình ảnh. Project t
 
 1. **OCR cục bộ:** Tesseract đọc chữ tiếng Việt/Anh, giữ văn bản thô, từng từ, vị trí và điểm engine.
 2. **Thị giác ngữ nghĩa, tuỳ chọn:** Gemini hoặc API OpenAI-compatible/local Qwen-VL mô tả cảnh. Phải cấu hình model; API từ xa cần đồng ý gửi ảnh riêng.
-3. **Jev, tuỳ chọn:** phân loại evidence văn bản thành năm nhãn. Không trực tiếp nhận file ảnh/MP4 và không tự chạy chỉ vì bạn bật OCR.
+3. **Jev, tuỳ chọn:** phân loại evidence văn bản thành một trong bảy nhãn kêu gọi/kích động
+   hành vi phạm pháp. Không trực tiếp nhận file ảnh/MP4 và không tự chạy chỉ vì bạn bật OCR.
 
 Không có chữ, OCR rỗng hoặc `partial` **không có nghĩa nội dung an toàn**. Điểm Tesseract 0–100 không phải xác suất chính xác hay điểm rủi ro.
 
@@ -151,6 +152,17 @@ Panel **Cài đặt → Kết nối mô hình**: chọn provider `gemini`, nhậ
 
 UI không nhận đường dẫn tuỳ ý ngoài `media`, không upload file từ trình duyệt, không tự tải model hoặc cấp quyền API thị giác từ xa. Xem [dashboard](<DASHBOARD.md>).
 
+## Phạm vi và giới hạn
+
+- Chỉ xử lý ảnh/video công khai mà bạn được phép; không tự báo cáo hay kết luận thay cơ quan
+  có thẩm quyền.
+- OCR/vision chỉ tạo evidence; nhãn Jev là tín hiệu hỗ trợ rà soát, có `requires_review` và
+  cần người có thẩm quyền duyệt.
+- Nhãn `criticism` (phê bình hợp pháp) được tách khỏi kêu gọi; nội dung tường thuật/cảnh báo
+  bị hạ điểm và gắn `context="reporting"`.
+- Lịch sử phân loại/rubric/evidence được lưu để audit; `--recheck` tạo bản ghi mới thay vì
+  ghi đè kết quả cũ.
+
 ## Giới hạn và lưu trữ
 
 - Ảnh tĩnh PNG/JPEG/WebP, tối đa 20 MiB/20 megapixel; từ chối ảnh động, symlink, URL, PDF, GIF/BMP/TIFF. Xác minh hash và source không đổi; EXIF rotation được chuẩn hoá.
@@ -167,4 +179,8 @@ UI không nhận đường dẫn tuỳ ý ngoài `media`, không upload file t�
 - Bằng chứng thật ở DB riêng [ocr-verification.sqlite3](<../data/ocr-verification.sqlite3>), không chèn dữ liệu test vào DB production. Không tạo nhãn Jev giả; không gọi lại plugin đang lỗi 401. Vision API/Gemini chưa chạy thật do chưa có cấu hình/key.
 - Dashboard chạy thật qua worker CLI: `image_analyze` trả `succeeded`/exit 0, OCR Tesseract thật và `/api/images` đọc được text; `video_analyze` (OCR + Whisper auto, skip vision) cũng `succeeded`/exit 0 và lưu `partial`. Lần chạy đầu phát hiện lệch cờ `--ocr-timeout` (CLI chỉ có `--timeout`), đã sửa và thêm test đưa argv dashboard qua parser `image` thật.
 - Cấu hình vision qua HTTP: provider OpenAI-compatible loopback (fixture `127.0.0.1:18765`) → `image_analyze` với `vision: true` trả `succeeded`, analysis `ready`, có `description`/`ocr_text`; **không cần key**. Lưu Gemini (key giả) → 200, `vision_remote true`; job thiếu consent bị chặn `409 consent_required`; `clear_vision` xoá cấu hình. Không có request nào tới Google, không dùng key thật.
-- Toàn bộ suite: **452 test** đạt trong venv API; Python hệ thống bỏ qua 1 test Telethon. Test gồm mock subprocess/HTTP, migration cũ, frame/hash/EXIF, giới hạn, lỗi giữ evidence, batch prevalidation, collector nonblocking và dashboard. Node kiểm tra 10 route/forms/escaping/consent; không đo chất lượng OCR/ASR/vision/Jev.
+- **495 test** ở lần chạy gần nhất (venv API đạt toàn bộ; Python hệ thống bỏ qua 9 test cần Telethon/thị giác); backend đã thêm test rubric
+  kêu gọi). Mốc lịch sử trước khi đổi trọng tâm: **452 test** đạt trong venv API; Python hệ
+  thống bỏ qua 1 test Telethon. Test gồm mock subprocess/HTTP, migration cũ, frame/hash/EXIF,
+  giới hạn, lỗi giữ evidence, batch prevalidation, collector nonblocking và dashboard. Node
+  kiểm tra 10 route/forms/escaping/consent; không đo chất lượng OCR/ASR/vision/Jev.

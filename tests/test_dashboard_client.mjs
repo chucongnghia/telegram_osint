@@ -35,7 +35,7 @@ const document = {
 const hostile = '\"><script id=pwn>alert(1)</script><img src=x onerror=alert(1)>';
 const message = {
   id: 1, channel: hostile, username: 'fixture', text: hostile, namespace: 'demo',
-  label: 'scam_indicators', classification_status: 'success', classification_stale: true,
+  label: 'criticism', classification_status: 'success', classification_stale: true,
   classification_model: hostile, score: 29, level: 'High-risk', url: 'javascript:alert(1)',
 };
 const fixtures = {
@@ -44,7 +44,7 @@ const fixtures = {
     active_database: 'fixture.db', config: { jev_configured: false, sessions: [] }, jobs: [],
   },
   overview: {
-    counts: { messages: 1, entities: 1, classified: 0, scam_indicators: 0 },
+    counts: { messages: 1, entities: 1, classified: 0, flagged: 0 },
     daily: [{ day: '2026-11-17', count: 1 }],
     sources: [{ title: hostile, username: 'fixture', message_count: 1 }],
     recent_messages: [message], recent_runs: [{ source: hostile, backend: 'web' }],
@@ -112,9 +112,32 @@ for (const name of ['Overview', 'Messages', 'Sources', 'Collection', 'Classify',
   const attributeNamesOnly = html.replace(/"[^"]*"|'[^']*'/g, '""');
   assert(!/<[^>]*\son(?:click|error)\s*=/i.test(attributeNamesOnly), `${name} has no inline event attributes`);
   assert(!html.includes('https://evil.invalid'), `${name} rejects external media`);
+  assert(!html.includes('scam_indicators'), `${name} does not expose the legacy scam label key`);
   console.log(`PASS render ${name}`);
 }
 assert(rendered.Messages.includes('class="data-table message-table"'), 'message table exposes mobile-specific class');
+const newLabels = [
+  'Kêu gọi bạo lực',
+  'Kêu gọi phá hoại tài sản',
+  'Chống người thi hành công vụ',
+  'Kêu gọi chống chính quyền',
+  'Đe doạ',
+  'Phê bình / chính kiến (không phải kêu gọi)',
+  'Không đủ thông tin',
+];
+const labelSelectHtml = rendered.Messages.match(/<select id="messages-label"[^>]*>([\s\S]*?)<\/select>/)?.[1] || '';
+const labelTabsHtml = rendered.Messages.match(/<div class="filter-tabs" aria-label="Bộ lọc nhãn Jev">([\s\S]*?)<\/div>/)?.[1] || '';
+assert(labelSelectHtml && labelTabsHtml, 'Jev label filter controls render');
+for (const label of newLabels) {
+  assert(labelSelectHtml.includes(label), `Jev label select contains ${label}`);
+  assert(labelTabsHtml.includes(label), `Jev label tabs contain ${label}`);
+}
+assert(!labelSelectHtml.includes('scam_indicators') && !labelTabsHtml.includes('scam_indicators'),
+  'legacy scam label is absent from the Jev label filters');
+assert(rendered.Overview.includes('Kết quả Jev') && rendered.Overview.includes('Cần xem xét'),
+  'overview uses the new Jev card labels');
+assert(!rendered.Overview.includes('Dấu hiệu lừa đảo'), 'overview no longer shows the old scam card');
+console.log('PASS Jev label filters expose all seven incitement labels');
 assert.deepEqual([...client.messageRows([message]).matchAll(/<td\b[^>]*data-label="([^"]+)"/g)].map(match => match[1]),
   ['Nguồn', 'Nội dung', 'Jev', 'Heuristic', 'Thời gian', 'Chi tiết']);
 for (const [value, expected] of [
@@ -198,8 +221,13 @@ assert(client.ocrDetails({ status: 'success', text: '', words: [] }).includes('k
 console.log('PASS image/video OCR details, partial gaps, defaults, field allowlists, and constrained languages');
 assert(client.messageRows([message]).includes('&lt;script id=pwn&gt;'));
 assert(client.messageRows([message]).includes('Kết quả cũ'));
-assert(!client.messageRows([message]).includes('Có dấu hiệu lừa đảo'));
-assert(!client.labelBadge('scam_indicators', 'stale').includes('Có dấu hiệu lừa đảo'));
+assert(client.messageRows([message]).includes('Rủi ro cao'), 'heuristic level is translated for display');
+assert(!client.messageRows([message]).includes('scam_indicators'));
+assert(!client.labelBadge('scam_indicators', 'success').includes('scam_indicators'), 'legacy label keys do not leak');
+assert(client.labelBadge('criticism', 'success').includes('Phê bình / chính kiến (không phải kêu gọi)'),
+  'criticism label renders with its Vietnamese name');
+assert(client.messageRows([{ ...message, classification_stale: false }]).includes('Phê bình / chính kiến (không phải kêu gọi)'),
+  'criticism badge appears in message rows');
 assert(client.labelBadge(null, 'error').includes('Lỗi phân loại'));
 assert(client.labelBadge(null).includes('Chưa phân loại'));
 assert(!client.labelBadge(null).includes('an toàn'));
@@ -690,7 +718,7 @@ console.log('PASS two selected sources submit two collect jobs with capped Jev b
 
 client.state.collectSources = [];
 client.state.searchResults = [
-  { run_id: 1, username: 'evil', title: hostile, kind: 'channel', telegram_id: 111, keywords: [hostile, 'lừa đảo'] },
+  { run_id: 1, username: 'evil', title: hostile, kind: 'channel', telegram_id: 111, keywords: [hostile, 'kích động'] },
   { run_id: 1, username: '', title: 'ID only', kind: 'chat', telegram_id: 222, keywords: [] },
   { run_id: 1, username: 'unknown-kind', title: 'Other', kind: 'mystery', telegram_id: 333, keywords: ['a'] },
   { run_id: 1, username: 'EVIL', title: 'Bản trùng', kind: 'channel', telegram_id: 444, keywords: [] },
@@ -705,7 +733,7 @@ assert(hostileResults.includes('name="source-pick"'));
 assert(hostileResults.includes('@evil'));
 assert(hostileResults.includes('#222'), 'missing username falls back to the telegram id');
 assert(hostileResults.includes('Kênh') && hostileResults.includes('Nhóm') && hostileResults.includes('Không rõ'));
-assert(hostileResults.includes('lừa đảo'), 'keywords are joined for display');
+assert(hostileResults.includes('kích động'), 'keywords are joined for display');
 assert(hostileResults.includes('data-action="collect-add"'));
 const dedupeAdded = client.addCollectSources([{ username: '@Same', title: 'first' }, { username: 'same', title: 'second' }, { username: 'other', title: 'third' }], 42);
 assert.equal(dedupeAdded, 2, 'username dedupe keeps the first occurrence');

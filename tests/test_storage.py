@@ -264,7 +264,7 @@ class TestSQLiteCLI(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
         stats = self.cli("database.py", "stats")
         self.assertEqual(json.loads(stats.stdout)["runs"], 1)
-        rows = self.cli("database.py", "messages", "--keyword", "loi nhuan")
+        rows = self.cli("database.py", "messages", "--keyword", "tru so")
         self.assertTrue(json.loads(rows.stdout))
         exported = Path(self.tmp.name) / "export.json"
         result = self.cli("database.py", "export", "1", "--out", exported)

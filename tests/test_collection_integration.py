@@ -37,8 +37,8 @@ from telegram_demo.text_classifier import LABELS, QUESTIONS
 
 def answer():
     return {"model": "offline-resolved-model", "answers": {"classification": {
-        "type": "choice", "choice": "other", "confidence": 1.0,
-        "probabilities": {key: float(key == "other") for key in LABELS}}}}
+        "type": "choice", "choice": "criticism", "confidence": 1.0,
+        "probabilities": {key: float(key == "criticism") for key in LABELS}}}}
 
 
 def post(mid, text=None):
@@ -334,7 +334,7 @@ class TestCollectorCLIIntegration(IntegrationCase):
         self.assertEqual(self.count("analyses"), 1)
         result = self.sql("SELECT input_text,response_json,status,label FROM message_classifications")[0]
         self.assertEqual(result["status"], "success")
-        self.assertEqual(result["label"], "other")
+        self.assertEqual(result["label"], "criticism")
         self.assertNotEqual(json.loads(result["response_json"])["collection_run_id"], old)
         self.assertEqual(self.payload()["posts"][0]["text"], "New web message")
 

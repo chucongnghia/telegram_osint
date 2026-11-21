@@ -575,8 +575,9 @@ class DashboardApp:
                 WHERE c.status='success' AND c.input_text=m.text AND c.id=(SELECT MAX(c2.id) FROM message_classifications c2 WHERE c2.message_row_id=c.message_row_id)
                 AND c.message_row_id IS NOT NULL GROUP BY label ORDER BY count DESC,label""")]
         counts["classified"] = sum(r["count"] for r in labels)
-        counts["scam_indicators"] = sum(r["count"] for r in labels if r["label"] == "scam_indicators")
-        counts["flagged"] = conn.execute("SELECT COUNT(*) FROM analyses a WHERE a.score>=25 AND a.run_id=(SELECT MAX(a2.run_id) FROM analyses a2 WHERE a2.message_id=a.message_id)").fetchone()[0]
+        flagged_labels = {"call_to_violence", "call_to_property_damage", "obstruct_officials",
+                          "call_against_state", "threat"}
+        counts["flagged"] = sum(r["count"] for r in labels if r["label"] in flagged_labels)
         counts["image_analyses"] = conn.execute("SELECT COUNT(*) FROM image_analyses").fetchone()[0] if "image_analyses" in tables else 0
         counts["video_analyses"] = conn.execute("SELECT COUNT(*) FROM video_analyses").fetchone()[0] if "video_analyses" in tables else 0
         daily_rows = conn.execute("SELECT date(COALESCE(posted_at,collected_at)) AS day,COUNT(*) AS count FROM messages WHERE date(COALESCE(posted_at,collected_at)) IS NOT NULL GROUP BY day ORDER BY day DESC LIMIT 14").fetchall()
