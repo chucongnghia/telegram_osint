@@ -480,8 +480,14 @@ function classifyMessageParams(id) {
 }
 function classifyFiltersParams(filters = {}) {
   const limit = Math.max(1, Math.min(100, Number(filters.limit) || 10));
+  const sizes = [20, 50, 100];
+  const requested = Number(filters.page_size) || 20;
+  const pageSize = sizes.includes(requested) ? requested : 20;
+  const offset = Math.max(0, Number(filters.offset) || 0);
   return {
     limit,
+    page_size: pageSize,
+    offset,
     query: String(filters.query || '').slice(0, 256),
     username: String(filters.username || '').slice(0, 100),
     include_demo: Boolean(filters.include_demo),
@@ -503,7 +509,7 @@ function classifyTable(items) {
 async function renderClassify(signal) {
   const filters = state.classifyFilters || (state.classifyFilters = {});
   const params = classifyFiltersParams(filters);
-  const query = new URLSearchParams({ limit: '50', label: 'unclassified' });
+  const query = new URLSearchParams({ label: 'unclassified', limit: String(params.page_size), offset: String(params.offset) });
   if (params.query) query.set('query', params.query);
   if (params.username) query.set('username', params.username);
   const [data, sources] = await Promise.all([
@@ -517,10 +523,11 @@ async function renderClassify(signal) {
     ${field('classify-query', 'Tìm trong tin nhắn', textInput('classify-query', 'query', params.query, 'type="search" maxlength="256" placeholder="Nội dung cần rà soát…"'))}
     ${field('classify-username', 'Lọc theo nguồn', `<select id="classify-username" name="username">${selectOptions(options, params.username)}</select>`)}
     ${field('classify-limit', 'Số tin phân loại mỗi lần', textInput('classify-limit', 'limit', params.limit, 'type="number" min="1" max="100" required'), 'Mỗi tin có thể tạo một yêu cầu mô hình; có thể phát sinh chi phí.')}
+    ${field('classify-page-size', 'Số dòng mỗi trang', `<select id="classify-page-size" name="page_size">${selectOptions([['20', '20 dòng'], ['50', '50 dòng'], ['100', '100 dòng']], String(params.page_size))}</select>`)}
     ${check('classify-demo', 'include_demo', 'Cho phép phân loại dữ liệu thử', params.include_demo)}
     ${check('classify-recheck', 'recheck', 'Gửi lại cả tin đã có nhãn', params.recheck)}
   </div><div class="form-actions"><button type="submit" class="btn btn--secondary">Lọc tin nhắn</button><button type="button" class="btn" data-action="classify-unclassified">Phân loại tin chưa phân loại</button></div></form>`;
-  return `<div class="section-stack">${keyWarning()}${panel('Tìm kiếm & lọc theo nguồn', 'Chỉ gửi tin nhắn đã lưu. Dữ liệu thử bị loại trừ nếu chưa bật cho phép.', form)}${panel('Bảng tin nhắn', `${number(data.total ?? list(data.items).length)} tin chưa phân loại · hiển thị tối đa 50 dòng`, `${classifyTable(data.items)}<div class="quick-actions">${button('Mở kho tin nhắn', 'messages')}</div>`)}</div>`;
+  return `<div class="section-stack">${keyWarning()}${panel('Tìm kiếm & lọc theo nguồn', 'Chỉ gửi tin nhắn đã lưu. Dữ liệu thử bị loại trừ nếu chưa bật cho phép.', form)}${panel('Bảng tin nhắn', `${number(data.total ?? list(data.items).length)} tin chưa phân loại`, `${classifyTable(data.items)}<div class="pagination"><span class="muted">${data.total ? `${number(params.offset + 1)}–${number(Math.min(params.offset + list(data.items).length, Number(data.total) || 0))}` : '0'} / ${number(data.total ?? 0)} tin</span><div class="quick-actions">${button('Trang trước', 'classify-page', `data-offset="${Math.max(0, params.offset - params.page_size)}"${params.offset === 0 ? ' disabled' : ''}`)}${button('Trang sau', 'classify-page', `data-offset="${params.offset + params.page_size}"${params.offset + params.page_size >= (Number(data.total) || 0) ? ' disabled' : ''}`)}${button('Mở kho tin nhắn', 'messages')}</div></div>`)}</div>`;
 }
 async function renderProfiles(signal) {
   const query = state.params.get('query') || '';
@@ -989,6 +996,8 @@ async function submitForm(event) {
         query: form.elements.query?.value,
         username: form.elements.username?.value,
         limit: form.elements.limit?.value,
+        page_size: form.elements.page_size?.value,
+        offset: 0,
         include_demo: form.elements.include_demo?.checked,
         recheck: form.elements.recheck?.checked,
       });
@@ -1123,6 +1132,11 @@ async function handleAction(event) {
     if (action === 'collect-selected') { await startSelectedCollection(); return; }
     if (action === 'retry') { await refresh(); return; }
     if (action === 'message') { await openMessage(target.dataset.id, target); return; }
+    if (action === 'classify-page') {
+      state.classifyFilters = { ...(state.classifyFilters || {}), offset: Math.max(0, Number(target.dataset.offset) || 0) };
+      await loadView();
+      return;
+    }
     if (action === 'classify-message') {
       const id = Number(target.dataset.id);
       if (!window.confirm('Gửi tin này tới Jev để phân loại?\nCó thể phát sinh chi phí; nhãn trả về là tín hiệu cần người duyệt.')) return;
@@ -1132,7 +1146,7 @@ async function handleAction(event) {
     if (action === 'classify-unclassified') {
       const form = $('form[data-form="classify-filter"]');
       if (!form) return;
-      const params = classifyFiltersParams({
+      const { page_size: _pageSize, offset: _offset, ...params } = classifyFiltersParams({
         query: form.elements.query?.value,
         username: form.elements.username?.value,
         limit: form.elements.limit?.value,

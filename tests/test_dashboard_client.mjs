@@ -904,7 +904,11 @@ for (const heading of ['Nguồn', 'Nội dung', 'Kết quả Jev', 'Heuristic', 
 }
 assert(classifyHtml.includes('data-action="classify-message"'));
 assert(JSON.stringify(client.classifyMessageParams(11)) === JSON.stringify({ message_ids: [11], limit: 1 }));
-assert(JSON.stringify(client.classifyFiltersParams({ limit: '500', query: ' x ', username: '@kenh' })) === JSON.stringify({ limit: 100, query: ' x ', username: '@kenh', include_demo: false, recheck: false }));
+assert(JSON.stringify(client.classifyFiltersParams({ limit: '500', query: ' x ', username: '@kenh' })) === JSON.stringify({ limit: 100, page_size: 20, offset: 0, query: ' x ', username: '@kenh', include_demo: false, recheck: false }));
+assert(client.classifyFiltersParams({ page_size: '50', offset: '40' }).page_size === 50);
+assert(client.classifyFiltersParams({ page_size: '50', offset: '40' }).offset === 40);
+assert(client.classifyFiltersParams({ page_size: '999' }).page_size === 20);
+assert(client.classifyFiltersParams({ offset: '-5' }).offset === 0);
 assert(client.classifyFiltersParams({ limit: '0' }).limit === 10);
 assert(client.classifyFiltersParams({}).username === '');
 
