@@ -547,6 +547,54 @@ class DashboardTest(unittest.TestCase):
                 with self.assertRaises(ds.DashboardError):
                     self.app.build_job("video_analyze", None, params, "fixture")
 
+    def test_share_key_gates_the_dashboard(self):
+        app = ds.DashboardApp(self.dbpath, share_key="secret-key-123")
+        server = app.create_server(0, "127.0.0.1")
+        thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True)
+        thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        host = f"127.0.0.1:{server.server_port}"
+
+        def request(method, path, body=None, headers=None):
+            conn = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+            try:
+                conn.request(method, path, body=body, headers={"Host": host, **(headers or {})})
+                response = conn.getresponse()
+                return response.status, response.getheaders(), response.read()
+            finally:
+                conn.close()
+
+        status, _, body = request("GET", "/")
+        self.assertEqual(status, 401)
+        self.assertIn("Khóa truy cập".encode(), body)
+        self.assertNotEqual(request("GET", "/style.css")[0], 401, "login assets are reachable")
+        self.assertEqual(request("GET", "/?key=sai-khoa")[0], 401)
+        status, headers, _ = request("GET", "/?key=secret-key-123")
+        self.assertEqual(status, 302)
+        cookie = next(value for name, value in headers if name.lower() == "set-cookie")
+        self.assertIn("dashboard_access=", cookie)
+        self.assertIn("HttpOnly", cookie)
+        session = cookie.split(";", 1)[0]
+        status, _, body = request("GET", "/api/bootstrap", headers={"Cookie": session})
+        self.assertEqual(status, 200)
+        self.assertIn(b"token", body)
+        self.assertEqual(request("GET", "/api/bootstrap")[0], 401, "no cookie means no data")
+        self.assertEqual(request("POST", "/api/jobs", body=b"{}",
+                                 headers={"Cookie": session, "Content-Type": "application/json"})[0], 403,
+                         "CSRF token is still required with a share session")
+        status, headers, _ = request("POST", "/login", body=b"key=secret-key-123",
+                                     headers={"Content-Type": "application/x-www-form-urlencoded"})
+        self.assertEqual(status, 302)
+        self.assertTrue(any(name.lower() == "set-cookie" for name, _ in headers))
+        self.assertEqual(request("POST", "/login", body=b"key=sai",
+                                 headers={"Content-Type": "application/x-www-form-urlencoded"})[0], 401)
+        for _ in range(12):
+            request("POST", "/login", body=b"key=sai",
+                    headers={"Content-Type": "application/x-www-form-urlencoded"})
+        self.assertEqual(request("POST", "/login", body=b"key=sai",
+                                 headers={"Content-Type": "application/x-www-form-urlencoded"})[0], 429)
+
     def test_job_history_survives_restart(self):
         job = self.app.submit({"kind": "db_backup", "db": self.dbpath.name, "params": {}})
         deadline = time.time() + 15

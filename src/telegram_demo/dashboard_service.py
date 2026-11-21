@@ -11,6 +11,7 @@ from contextlib import closing, contextmanager
 from datetime import date, datetime, timedelta, timezone
 import hashlib
 import importlib.util
+import ipaddress
 import json
 import mimetypes
 import math
@@ -21,13 +22,14 @@ import re
 import secrets
 import signal
 import shutil
+import socket
 import sqlite3
 import subprocess
 import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, quote, unquote, urlsplit
+from urllib.parse import parse_qs, quote, unquote, urlencode, urlsplit
 import uuid
 import webbrowser
 
@@ -52,6 +54,35 @@ class DashboardError(ValueError):
 
 def _now():
     return datetime.now(timezone.utc).isoformat()
+
+
+def is_wsl() -> bool:
+    try:
+        return "microsoft" in Path("/proc/version").read_text(encoding="utf-8", errors="ignore").lower()
+    except OSError:
+        return False
+
+
+def lan_addresses() -> set[str]:
+    """IPv4 không-loopback dùng để in link LAN và cho phép Host header."""
+    addresses: set[str] = set()
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        probe.connect(("8.8.8.8", 80))       # chỉ chọn tuyến, không gửi gói
+        addresses.add(probe.getsockname()[0])
+    except OSError:
+        pass
+    finally:
+        probe.close()
+    try:
+        hostname = socket.gethostname()
+        for info in socket.getaddrinfo(hostname, None, socket.AF_INET):
+            addresses.add(info[4][0])
+    except OSError:
+        pass
+    return {address for address in addresses if not address.startswith("127.")}
+
+
 
 
 class JobStore:
@@ -289,8 +320,12 @@ def _api_credentials() -> tuple[int | None, str | None]:
 
 
 class DashboardApp:
-    def __init__(self, db_path=DEFAULT_DB):
+    def __init__(self, db_path=DEFAULT_DB, share_key=None):
         self.db_path = Path(db_path).expanduser().absolute()
+        self._share_key = share_key
+        self._access_token = secrets.token_urlsafe(32) if share_key else None
+        self._login_failures = {}
+        self._login_lock = threading.Lock()
         self._jobs = {}
         self._queue = queue.Queue(maxsize=8)
         self._lock = threading.RLock()
@@ -1320,9 +1355,14 @@ class DashboardApp:
         if store is not None:
             store.close()
 
-    def create_server(self, port=8765):
+    def create_server(self, port=8765, host="127.0.0.1"):
         _integer(port, "port", 0, 65535)
+        host = str(host or "127.0.0.1")
         app = self
+        allowed_hosts = {"127.0.0.1", "localhost", "::1"}
+        if host not in ("0.0.0.0", "::", ""):
+            allowed_hosts.add(host)
+        allowed_hosts.update(lan_addresses())
 
         class Handler(BaseHTTPRequestHandler):
             server_version = "Dashboard/1.0"
@@ -1351,13 +1391,26 @@ class DashboardApp:
                     self.wfile.write(raw)
 
             def _guard(self, mutation=False):
-                hosts = {f"127.0.0.1:{self.server.server_port}", f"localhost:{self.server.server_port}"}
+                port = self.server.server_port
+                names = set(self.server.allowed_hosts)
+                hosts = {f"{name}:{port}" for name in names if name}
                 values = self.headers.get_all("Host", [])
-                if len(values) != 1 or values[0].lower() not in hosts:
-                    raise DashboardError("Host không thuộc dashboard loopback.", "forbidden_host", 403)
+                if len(values) != 1:
+                    raise DashboardError("Host không thuộc dashboard.", "forbidden_host", 403)
+                value = values[0].lower()
+                name = value.rsplit(":", 1)[0] if value.count(":") == 1 else value.strip("[]")
+                try:
+                    ipaddress.ip_address(name)
+                    ip_literal = True
+                except ValueError:
+                    ip_literal = False
+                # Sharing over LAN may arrive via another interface (WSL portproxy); an IP Host
+                # literal is accepted, while a domain name still needs the allowlist.
+                if value not in hosts and not (app._share_key and ip_literal):
+                    raise DashboardError("Host không thuộc dashboard.", "forbidden_host", 403)
                 if self.path.startswith("/api"):
                     origins = self.headers.get_all("Origin", [])
-                    if len(origins) > 1 or origins and origins[0] not in {"http://" + host for host in hosts}:
+                    if len(origins) > 1 or origins and origins[0].lower() not in {"http://" + host for host in hosts}:
                         raise DashboardError("Origin không được phép.", "forbidden_origin", 403)
                     if self.headers.get("Sec-Fetch-Site") == "cross-site":
                         raise DashboardError("Không cho phép yêu cầu cross-site.", "forbidden_origin", 403)
@@ -1523,13 +1576,67 @@ class DashboardApp:
                 except (ValueError, TypeError, OSError, sqlite3.Error):
                     self._reply({"error": "Không xử lý được yêu cầu; dữ liệu hoặc đường dẫn không hợp lệ.", "code": "invalid_input"}, 400)
 
+            def _share_gate(self):
+                if app._share_key is None:
+                    return True
+                decision = app._access(self)
+                if decision is None:
+                    return True
+                if decision == "done":
+                    return False
+                status, body = _login_page(401)
+                self._headers(status, "text/html; charset=utf-8", len(body))
+                if self.command != "HEAD":
+                    self.wfile.write(body)
+                return False
+
+            def _login(self):
+                parsed = urlsplit(self.path)
+                if parsed.path != "/login":
+                    return self._share_gate() and self._run(self._post)
+                if not app._allow_login_attempt(self.client_address[0]):
+                    body = "Quá nhiều lần thử; chờ vài phút rồi thử lại.".encode()
+                    self._headers(429, "text/plain; charset=utf-8", len(body))
+                    self.wfile.write(body)
+                    return
+                try:
+                    length = int(self.headers.get("Content-Length", "0"))
+                except ValueError:
+                    length = 0
+                if length <= 0 or length > 2048:
+                    status, page = _login_page(400)
+                    self._headers(status, "text/html; charset=utf-8", len(page))
+                    self.wfile.write(page)
+                    return
+                form = parse_qs(self.rfile.read(length).decode("utf-8", "replace"), keep_blank_values=True)
+                supplied = (form.get("key") or [""])[0]
+                if secrets.compare_digest(supplied, app._share_key or ""):
+                    self.send_response(302)
+                    self.send_header("Location", "/")
+                    self.send_header("Set-Cookie", f"dashboard_access={app._access_token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800")
+                    self.send_header("Cache-Control", "no-store")
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
+                status, page = _login_page(401)
+                self._headers(status, "text/html; charset=utf-8", len(page))
+                self.wfile.write(page)
+
             def do_GET(self):
+                if not self._share_gate():
+                    return
                 self._run(self._get)
 
             def do_HEAD(self):
+                if not self._share_gate():
+                    return
                 self._run(self._get)
 
             def do_POST(self):
+                if app._share_key is not None and urlsplit(self.path).path == "/login":
+                    return self._login()
+                if not self._share_gate():
+                    return
                 self._run(self._post)
 
             def do_OPTIONS(self):
@@ -1539,21 +1646,91 @@ class DashboardApp:
             daemon_threads = True
             request_queue_size = 16
 
+            def __init__(self, address, handler):
+                super().__init__(address, handler)
+                self.allowed_hosts = allowed_hosts
+
             def server_close(self):
                 super().server_close()
                 app.close()
 
-        server = Server(("127.0.0.1", port), Handler)
+        server = Server((host, port), Handler)
         server.dashboard_token = secrets.token_urlsafe(32)
         return server
 
+    def _allow_login_attempt(self, address: str) -> bool:
+        now = time.monotonic()
+        with self._login_lock:
+            attempts = [stamp for stamp in self._login_failures.get(address, []) if now - stamp < 600]
+            if len(attempts) >= 10:
+                self._login_failures[address] = attempts
+                return False
+            attempts.append(now)
+            self._login_failures[address] = attempts
+            return True
 
-def serve_dashboard(db_path=DEFAULT_DB, port=8765, open_browser=False):
-    """Run the dashboard on IPv4 loopback only; Ctrl-C cancels owned children."""
-    app = DashboardApp(db_path)
-    server = app.create_server(port)
+    def _access(self, handler):
+        """None = allowed, else (status, payload) to send. Uses the share key cookie."""
+        key = self._share_key
+        if not key:
+            return None
+        token = self._access_token or ""
+        cookie = handler.headers.get("Cookie", "")
+        for part in cookie.split(";"):
+            name, _, value = part.strip().partition("=")
+            if name == "dashboard_access" and secrets.compare_digest(value, token):
+                return None
+        parsed = urlsplit(handler.path)
+        query = parse_qs(parsed.query, keep_blank_values=True)
+        supplied = (query.get("key") or [""])[0]
+        if supplied and secrets.compare_digest(supplied, key):
+            remaining = parse_qs(parsed.query, keep_blank_values=True)
+            remaining.pop("key", None)
+            target = parsed.path + ("?" + urlencode(remaining, doseq=True) if remaining else "")
+            handler.send_response(302)
+            handler.send_header("Location", target or "/")
+            handler.send_header("Set-Cookie", f"dashboard_access={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800")
+            handler.send_header("Cache-Control", "no-store")
+            handler.send_header("Content-Length", "0")
+            handler.end_headers()
+            return "done"
+        if parsed.path.startswith("/assets/") or parsed.path in ("/style.css", "/logo.svg", "/favicon.ico"):
+            return None
+        return ("login", 401)
+
+
+def _login_page(status=401):
+    body = (
+        "<!doctype html><html lang=\"vi\"><head><meta charset=\"utf-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+        "<title>Đăng nhập dashboard</title><link rel=\"stylesheet\" href=\"/style.css\"></head>"
+        "<body class=\"auth-body\"><main class=\"auth-card\">"
+        "<h1>Telegram OSINT System</h1>"
+        "<p>Dashboard này được chia sẻ trong mạng LAN. Nhập khóa truy cập để tiếp tục.</p>"
+        "<form method=\"post\" action=\"/login\"><label for=\"key\">Khóa truy cập</label>"
+        "<input id=\"key\" name=\"key\" type=\"password\" autocomplete=\"current-password\" required>"
+        "<button type=\"submit\">Mở dashboard</button></form>"
+        "<p class=\"muted\">Chỉ chia sẻ khóa với người bạn tin cậy; dashboard dùng được phiên Telegram của bạn.</p>"
+        "</main></body></html>"
+    ).encode("utf-8")
+    return status, body
+
+
+def serve_dashboard(db_path=DEFAULT_DB, port=8765, open_browser=False, host="127.0.0.1", share_key=None):
+    """Run the dashboard; loopback by default, LAN only with an explicit share key."""
+    app = DashboardApp(db_path, share_key=share_key)
+    server = app.create_server(port, host)
     url = f"http://127.0.0.1:{server.server_port}"
-    print(f"Dashboard cục bộ: {url}")
+    if share_key:
+        for name in sorted(lan_addresses()):
+            print(f"Dashboard trong LAN: http://{name}:{server.server_port}/?key={share_key}")
+        print("Chỉ chia sẻ với người tin cậy; dashboard dùng phiên Telegram và có thể phát sinh chi phí model.")
+        if is_wsl():
+            print("[i] WSL2: cần mở cổng từ Windows (portproxy/firewall) hoặc bật networkingMode=mirrored; xem docs/DASHBOARD.md.")
+        if open_browser:
+            webbrowser.open(f"http://127.0.0.1:{server.server_port}/?key={share_key}")
+    else:
+        print(f"Dashboard cục bộ: {url}")
     if open_browser:
         webbrowser.open(url)
     try:

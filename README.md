@@ -9,6 +9,7 @@ phân loại văn bản bằng **Jev** chỉ chạy khi bạn bật `--jev` lúc
 
 ```bash
 python3 main.py dashboard --open
+python3 main.py dashboard --share           # chia sẻ trong WiFi/LAN kèm khóa truy cập
 # http://127.0.0.1:8765
 ```
 

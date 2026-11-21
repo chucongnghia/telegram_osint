@@ -46,7 +46,7 @@ class DashboardLauncherTests(unittest.TestCase):
     def test_launch_forwards_only_supported_options(self):
         with patch("telegram_demo.dashboard_service.serve_dashboard") as serve:
             self.assertEqual(dashboard.main(["--db", "data/custom.sqlite3", "--port", "8766", "--open"]), 0)
-            serve.assert_called_once_with(db_path=Path("data/custom.sqlite3"), port=8766, open_browser=True)
+            serve.assert_called_once_with(db_path=Path("data/custom.sqlite3"), port=8766, open_browser=True, host="127.0.0.1", share_key=None)
 
     def test_server_failure_is_nonzero(self):
         with patch("telegram_demo.dashboard_service.serve_dashboard", side_effect=OSError("Address already in use")):

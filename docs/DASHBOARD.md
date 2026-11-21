@@ -17,7 +17,42 @@ Không cần cài Node/React/pip để dùng dashboard. Chọn DB khác hoặc c
 python3 main.py dashboard --db data/jev-demo.sqlite3 --port 8766
 ```
 
-Server chỉ lắng nghe `127.0.0.1`, không mở ra LAN. Đây là ứng dụng riêng ở cổng 8765, không thay thế giao diện DeepSeek Harness ở cổng 3080. Dừng server bằng Ctrl+C; các tác vụ con do server tạo cũng được dừng. Đóng tab trình duyệt **không** dừng server.
+Server mặc định chỉ lắng nghe `127.0.0.1`. Đây là ứng dụng riêng ở cổng 8765, không thay thế giao diện DeepSeek Harness ở cổng 3080. Dừng server bằng Ctrl+C; các tác vụ con do server tạo cũng được dừng. Đóng tab trình duyệt **không** dừng server.
+
+### Chia sẻ trong mạng WiFi/LAN
+
+```bash
+# Khóa truy cập tự sinh, in ra link kèm ?key=...
+python3 main.py dashboard --share
+
+# Hoặc tự đặt khóa (≥8 ký tự)
+python3 main.py dashboard --share --share-key "mat-khau-rieng"
+```
+
+Server nghe `0.0.0.0` và in link dạng `http://<ip-lan>:8765/?key=<khóa>`. Mở link đó trên điện thoại/máy khác **cùng mạng WiFi**; dashboard đổi link thành cookie phiên (HttpOnly, `SameSite=Lax`) nên các lần sau không cần `?key=`.
+
+Cơ chế bảo vệ: không có khóa thì mọi trang/API trả **401** kèm trang đăng nhập; sai khóa bị giới hạn **10 lần/10 phút**; POST vẫn cần token CSRF; Host header phải là IP hợp lệ (chặn DNS-rebinding bằng tên miền). Tài nguyên tĩnh (`/style.css`, `/assets/…`) mở để trang đăng nhập hiển thị được.
+
+Lưu ý: người có khóa dùng được **phiên Telegram của bạn** (thu thập, tra cứu, tải file) và có thể phát sinh chi phí Jev/thị giác; dữ liệu trong SQLite cũng hiển thị được. Chỉ chia sẻ với người tin cậy, dùng `--share-key` riêng và dừng server khi xong.
+
+#### WSL2 (máy này)
+
+WSL2 dùng IP NAT riêng, thiết bị trong LAN không vào thẳng được. Trên **PowerShell (Administrator)** của Windows:
+
+```powershell
+$wsl = (wsl hostname -I).Trim().Split(" ")[0]
+netsh interface portproxy add v4tov4 listenport=8765 listenaddress=0.0.0.0 connectport=8765 connectaddress=$wsl
+New-NetFirewallRule -DisplayName "Telegram OSINT 8765" -Direction Inbound -Protocol TCP -LocalPort 8765 -Action Allow
+```
+
+Sau đó mở `http://<IP-LAN-của-Windows>:8765/?key=<khóa>`. Gỡ khi không dùng nữa:
+
+```powershell
+netsh interface portproxy delete v4tov4 listenport=8765 listenaddress=0.0.0.0
+Remove-NetFirewallRule -DisplayName "Telegram OSINT 8765"
+```
+
+Cách khác: bật `networkingMode=mirrored` trong `%UserProfile%\.wslconfig` rồi `wsl --shutdown`; khi đó IP LAN của Windows dùng trực tiếp, không cần portproxy.
 
 ## Các màn hình
 
