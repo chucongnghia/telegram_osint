@@ -58,6 +58,16 @@ class DashboardTest(unittest.TestCase):
                    batch_id="test", provider="test", model="test-model", backend_key="test",
                    status=status, label=label, error_code="http_error" if status == "error" else None)
 
+    def test_messages_filter_by_ids_for_job_navigation(self):
+        with Database(self.dbpath) as db:
+            conn = db.conn
+            one = self.app.messages(conn, ids="1,3")
+            self.assertEqual(one["total"], 2)
+            self.assertEqual([row["id"] for row in one["items"]], [3, 1])
+            for bad in ("0", "abc", "1,,x", ",".join(["1"] * 101)):
+                with self.assertRaises(ds.DashboardError):
+                    self.app.messages(conn, ids=bad)
+
     def start_server(self):
         server = self.app.create_server(0)
         thread = threading.Thread(target=server.serve_forever, daemon=True)

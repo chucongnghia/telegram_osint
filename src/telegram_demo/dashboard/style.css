@@ -338,3 +338,6 @@ p.hint,
 .classify-table .btn { white-space: nowrap; }
 
 .classify-table td:last-child { white-space: nowrap; }
+
+.row-highlight > td { background: #eaf4fd; }
+.row-highlight > td:first-child { box-shadow: inset 3px 0 0 var(--accent); }

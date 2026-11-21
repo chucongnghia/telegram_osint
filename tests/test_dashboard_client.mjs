@@ -811,6 +811,14 @@ assert.equal(JSON.stringify(client.jobResultTarget({ kind: 'collect', params: { 
   JSON.stringify({ view: 'messages', params: { username: 'alpha' }, label: 'Xem tin đã thu thập' }));
 assert.equal(client.jobResultTarget({ kind: 'watch', params: { channels: '' } }).params.username, undefined);
 assert.equal(client.jobResultTarget({ kind: 'classify', params: {} }).view, 'messages');
+assert.equal(JSON.stringify(client.jobResultTarget({ kind: 'classify', params: { message_ids: [31, 32] } }).params),
+  JSON.stringify({ ids: '31,32' }), 'single-message classification targets those message ids');
+assert.equal(client.jobResultTarget({ kind: 'classify', params: { username: '@kenh', query: 'tin' } }).params.username, '@kenh');
+const highlightedRow = client.messageRows([{ id: 31, channel: 'kenh', text: 'Tin A', score: 0, level: 'Normal' }]);
+client.state.highlightIds = new Set([31]);
+assert(client.messageRows([{ id: 31, channel: 'kenh', text: 'Tin A', score: 0, level: 'Normal' }]).includes('class="row-highlight"'),
+  'targeted message row is highlighted');
+client.state.highlightIds = new Set();
 assert.equal(client.jobResultTarget({ kind: 'search', params: {} }).view, 'collection');
 assert.equal(JSON.stringify(client.jobResultTarget({ kind: 'lookup', params: { username: '@durov' } }).params), JSON.stringify({ query: 'durov' }));
 assert.equal(client.jobResultTarget({ kind: 'download', params: {} }).view, 'video');

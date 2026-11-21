@@ -238,6 +238,7 @@ async function loadView({ quiet = false } = {}) {
     if (revision !== state.revision) return;
     root.innerHTML = html;
     root.dataset.view = state.view;
+    if (state.highlightIds?.size) root.querySelector('.row-highlight')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     syncFormOptions();
     syncVisionForm();
     schedulePoll();
@@ -245,7 +246,7 @@ async function loadView({ quiet = false } = {}) {
   finally { if (revision === state.revision) root.removeAttribute('aria-busy'); }
 }
 function messageRows(items) {
-  return list(items).map((message) => `<tr>
+  return list(items).map((message) => `<tr${state.highlightIds?.has(Number(message.id)) ? ' class="row-highlight"' : ''}>
     <td data-label="Nguồn"><div class="source-name">${esc(message.channel || message.username || 'Không rõ nguồn')}</div><div class="source-meta">${esc(message.username ? `@${String(message.username).replace(/^@/, '')}` : '')} ${demoBadge(message.namespace)}</div></td>
     <td data-label="Nội dung" class="text-cell"><button type="button" class="row-button" data-action="message" data-id="${esc(message.id)}">${esc(String(message.text || '(Tin không có nội dung chữ)').slice(0, 150))}${String(message.text || '').length > 150 ? '…' : ''}</button></td>
     <td data-label="Jev">${labelBadge(message.label, message.classification_stale ? 'stale' : message.classification_status)}${message.classification_model ? `<div class="source-meta">${esc(message.classification_model)}</div>` : ''}</td>
@@ -309,6 +310,7 @@ async function renderMessages(signal) {
   const params = new URLSearchParams(state.params);
   params.set('limit', '20');
   if (!params.has('offset')) params.set('offset', '0');
+  state.highlightIds = new Set(String(params.get('ids') || '').split(',').filter(Boolean).map(Number).filter((id) => Number.isFinite(id) && id > 0));
   const data = await api(`messages?${params}`, { signal });
   const total = Number(data.total) || 0, offset = Number(data.offset ?? params.get('offset')) || 0;
   const currentLabel = state.params.get('label') || '';
@@ -602,8 +604,14 @@ export function jobResultTarget(job) {
       const username = firstChannel(params.channels);
       return { view: 'messages', params: username ? { username } : {}, label: 'Xem tin đã thu thập' };
     }
-    case 'classify':
-      return { view: 'messages', params: {}, label: 'Xem kết quả phân loại' };
+    case 'classify': {
+      const ids = Array.isArray(params.message_ids) ? params.message_ids.filter((id) => Number.isInteger(id) && id > 0) : [];
+      if (ids.length) return { view: 'messages', params: { ids: ids.join(',') }, label: 'Xem tin đã phân loại' };
+      const filters = {};
+      if (params.username) filters.username = params.username;
+      if (params.query) filters.query = params.query;
+      return { view: 'messages', params: filters, label: 'Xem kết quả phân loại' };
+    }
     case 'search':
       return { view: 'collection', params: {}, label: 'Xem nguồn tìm được' };
     case 'lookup': {

@@ -503,7 +503,7 @@ class DashboardApp:
             m.url,e.namespace FROM messages m JOIN entities e ON e.id=m.entity_id
             LEFT JOIN analyses a ON a.message_id=m.id AND a.run_id=(SELECT MAX(a2.run_id) FROM analyses a2 WHERE a2.message_id=m.id)""" + join
 
-    def messages(self, conn, query="", label="", level="", limit=20, offset=0, username=""):
+    def messages(self, conn, query="", label="", level="", limit=20, offset=0, username="", ids=""):
         query = _text(query, "từ khoá", 256)
         label = _text(label, "nhãn", 80)
         level = _text(level, "mức độ", 80)
@@ -529,6 +529,19 @@ class DashboardApp:
         if level:
             where.append("a.level=?")
             args.append(level)
+        if ids:
+            wanted = []
+            for token in str(ids).split(","):
+                token = token.strip()
+                if not token:
+                    continue
+                if not re.fullmatch(r"[1-9][0-9]{0,12}", token):
+                    raise DashboardError("ids chỉ nhận danh sách ID số nguyên dương, phân cách dấu phẩy.")
+                wanted.append(int(token))
+            if not wanted or len(wanted) > 100:
+                raise DashboardError("ids cần từ 1 đến 100 ID.")
+            where.append("m.id IN (" + ",".join("?" * len(wanted)) + ")")
+            args.extend(wanted)
         sql = base + " WHERE " + " AND ".join(where)
         total = conn.execute("SELECT COUNT(*) FROM (" + sql + ")", args).fetchone()[0]
         rows = [dict(r) for r in conn.execute(sql + " ORDER BY m.posted_at DESC,m.id DESC LIMIT ? OFFSET ?", [*args, limit, offset])]
@@ -1508,7 +1521,7 @@ class DashboardApp:
                                 limit, offset = int(q.get("limit", "20")), int(q.get("offset", "0"))
                             except ValueError:
                                 raise DashboardError("limit/offset phải là số nguyên.") from None
-                            result = app.messages(conn, q.get("query", ""), q.get("label", ""), q.get("level", ""), limit, offset, q.get("username", ""))
+                            result = app.messages(conn, q.get("query", ""), q.get("label", ""), q.get("level", ""), limit, offset, q.get("username", ""), q.get("ids", ""))
                         elif re.fullmatch(r"/api/messages/[1-9][0-9]{0,12}", route):
                             result = app.message_detail(conn, int(route.rsplit("/", 1)[1]))
                         elif route == "/api/sources":
