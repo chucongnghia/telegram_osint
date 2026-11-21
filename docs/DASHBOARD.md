@@ -29,7 +29,7 @@ python3 main.py dashboard --share
 python3 main.py dashboard --share --share-key "mat-khau-rieng"
 ```
 
-Server nghe `0.0.0.0` và in link dạng `http://<ip-lan>:8765/?key=<khóa>`. Mở link đó trên điện thoại/máy khác **cùng mạng WiFi**; dashboard đổi link thành cookie phiên (HttpOnly, `SameSite=Lax`) nên các lần sau không cần `?key=`.
+Server nghe `0.0.0.0` và in link dạng `http://<ip-lan>:8765/?key=<khóa>`. Mở từ **chính máy này** (`http://127.0.0.1:8765`) vẫn vào thẳng như bản cục bộ cũ, không cần khóa; máy khác trong LAN mới cần khóa. Mở link đó trên điện thoại/máy khác **cùng mạng WiFi**; dashboard đổi link thành cookie phiên (HttpOnly, `SameSite=Lax`) nên các lần sau không cần `?key=`.
 
 Cơ chế bảo vệ: không có khóa thì mọi trang/API trả **401** kèm trang đăng nhập; sai khóa bị giới hạn **10 lần/10 phút**; POST vẫn cần token CSRF; Host header phải là IP hợp lệ (chặn DNS-rebinding bằng tên miền). Tài nguyên tĩnh (`/style.css`, `/assets/…`) mở để trang đăng nhập hiển thị được.
 

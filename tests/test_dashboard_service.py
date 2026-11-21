@@ -547,7 +547,7 @@ class DashboardTest(unittest.TestCase):
                 with self.assertRaises(ds.DashboardError):
                     self.app.build_job("video_analyze", None, params, "fixture")
 
-    def test_share_key_gates_the_dashboard(self):
+    def test_share_key_gates_remote_clients_but_local_stays_open(self):
         app = ds.DashboardApp(self.dbpath, share_key="secret-key-123")
         server = app.create_server(0, "127.0.0.1")
         thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True)
@@ -565,35 +565,46 @@ class DashboardTest(unittest.TestCase):
             finally:
                 conn.close()
 
-        status, _, body = request("GET", "/")
-        self.assertEqual(status, 401)
-        self.assertIn("Khóa truy cập".encode(), body)
-        self.assertNotEqual(request("GET", "/style.css")[0], 401, "login assets are reachable")
-        self.assertEqual(request("GET", "/?key=sai-khoa")[0], 401)
-        status, headers, _ = request("GET", "/?key=secret-key-123")
-        self.assertEqual(status, 302)
-        cookie = next(value for name, value in headers if name.lower() == "set-cookie")
-        self.assertIn("dashboard_access=", cookie)
-        self.assertIn("HttpOnly", cookie)
-        session = cookie.split(";", 1)[0]
-        status, _, body = request("GET", "/api/bootstrap", headers={"Cookie": session})
-        self.assertEqual(status, 200)
-        self.assertIn(b"token", body)
-        self.assertEqual(request("GET", "/api/bootstrap")[0], 401, "no cookie means no data")
-        self.assertEqual(request("POST", "/api/jobs", body=b"{}",
-                                 headers={"Cookie": session, "Content-Type": "application/json"})[0], 403,
-                         "CSRF token is still required with a share session")
-        status, headers, _ = request("POST", "/login", body=b"key=secret-key-123",
-                                     headers={"Content-Type": "application/x-www-form-urlencoded"})
-        self.assertEqual(status, 302)
-        self.assertTrue(any(name.lower() == "set-cookie" for name, _ in headers))
-        self.assertEqual(request("POST", "/login", body=b"key=sai",
-                                 headers={"Content-Type": "application/x-www-form-urlencoded"})[0], 401)
-        for _ in range(12):
-            request("POST", "/login", body=b"key=sai",
-                    headers={"Content-Type": "application/x-www-form-urlencoded"})
-        self.assertEqual(request("POST", "/login", body=b"key=sai",
-                                 headers={"Content-Type": "application/x-www-form-urlencoded"})[0], 429)
+        # Mở local vẫn như bản gốc: không cần khóa cho kết nối loopback.
+        status, _, _ = request("GET", "/")
+        self.assertNotEqual(status, 401, "loopback mở như bản gốc, không bị chặn khóa")
+        self.assertEqual(request("GET", "/api/bootstrap")[0], 200)
+        # Từ máy khác (IP LAN) thì phải có khóa.
+        self.assertFalse(ds.loopback_client("192.168.1.50"))
+        self.assertTrue(ds.loopback_client("127.0.0.1"))
+        self.assertTrue(ds.loopback_client("::1"))
+
+        class Headers:
+            def __init__(self, values):
+                self.values = {key.lower(): value for key, value in values.items()}
+
+            def get(self, name, default=""):
+                return self.values.get(name.lower(), default)
+
+        class Handler:
+            def __init__(self, path, cookie=""):
+                self.path = path
+                self.headers = Headers({"Cookie": cookie} if cookie else {})
+                self.sent = []
+
+            def send_response(self, status):
+                self.sent.append(status)
+
+            def send_header(self, name, value):
+                self.sent.append((name, value))
+
+            def end_headers(self):
+                pass
+
+        remote = Handler("/")
+        self.assertEqual(app._access(remote), ("login", 401))
+        self.assertEqual(app._access(Handler("/?key=sai-khoa")), ("login", 401))
+        allowed = Handler("/?key=secret-key-123")
+        self.assertEqual(app._access(allowed), "done")
+        self.assertTrue(any(isinstance(item, tuple) and item[0] == "Set-Cookie" for item in allowed.sent))
+        session_cookie = f"dashboard_access={app._access_token}"
+        self.assertIsNone(app._access(Handler("/api/bootstrap", cookie=session_cookie)))
+        self.assertIsNone(app._access(Handler("/style.css")))
 
     def test_job_history_survives_restart(self):
         job = self.app.submit({"kind": "db_backup", "db": self.dbpath.name, "params": {}})

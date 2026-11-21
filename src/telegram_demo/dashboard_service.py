@@ -63,6 +63,14 @@ def is_wsl() -> bool:
         return False
 
 
+def loopback_client(address: str) -> bool:
+    """True khi kết nối đến từ chính máy này — local vẫn mở như bản gốc, không cần khóa."""
+    try:
+        return ipaddress.ip_address(str(address)).is_loopback
+    except ValueError:
+        return False
+
+
 def lan_addresses() -> set[str]:
     """IPv4 không-loopback dùng để in link LAN và cho phép Host header."""
     addresses: set[str] = set()
@@ -1577,7 +1585,7 @@ class DashboardApp:
                     self._reply({"error": "Không xử lý được yêu cầu; dữ liệu hoặc đường dẫn không hợp lệ.", "code": "invalid_input"}, 400)
 
             def _share_gate(self):
-                if app._share_key is None:
+                if app._share_key is None or loopback_client(self.client_address[0]):
                     return True
                 decision = app._access(self)
                 if decision is None:
@@ -1633,7 +1641,8 @@ class DashboardApp:
                 self._run(self._get)
 
             def do_POST(self):
-                if app._share_key is not None and urlsplit(self.path).path == "/login":
+                if (app._share_key is not None and not loopback_client(self.client_address[0])
+                        and urlsplit(self.path).path == "/login"):
                     return self._login()
                 if not self._share_gate():
                     return

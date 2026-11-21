@@ -20,7 +20,7 @@ def main(argv=None) -> int:
     parser.add_argument("--port", type=int, default=8765, help="cổng loopback, mặc định 8765")
     parser.add_argument("--open", action="store_true", help="mở trình duyệt sau khi server khởi động")
     parser.add_argument("--share", action="store_true",
-                        help="mở dashboard trong mạng LAN (0.0.0.0) kèm khóa truy cập tự sinh")
+                        help="mở dashboard trong mạng LAN (0.0.0.0) kèm khóa truy cập tự sinh; máy này vẫn mở không cần khóa")
     parser.add_argument("--share-key", metavar="KHOA",
                         help="khóa truy cập tự đặt (≥8 ký tự); bật chế độ chia sẻ")
     parser.add_argument("--host", metavar="HOST",
