@@ -1045,9 +1045,19 @@ async function handleAction(event) {
     }
     if (action === 'job-log') {
       const id = target.dataset.id;
-      if (state.expandedJobs.has(id)) state.expandedJobs.delete(id);
-      else { const data = await api(`jobs/${encodeURIComponent(id)}`, { db: false }); state.expandedJobs.set(id, data.job || data); }
-      if (state.view === 'jobs') { $('#view-root').innerHTML = jobsMarkup(); $$('[data-action="job-log"]').find((node) => node.dataset.id === id)?.focus({ preventScroll: true }); }
+      const opening = !state.expandedJobs.has(id);
+      if (opening) { const data = await api(`jobs/${encodeURIComponent(id)}`, { db: false }); state.expandedJobs.set(id, data.job || data); }
+      else state.expandedJobs.delete(id);
+      if (state.view === 'jobs') {
+        $('#view-root').innerHTML = jobsMarkup();
+        const button = $$('[data-action="job-log"]').find((node) => node.dataset.id === id);
+        button?.focus({ preventScroll: true });
+        if (opening) {
+          const safeId = String(id).replace(/["\\]/g, '');
+          const detail = $(`[id="job-log-${safeId}"]`);
+          if (detail) detail.scrollIntoView({ behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+        }
+      }
       return;
     }
     if (action === 'cancel-job') {

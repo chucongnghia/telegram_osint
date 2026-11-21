@@ -802,6 +802,25 @@ await client.handleAction({ target: resultTarget });
 assert(location.hash.startsWith('#messages'), 'result link navigates to the messages view');
 location.hash = '#overview';
 console.log('PASS job cards link to the result view of each task');
+console.log('PASS opening job details scrolls the detail panel into view');
+client.state.jobs = [{ id: 'job-scroll1', kind: 'collect', status: 'succeeded', created_at: '2026-11-20T14:05:00Z', params: { channels: '@x' } }];
+client.state.expandedJobs.clear();
+client.state.view = 'jobs';
+let scrollArgs = null;
+const detailNode = document.querySelector('[id="job-log-job-scroll1"]');
+detailNode.scrollIntoView = (options) => { scrollArgs = options; };
+const logTarget = { dataset: { action: 'job-log', id: 'job-scroll1' }, disabled: false, tagName: 'BUTTON' };
+logTarget.closest = (selector) => selector === '[data-action]' ? logTarget : null;
+await client.handleAction({ target: logTarget });
+assert.equal(scrollArgs?.block, 'start', 'detail panel is scrolled into view when opened');
+assert.equal(scrollArgs?.behavior, 'smooth', 'scroll animates unless reduced motion is requested');
+assert(client.state.expandedJobs.has('job-scroll1'), 'detail stays open after scrolling');
+scrollArgs = null;
+await client.handleAction({ target: logTarget });
+assert.equal(scrollArgs, null, 'closing the detail does not scroll');
+client.state.expandedJobs.clear();
+client.state.jobs = [];
+client.state.view = 'overview';
 console.log('PASS jobs table lists tasks with result navigation and a raw detail log');
 client.state.jobs = [{ id: 'job-abc12345', kind: 'collect', status: 'failed', created_at: '2026-11-20T14:05:00Z',
   started_at: '2026-11-20T14:05:01Z', ended_at: '2026-11-20T14:05:19Z', exit_code: 1,
