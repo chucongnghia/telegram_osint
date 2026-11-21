@@ -315,11 +315,30 @@ async function renderMessages(signal) {
   const tabs = [['', 'Tất cả'], ...Object.entries(LABELS)].map(([value, label]) => `<button type="button" class="filter-tab${currentLabel === value ? ' active' : ''}" data-action="label-filter" data-label="${value}" aria-pressed="${currentLabel === value}">${label}</button>`).join('');
   return `<div class="section-stack">${panel('Kho tin nhắn', `${number(total)} tin nhắn phù hợp`, `<form id="messages-filter" class="toolbar" data-form="messages-filter">${field('messages-query', 'Tìm nội dung', textInput('messages-query', 'query', state.params.get('query') || '', 'type="search" maxlength="256" placeholder="Nội dung hoặc từ khóa"'))}${field('messages-username', 'Tên nguồn', textInput('messages-username', 'username', state.params.get('username') || '', 'maxlength="256" placeholder="@kenh"'))}${field('messages-label', 'Nhãn Jev', `<select id="messages-label" name="label">${selectOptions([['', 'Mọi nhãn'], ...Object.entries(LABELS), ['unclassified', 'Chưa phân loại'], ['error', 'Lỗi phân loại']], currentLabel)}</select>`)}${field('messages-level', 'Mức heuristic', `<select id="messages-level" name="level">${selectOptions([['', 'Mọi mức'], ...Object.entries(LEVEL_LABELS)], state.params.get('level') || '')}</select>`)}<button type="submit" class="btn btn--secondary">${icon('search', 18)} Lọc tin nhắn</button></form><div class="filter-tabs" aria-label="Bộ lọc nhãn Jev">${tabs}</div>${messageTable(data.items)}<div class="pagination"><span class="muted">${total ? `${number(offset + 1)}–${number(Math.min(offset + list(data.items).length, total))}` : '0'} / ${number(total)} tin nhắn</span><div class="quick-actions">${button('Trang trước', 'page', `data-offset="${Math.max(0, offset - 20)}"${offset === 0 ? ' disabled' : ''}`)}${button('Trang sau', 'page', `data-offset="${offset + 20}"${offset + 20 >= total ? ' disabled' : ''}`)}</div></div>`)}${info('Heuristic là điểm theo quy tắc. Nhãn Jev là tín hiệu cần người duyệt, không phải kết luận pháp lý. Cả hai đều không xác nhận một cá nhân vi phạm pháp luật.')}</div>`;
 }
+function sourceCollectHandle(item) {
+  const username = typeof item.username === 'string' ? item.username.trim() : '';
+  if (username) return `@${username.replace(/^@/, '')}`;
+  const id = Number(item.telegram_id);
+  if (!Number.isFinite(id) || id <= 0) return '';
+  if (item.kind === 'channel' || item.kind === 'group') return `-${1000000000000 + id}`;
+  return String(id);
+}
+function sourceCollectParams(handle) {
+  return { channels: handle, backend: 'api', limit: 20, jev: true, jev_limit: 20 };
+}
+function sourcesRows(items) {
+  return list(items).map((item) => {
+    const handle = sourceCollectHandle(item);
+    const collect = handle
+      ? button('Thu thập thêm', 'source-collect', `data-handle="${esc(handle)}" data-label="${esc(item.title || item.username || handle)}"`)
+      : '<span class="muted">—</span>';
+    return `<tr><td><span class="source-name">${esc(item.title || item.username || item.id)}</span><div class="source-meta">${esc(item.username ? `@${String(item.username).replace(/^@/, '')}` : '')}</div></td><td>${esc(item.kind || '—')}</td><td>${number(item.message_count)}</td><td>${number(item.flagged)}</td><td class="source-actions">${button('Xem tin nhắn', 'source-messages', `data-username="${esc(item.username || item.title || '')}"`)}${collect}</td></tr>`;
+  }).join('');
+}
 async function renderSources(signal) {
   const data = await api('sources', { signal });
   const items = list(data.items);
-  const rows = items.map((item) => `<tr><td><span class="source-name">${esc(item.title || item.username || item.id)}</span><div class="source-meta">${esc(item.username ? `@${String(item.username).replace(/^@/, '')}` : '')}</div></td><td>${esc(item.kind || '—')}</td><td>${number(item.message_count)}</td><td>${number(item.flagged)}</td><td>${button('Xem tin nhắn', 'source-messages', `data-username="${esc(item.username || item.title || '')}"`)}</td></tr>`).join('');
-  return panel('Danh sách nguồn', `${number(data.total ?? items.length)} nguồn đã lưu · bộ đếm từ SQLite`, items.length ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Nguồn</th><th>Loại</th><th>Tin nhắn</th><th>Heuristic gắn cờ</th><th>Nội dung</th></tr></thead><tbody>${rows}</tbody></table></div>` : empty('Chưa có nguồn dữ liệu', 'Thu thập tin nhắn từ một kênh công khai.', button('Thu thập dữ liệu', 'collect')));
+  return panel('Danh sách nguồn', `${number(data.total ?? items.length)} nguồn đã lưu · bộ đếm từ SQLite`, items.length ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Nguồn</th><th>Loại</th><th>Tin nhắn</th><th>Heuristic gắn cờ</th><th>Hành động</th></tr></thead><tbody>${sourcesRows(items)}</tbody></table></div>` : empty('Chưa có nguồn dữ liệu', 'Thu thập tin nhắn từ một kênh công khai.', button('Thu thập dữ liệu', 'collect')));
 }
 function sessionField(prefix) {
   const sessions = list(state.bootstrap?.config?.sessions).map((item) => typeof item === 'string' ? [item, item] : [item.name, item.label || item.name]);
@@ -1043,6 +1062,14 @@ async function handleAction(event) {
     if (action === 'retry') { await refresh(); return; }
     if (action === 'message') { await openMessage(target.dataset.id, target); return; }
     if (action === 'source-messages') { await navigate('messages', { username: target.dataset.username }); return; }
+    if (action === 'source-collect') {
+      const handle = target.dataset.handle;
+      const label = target.dataset.label || handle;
+      const params = sourceCollectParams(handle);
+      if (!window.confirm(`Thu thập thêm 20 tin mới nhất từ ${label}?\nTác vụ dùng Telegram API, bật Jev (tối đa 20 yêu cầu) và có thể phát sinh chi phí.`)) return;
+      await createJob('collect', params);
+      return;
+    }
     if (action === 'label-filter' || action === 'page') {
       const params = Object.fromEntries(state.params);
       if (action === 'label-filter') { if (target.dataset.label) params.label = target.dataset.label; else delete params.label; params.offset = 0; }

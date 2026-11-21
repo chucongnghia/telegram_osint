@@ -95,7 +95,7 @@ vm.runInContext(source.replace(/^export (?=(?:async )?function)/gm, '') + `
     renderCollection, renderClassify, renderProfiles, renderVideo, renderImage, ocrDetails, confirmJob, renderJobs,
     renderSettings, externalUrl, mediaUrl, safeMediaUrl, labelBadge, messageRows,
     jobDetail, jobParamsShort, jobsMarkup, submitForm, schedulePoll, stopPoll, sourceDisplay,
-    syncFormOptions, syncVisionForm, handleAction,
+    syncFormOptions, syncVisionForm, handleAction, sourceCollectHandle, sourceCollectParams, sourcesRows,
     addCollectSources, applyCollectLimit, collectLimit, sourceKindLabel, startSelectedCollection,
     telegramApiPanel, telegramApiStatus, loadSourceResults, jobResultTarget, firstChannel,
   };`, context, { filename: 'dashboard/app.js' });
@@ -871,5 +871,20 @@ assert(jobsDetail.includes('&lt;script id=pwn&gt;') && !jobsDetail.includes('<sc
 assert(jobsDetail.includes('Ẩn chi tiết'));
 client.state.expandedJobs.clear();
 client.state.jobs = [];
+console.log('PASS sources page offers per-source collection');
+const sourceRows = client.sourcesRows([
+  { id: 1, title: 'Kênh A', username: 'kenh_a', kind: 'channel', message_count: 5, flagged: 2 },
+  { id: 2, title: 'Nhóm B', kind: 'group', telegram_id: 42 },
+  { id: 3, title: 'Không ID' },
+]);
+assert(sourceRows.includes('data-action="source-collect"'), 'row has a collect button');
+assert(sourceRows.includes('Thu thập thêm'));
+assert(sourceRows.includes('data-handle="@kenh_a"'));
+assert(sourceRows.includes('data-handle="-1000000000042"'), 'channel without username uses a marked id');
+assert(JSON.stringify(client.sourceCollectParams('@kenh_a')) === JSON.stringify({ channels: '@kenh_a', backend: 'api', limit: 20, jev: true, jev_limit: 20 }));
+assert(client.sourceCollectHandle({ kind: 'user', telegram_id: 7 }) === '7');
+assert(client.sourceCollectHandle({}) === '');
+assert(!/data-handle=""/.test(sourceRows), 'no empty handle button');
+
 console.log('PASS visible-only 2-second job polling lifecycle');
 console.log('All dashboard client contract tests passed.');
