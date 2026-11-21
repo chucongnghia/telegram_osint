@@ -10,6 +10,7 @@ import sqlite3
 import stat
 import sys
 import tempfile
+import time
 import threading
 import unittest
 from unittest.mock import patch
@@ -545,6 +546,51 @@ class DashboardTest(unittest.TestCase):
             for params in ({"path": "clip.mp4", "ocr": 1}, {"path": "clip.mp4", "ocr_language": "auto"}, {"path": "clip.mp4", "language": "eng"}):
                 with self.assertRaises(ds.DashboardError):
                     self.app.build_job("video_analyze", None, params, "fixture")
+
+    def test_job_history_survives_restart(self):
+        job = self.app.submit({"kind": "db_backup", "db": self.dbpath.name, "params": {}})
+        deadline = time.time() + 15
+        while time.time() < deadline:
+            current = self.app.job(job["id"])
+            if current["status"] in ds.TERMINAL:
+                break
+            time.sleep(0.05)
+        self.assertEqual(current["status"], "succeeded", current)
+        self.assertIn("Đã tạo bản sao SQLite", "\n".join(current["logs"]))
+        store = ds.JobStore(self.root / "data" / "dashboard.sqlite3")
+        try:
+            self.assertEqual(store.logs(job["id"])[-1], current["logs"][-1])
+            self.assertTrue(any(row["id"] == job["id"] for row in store.recent(50)))
+        finally:
+            store.close()
+        self.app.close()
+        restarted = ds.DashboardApp(self.dbpath)
+        self.addCleanup(restarted.close)
+        self.assertTrue(any(row["id"] == job["id"] for row in restarted.jobs()),
+                        "history is reloaded from SQLite after a restart")
+        restored = restarted.job(job["id"])
+        self.assertEqual(restored["kind"], "db_backup")
+        self.assertEqual(restored["status"], "succeeded")
+        self.assertTrue(restored["logs"], "logs are restored from SQLite")
+
+    def test_job_store_orders_and_caps_logs(self):
+        store = ds.JobStore(self.root / "data" / "jobs.sqlite3")
+        try:
+            job = {"id": "j1", "kind": "collect", "status": "queued", "created_at": ds._now(),
+                   "started_at": None, "ended_at": None, "exit_code": None, "params": {"channels": "x"}}
+            store.record(job)
+            for index in range(5):
+                store.append("j1", f"dòng {index}")
+            self.assertEqual(store.logs("j1", 3), ["dòng 2", "dòng 3", "dòng 4"])
+            recent = store.recent(10)
+            self.assertEqual(recent[0]["id"], "j1")
+            self.assertEqual(recent[0]["params"], {"channels": "x"})
+            second = dict(job, id="j2", created_at=ds._now())
+            store.record(second)
+            store.prune(1)
+            self.assertEqual([row["id"] for row in store.recent(10)], ["j2"])
+        finally:
+            store.close()
 
     def test_profile_lookup_accepts_numeric_id_only_for_api_backend(self):
         (self.root / "sessions" / "tg_session_test.session").write_bytes(b"not read")

@@ -54,6 +54,100 @@ def _now():
     return datetime.now(timezone.utc).isoformat()
 
 
+class JobStore:
+    """Lưu lịch sử tác vụ dashboard trong một SQLite riêng (bền qua lần chạy server)."""
+
+    SCHEMA = """
+    CREATE TABLE IF NOT EXISTS dashboard_jobs (
+        id TEXT PRIMARY KEY, kind TEXT NOT NULL, status TEXT NOT NULL,
+        created_at TEXT NOT NULL, started_at TEXT, ended_at TEXT,
+        exit_code INTEGER, params_json TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS dashboard_job_logs (
+        job_id TEXT NOT NULL REFERENCES dashboard_jobs(id) ON DELETE CASCADE,
+        seq INTEGER NOT NULL, at TEXT NOT NULL, line TEXT NOT NULL,
+        PRIMARY KEY(job_id, seq)
+    );
+    CREATE INDEX IF NOT EXISTS idx_dashboard_jobs_created ON dashboard_jobs(created_at);
+    """
+
+    def __init__(self, path: Path):
+        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        self.path = path
+        self._lock = threading.Lock()
+        self.conn = sqlite3.connect(path, timeout=10, check_same_thread=False)
+        self.conn.row_factory = sqlite3.Row
+        with self._lock:
+            self.conn.execute("PRAGMA journal_mode=WAL")
+            self.conn.execute("PRAGMA synchronous=NORMAL")
+            self.conn.executescript(self.SCHEMA)
+            self.conn.commit()
+        os.chmod(path, 0o600)
+
+    def record(self, job: dict) -> None:
+        with self._lock:
+            self.conn.execute(
+                "INSERT OR REPLACE INTO dashboard_jobs VALUES(?,?,?,?,?,?,?,?)",
+                (job["id"], job["kind"], job["status"], job["created_at"], job["started_at"],
+                 job["ended_at"], job["exit_code"], json.dumps(job["params"], ensure_ascii=False)))
+            self.conn.commit()
+
+    def update(self, job: dict) -> None:
+        with self._lock:
+            self.conn.execute(
+                "UPDATE dashboard_jobs SET status=?, started_at=?, ended_at=?, exit_code=? WHERE id=?",
+                (job["status"], job["started_at"], job["ended_at"], job["exit_code"], job["id"]))
+            self.conn.commit()
+
+    def append(self, job_id: str, line: str) -> None:
+        with self._lock:
+            row = self.conn.execute("SELECT COALESCE(MAX(seq),0)+1 FROM dashboard_job_logs WHERE job_id=?",
+                                    (job_id,)).fetchone()
+            self.conn.execute("INSERT INTO dashboard_job_logs VALUES(?,?,?,?)",
+                              (job_id, row[0], _now(), line[:4000]))
+            self.conn.commit()
+
+    def logs(self, job_id: str, limit: int = 500) -> list[str]:
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT line FROM dashboard_job_logs WHERE job_id=? ORDER BY seq DESC LIMIT ?",
+                (job_id, max(1, min(int(limit), 5000)))).fetchall()
+        return [row[0] for row in reversed(rows)]
+
+    def recent(self, limit: int = 40, log_limit: int = 100) -> list[dict]:
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT * FROM dashboard_jobs ORDER BY created_at DESC LIMIT ?",
+                (max(1, min(int(limit), 200)),)).fetchall()
+        jobs = []
+        for row in rows:
+            try:
+                params = json.loads(row["params_json"])
+            except (TypeError, ValueError):
+                params = {}
+            jobs.append({"id": row["id"], "kind": row["kind"], "status": row["status"],
+                         "created_at": row["created_at"], "started_at": row["started_at"],
+                         "ended_at": row["ended_at"], "exit_code": row["exit_code"],
+                         "params": params if isinstance(params, dict) else {},
+                         "logs": self.logs(row["id"], log_limit)})
+        return jobs
+
+    def prune(self, keep: int = 500) -> None:
+        with self._lock:
+            self.conn.execute(
+                "DELETE FROM dashboard_jobs WHERE id NOT IN (SELECT id FROM dashboard_jobs ORDER BY created_at DESC LIMIT ?)",
+                (max(1, int(keep)),))
+            self.conn.commit()
+
+    def close(self) -> None:
+        with self._lock:
+            try:
+                self.conn.close()
+            except sqlite3.Error:
+                pass
+
+
+
 def _text(value, name, maximum=256, required=False):
     if not isinstance(value, str) or len(value) > maximum or any(ord(c) < 32 and c not in "\n\r\t" for c in value):
         raise DashboardError(f"{name}: chuỗi không hợp lệ hoặc quá dài.")
@@ -210,7 +304,26 @@ class DashboardApp:
         self._redactions = set()
         self._processes = {}
         self._cancelled = set()
+        self._store = None
+        self._open_store()
         self._load_secrets()
+
+    def _open_store(self):
+        """Mở kho nhật ký tác vụ bền; lỗi kho không được làm hỏng dashboard."""
+        try:
+            store = JobStore(DATA_DIR / "dashboard.sqlite3")
+            store.prune(500)
+            for record in reversed(store.recent(40, log_limit=200)):
+                job = dict(record)
+                job["logs"] = deque(job.get("logs") or [], maxlen=200)
+                job["_argv"] = None
+                job["_db"] = None
+                job["_drained"] = True
+                self._jobs[job["id"]] = job
+            self._store = store
+        except (sqlite3.Error, OSError) as exc:
+            self._store = None
+            print(f"[!] Không mở được kho nhật ký tác vụ: {exc}", file=sys.stderr)
 
     def _load_secrets(self):
         """Restore keys saved by `settings`; a malformed file is ignored, never deleted."""
@@ -970,9 +1083,13 @@ class DashboardApp:
     def job(self, job_id):
         with self._lock:
             job = self._jobs.get(job_id)
-            if job is None:
-                raise DashboardError("Không tìm thấy tác vụ.", "not_found", 404)
-            return self._job_view(job)
+            if job is not None:
+                return self._job_view(job)
+        if self._store is not None:
+            for record in self._store.recent(500, log_limit=500):
+                if record["id"] == job_id:
+                    return {k: (list(v) if k == "logs" else v) for k, v in record.items()}
+        raise DashboardError("Không tìm thấy tác vụ.", "not_found", 404)
 
     def submit(self, data):
         if not isinstance(data, dict) or set(data) - {"kind", "db", "params"}:
@@ -995,6 +1112,11 @@ class DashboardApp:
             if self._queue.full():
                 raise DashboardError("Hàng đợi đầy, hãy chờ tác vụ hiện tại.", "queue_full", 409)
             self._jobs[job_id] = job
+            if self._store is not None:
+                try:
+                    self._store.record(self._job_view(job))
+                except sqlite3.Error as exc:
+                    self._log(job, f"Không lưu được nhật ký vào SQLite: {exc}")
             self._queue.put_nowait(job_id)
             if self._worker is None or not self._worker.is_alive():
                 self._worker = threading.Thread(target=self._work, name="dashboard-jobs", daemon=True)
@@ -1017,6 +1139,19 @@ class DashboardApp:
         if line:
             with self._lock:
                 job["logs"].append(line)
+                if self._store is not None:
+                    try:
+                        self._store.append(job["id"], line)
+                    except sqlite3.Error:
+                        pass
+
+    def _persist(self, job):
+        if self._store is None:
+            return
+        try:
+            self._store.update(job)
+        except sqlite3.Error:
+            pass
 
     def _backup(self, job):
         # The backup exception is explicit and runs only after a CSRF-protected submission.
@@ -1050,6 +1185,7 @@ class DashboardApp:
                     if job_id in self._cancelled:
                         continue
                     job["status"], job["started_at"] = "running", _now()
+                    self._persist(job)
                 if job["kind"] == "db_backup":
                     code = self._backup(job)
                 else:
@@ -1091,10 +1227,12 @@ class DashboardApp:
                 with self._lock:
                     job["exit_code"] = code
                     job["status"] = "cancelled" if job_id in self._cancelled else "succeeded" if code == 0 else "failed"
+                    self._persist(job)
             except Exception:
                 self._log(job, "Không hoàn tất tác vụ; kiểm tra môi trường/phiên bằng CLI. Chi tiết riêng tư đã được ẩn.")
                 with self._lock:
                     job["status"] = "cancelled" if job_id in self._cancelled else "failed"
+                    self._persist(job)
             finally:
                 try:
                     if process is not None:
@@ -1120,6 +1258,7 @@ class DashboardApp:
                         self._processes.pop(job_id, None)
                         job["ended_at"] = _now()
                         job["_drained"] = True
+                        self._persist(job)
                     self._queue.task_done()
 
     @staticmethod
@@ -1156,6 +1295,7 @@ class DashboardApp:
             job["status"] = "cancelling" if job["started_at"] else "cancelled"
             if not job["started_at"]:
                 job["ended_at"] = _now()
+            self._persist(job)
             if process is not None:
                 self._signal_process(process, signal.SIGINT)
                 threading.Thread(target=self._finish_cancel, args=(job_id, process), daemon=True).start()
@@ -1170,12 +1310,15 @@ class DashboardApp:
         if self._worker is not None:
             self._worker.join(timeout=8)
         with self._lock:
+            store, self._store = self._store, None
             self._jev_key = None
             self._vision_key = None
             self._vision_model = None
             self._vision_provider = None
             self._vision_url = None
             self._redactions.clear()
+        if store is not None:
+            store.close()
 
     def create_server(self, port=8765):
         _integer(port, "port", 0, 65535)

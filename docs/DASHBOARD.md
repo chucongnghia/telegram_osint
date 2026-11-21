@@ -57,7 +57,8 @@ Tùy chọn **Thu cả group thảo luận của kênh** (bật mặc định) k
 - Không upload video từ trình duyệt; chọn file đang có trong `media/` hoặc tải đúng link tin nhắn có video. Không nhận đường dẫn file tuỳ ý ngoài vùng cho phép.
 - Chỉ dành cho một người dùng cục bộ, không có tài khoản đăng nhập/phân quyền nhiều người. Không dùng reverse proxy mở ứng dụng ra Internet.
 - **Danh sách tác vụ** hiển thị dạng bảng: tên tác vụ, thời gian + trạng thái, tham số rút gọn, nút **Xem chi tiết** (mở đúng khối chi tiết cũ: tham số đầy đủ và nhật ký tiến trình) và nút **Điều hướng** mở thẳng trang kết quả liên quan.
-- Hàng đợi và nhật ký tiến trình là dữ liệu RAM; khởi động lại server sẽ mất phần này, nhưng key đã lưu trong file cục bộ thì còn. Nội dung/kết quả đã được CLI ghi vào SQLite vẫn còn. Dừng một tác vụ không hoàn tác dữ liệu đã lưu hoặc request đã gửi.
+- **Nhật ký tác vụ được lưu bền** trong `data/dashboard.sqlite3` (mode 0600, tách khỏi DB phân tích): mỗi tác vụ gồm loại, trạng thái, thời gian, mã thoát, tham số và toàn bộ dòng log (dòng bí mật được ẩn trước khi ghi). Giữ 500 tác vụ gần nhất; giao diện nạp 40 tác vụ mới nhất kèm 200 dòng log gần nhất mỗi tác vụ, nên mở lại server vẫn xem được lịch sử và chi tiết. Xoá file này chỉ mất lịch sử tác vụ, không ảnh hưởng dữ liệu Telegram.
+- Hàng đợi và tiến trình đang chạy vẫn ở RAM; khởi động lại server sẽ mất phần này, nhưng key đã lưu trong file cục bộ thì còn. Nội dung/kết quả đã được CLI ghi vào SQLite vẫn còn. Dừng một tác vụ không hoàn tác dữ liệu đã lưu hoặc request đã gửi.
 - Log, hàng đợi, kích thước batch và tham số đều có giới hạn. Các bảng SQLite/JSON chứa dữ liệu cá nhân dạng rõ; không chia sẻ `sessions/`, credential hoặc DB ra ngoài.
 
 ## Mã nguồn và kiểm thử
