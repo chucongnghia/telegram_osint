@@ -936,7 +936,7 @@ class DashboardApp:
             "collect": {"backend", "channels", "limit", "session", "jev", "jev_limit", "demo", "linked_groups"},
             "linked_groups": {"channels", "session", "backend"},
             "watch": {"channels", "session", "jev", "jev_limit", "minutes", "cycles", "once"},
-            "classify": {"limit", "query", "username", "include_demo", "recheck"},
+            "classify": {"limit", "query", "username", "include_demo", "recheck", "message_ids"},
             "lookup": {"username", "limit", "backend", "session"},
             "search": {"keyword", "limit", "backend", "session"},
             "download": {"url", "session"},
@@ -1029,14 +1029,25 @@ class DashboardApp:
         elif kind == "classify":
             self._require_jev()
             p["limit"] = _integer(p.get("limit", 10), "limit", 1, 100)
+            ids = p.get("message_ids", [])
+            if not isinstance(ids, list) or len(ids) > 100:
+                raise DashboardError("message_ids phải là danh sách tối đa 100 ID số.")
+            clean_ids = []
+            for value in ids:
+                if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+                    raise DashboardError("message_ids chỉ nhận ID số nguyên dương.")
+                clean_ids.append(value)
+            p["limit"] = len(clean_ids) if clean_ids else p["limit"]
             argv = ["classify", *dbflag, "run", "--limit", str(p["limit"])]
+            for mid in clean_ids:
+                argv += ["--message-id", str(mid)]
             for key, flag in (("query", "--keyword"), ("username", "--username")):
                 p[key] = _text(p.get(key, ""), key, 256)
                 if p[key]:
                     argv += [flag, p[key]]
             for key in ("include_demo", "recheck"):
                 p[key] = _boolean(p.get(key, False), key)
-                if p[key]:
+                if p[key] and not clean_ids:
                     argv += ["--" + key.replace("_", "-")]
         elif kind == "download":
             from .cli.telegram_download import parse_message_link, DownloadError

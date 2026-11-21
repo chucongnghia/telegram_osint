@@ -62,7 +62,7 @@ Cách khác: bật `networkingMode=mirrored` trong `%UserProfile%\.wslconfig` r�
 | Tin nhắn | Tìm kiếm, lọc, phân trang; mở chi tiết nội dung, điểm heuristic và lịch sử Jev. Nhãn cũ sau khi text thay đổi được đánh dấu, không tính như kết quả hiện hành. |
 | Nguồn thu thập | Nguồn và số tin thực tế; mở danh sách tin của nguồn. |
 | Thu thập dữ liệu | Tìm nguồn theo từ khoá qua Telegram API, chọn nhiều nguồn, đặt số tin tối đa chung hoặc riêng từng nguồn; mỗi nguồn chạy một tác vụ có Jev bật sẵn. Watch chạy được vô hạn hoặc giới hạn theo phút. |
-| Phân loại Jev | Chọn giới hạn và chủ động gửi batch văn bản. Nhãn thuộc bộ bảy nhãn kêu gọi/kích động hành vi phạm pháp; kết quả kèm mức và yêu cầu rà soát. Không tự gọi mô hình khi mở trang. |
+| Phân loại Jev | **Tìm kiếm & lọc theo nguồn** (từ khoá, nguồn, số tin mỗi lần), **Bảng tin nhắn** chỉ hiện tin chưa phân loại, nút **Phân loại tin chưa phân loại** cho cả bộ lọc và nút **Phân loại** trên từng dòng. Nhãn thuộc bộ bảy nhãn kêu gọi/kích động hành vi phạm pháp; kết quả kèm mức và yêu cầu rà soát. Không tự gọi mô hình khi mở trang. |
 | Phân tích video | Xem/phát video trong `media/`, tải theo link, Whisper + OCR frame (mặc định bật), chọn ngôn ngữ auto; gọi Jev riêng. |
 | Phân tích ảnh | Chọn PNG/JPEG/WebP trong `media/`, OCR Việt/Anh cục bộ, xem original/evidence, Jev riêng với đồng ý partial/key. |
 | Tra cứu hồ sơ | Xem hồ sơ đã lưu, lookup hoặc tìm username bằng các CLI hiện có. |
@@ -100,6 +100,7 @@ Tùy chọn **Thu cả group thảo luận của kênh** (bật mặc định) k
 - Không upload video từ trình duyệt; chọn file đang có trong `media/` hoặc tải đúng link tin nhắn có video. Không nhận đường dẫn file tuỳ ý ngoài vùng cho phép.
 - Chỉ dành cho một người dùng cục bộ, không có tài khoản đăng nhập/phân quyền nhiều người. Không dùng reverse proxy mở ứng dụng ra Internet.
 - **Danh sách tác vụ** hiển thị dạng bảng: tên tác vụ, thời gian + trạng thái, tham số rút gọn, nút **Xem chi tiết** (mở đúng khối chi tiết cũ: tham số đầy đủ và nhật ký tiến trình) và nút **Điều hướng** mở thẳng trang kết quả liên quan.
+- **Tin nhắn:** mỗi tin chưa có nhãn (hoặc nhãn đã cũ) có nút phân loại ngay trong bảng; bấm sẽ gửi một tác vụ `classify` cho đúng tin đó sau hộp xác nhận chi phí.
 - **Nhật ký tác vụ được lưu bền** trong `data/dashboard.sqlite3` (mode 0600, tách khỏi DB phân tích): mỗi tác vụ gồm loại, trạng thái, thời gian, mã thoát, tham số và toàn bộ dòng log (dòng bí mật được ẩn trước khi ghi). Giữ 500 tác vụ gần nhất; giao diện nạp 40 tác vụ mới nhất kèm 200 dòng log gần nhất mỗi tác vụ, nên mở lại server vẫn xem được lịch sử và chi tiết. Xoá file này chỉ mất lịch sử tác vụ, không ảnh hưởng dữ liệu Telegram.
 - Hàng đợi và tiến trình đang chạy vẫn ở RAM; khởi động lại server sẽ mất phần này, nhưng key đã lưu trong file cục bộ thì còn. Nội dung/kết quả đã được CLI ghi vào SQLite vẫn còn. Dừng một tác vụ không hoàn tác dữ liệu đã lưu hoặc request đã gửi.
 - Log, hàng đợi, kích thước batch và tham số đều có giới hạn. Các bảng SQLite/JSON chứa dữ liệu cá nhân dạng rõ; không chia sẻ `sessions/`, credential hoặc DB ra ngoài.

@@ -251,12 +251,12 @@ function messageRows(items) {
     <td data-label="Jev">${labelBadge(message.label, message.classification_stale ? 'stale' : message.classification_status)}${message.classification_model ? `<div class="source-meta">${esc(message.classification_model)}</div>` : ''}</td>
     <td data-label="Heuristic"><span class="risk-score">${number(message.score)}</span><div class="source-meta">${esc(levelLabel(message.level))}</div></td>
     <td data-label="Thời gian" class="source-meta">${esc(date(message.posted_at || message.collected_at))}</td>
-    <td data-label="Chi tiết"><button type="button" class="icon-button" data-action="message" data-id="${esc(message.id)}" aria-label="Xem chi tiết tin ${esc(message.id)}">${icon('arrow', 18)}</button></td>
+    <td data-label="Chi tiết"><div class="row-actions">${needsClassification(message) ? `<button type="button" class="icon-button" data-action="classify-message" data-id="${esc(message.id)}" title="Phân loại tin này" aria-label="Phân loại tin ${esc(message.id)}">${icon('scan', 18)}</button>` : ''}<button type="button" class="icon-button" data-action="message" data-id="${esc(message.id)}" aria-label="Xem chi tiết tin ${esc(message.id)}">${icon('arrow', 18)}</button></div></td>
   </tr>`).join('');
 }
 function messageTable(items) {
   if (!list(items).length) return empty('Chưa có tin nhắn phù hợp', 'Thử bộ lọc khác hoặc thu thập một nguồn công khai.', button('Thu thập dữ liệu', 'collect'));
-  return `<div class="table-wrap"><table class="data-table message-table"><thead><tr><th scope="col">Nguồn</th><th scope="col">Nội dung tin nhắn</th><th scope="col">Kết quả Jev</th><th scope="col">Heuristic</th><th scope="col">Thời gian</th><th scope="col"><span class="muted">Chi tiết</span></th></tr></thead><tbody>${messageRows(items)}</tbody></table></div><p class="hint">Nhãn Jev là tín hiệu cần người duyệt, không phải kết luận pháp lý.</p>`;
+  return `<div class="table-wrap"><table class="data-table message-table"><thead><tr><th scope="col">Nguồn</th><th scope="col">Nội dung tin nhắn</th><th scope="col">Kết quả Jev</th><th scope="col">Heuristic</th><th scope="col">Thời gian</th><th scope="col"><span class="muted">Thao tác</span></th></tr></thead><tbody>${messageRows(items)}</tbody></table></div><p class="hint">Nhãn Jev là tín hiệu cần người duyệt, không phải kết luận pháp lý.</p>`;
 }
 function dailyChart(daily) {
   const values = list(daily).map((item) => ({ day: String(item.day ?? ''), count: Math.max(0, Number(item.count) || 0) }));
@@ -472,9 +472,55 @@ async function renderCollection() {
   }
   return `<div class="section-stack">${keyWarning()}${info('Thu thập sử dụng mạng. Khi bật Jev, nội dung tin nhắn có thể được gửi tới nhà cung cấp mô hình và phát sinh chi phí. Bạn sẽ xác nhận trước khi gửi.')}${collectSearchPanel(config)}${collectSourcesPanel()}${collectRunPanel()}${panel('Theo dõi một cửa sổ', 'Telegram API · tự dừng theo thời gian hoặc số tin mới.', `<form data-form="watch" id="watch-form"><div class="form-grid">${collectFields('watch', true)}</div><div class="info-banner"><span data-budget="watch">Ngân sách Jev: tối đa 10 yêu cầu cho 1 chu kỳ.</span></div>${formEnd('Bắt đầu theo dõi', 'Dừng tác vụ đang chạy trong mục Tác vụ.', false)}</form>`)}</div>`;
 }
+function needsClassification(message) {
+  return message.classification_status !== 'success' || Boolean(message.classification_stale);
+}
+function classifyMessageParams(id) {
+  return { message_ids: [Number(id)], limit: 1 };
+}
+function classifyFiltersParams(filters = {}) {
+  const limit = Math.max(1, Math.min(100, Number(filters.limit) || 10));
+  return {
+    limit,
+    query: String(filters.query || '').slice(0, 256),
+    username: String(filters.username || '').slice(0, 100),
+    include_demo: Boolean(filters.include_demo),
+    recheck: Boolean(filters.recheck),
+  };
+}
+function classifyTable(items) {
+  const rows = list(items).map((message) => `<tr>
+    <td data-label="Nguồn"><div class="source-name">${esc(sourceHandle(message))}</div><div class="source-meta">${esc(message.channel_title || '')}</div></td>
+    <td data-label="Nội dung" class="text-cell">${esc(String(message.text || '(Tin không có nội dung chữ)').slice(0, 180))}</td>
+    <td data-label="Kết quả Jev">${labelBadge(message.label, message.classification_stale ? 'stale' : message.classification_status)}</td>
+    <td data-label="Heuristic"><span class="risk-score">${number(message.score)}</span><div class="source-meta">${esc(message.level ? LEVEL_LABELS[message.level] || message.level : 'Chưa chấm')}</div></td>
+    <td data-label="Thời gian" class="source-meta">${esc(date(message.posted_at || message.collected_at))}</td>
+    <td data-label="Hành động">${needsClassification(message) ? button('Phân loại', 'classify-message', `data-id="${esc(message.id)}"`) : '<span class="muted">Đã có nhãn</span>'}</td>
+  </tr>`).join('');
+  if (!rows) return empty('Không còn tin chưa phân loại', 'Đổi bộ lọc hoặc thu thập thêm nguồn mới.');
+  return `<div class="table-wrap"><table class="data-table classify-table"><thead><tr><th>Nguồn</th><th>Nội dung</th><th>Kết quả Jev</th><th>Heuristic</th><th>Thời gian</th><th>Hành động</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
 async function renderClassify(signal) {
-  const data = await api('messages?limit=8&offset=0', { signal });
-  return `<div class="section-stack">${keyWarning()}${panel('Chọn nội dung phân loại', 'Chỉ gửi tin nhắn đã lưu. Dữ liệu thử bị loại trừ nếu chưa bật cho phép.', `<form id="classify-form" data-form="classify"><div class="form-grid">${field('classify-limit', 'Ngân sách yêu cầu tối đa', textInput('classify-limit', 'limit', 10, 'type="number" min="1" max="100" required'), 'Mỗi tin được chọn có thể tạo một yêu cầu mô hình; có thể phát sinh chi phí.')}${field('classify-query', 'Từ khóa nội dung', textInput('classify-query', 'query', '', 'type="search" maxlength="256"'))}${field('classify-username', 'Tên nguồn (tùy chọn)', textInput('classify-username', 'username', '', 'maxlength="100"'))}${check('classify-demo', 'include_demo', 'Cho phép phân loại dữ liệu thử')}${check('classify-recheck', 'recheck', 'Phân loại lại tin đã có kết quả')}</div>${formEnd('Gửi phân loại', 'Cần xác nhận gửi nội dung tới mô hình. Nhãn là tín hiệu cần người duyệt, không phải kết luận pháp lý.')}</form>`)}${panel('Nội dung và nhãn mới nhất', 'Mỗi nhãn đi kèm trạng thái thực tế; chưa phân loại không được gán là an toàn.', messageTable(data.items), button('Mở kho tin nhắn', 'messages'))}</div>`;
+  const filters = state.classifyFilters || (state.classifyFilters = {});
+  const params = classifyFiltersParams(filters);
+  const query = new URLSearchParams({ limit: '50', label: 'unclassified' });
+  if (params.query) query.set('query', params.query);
+  if (params.username) query.set('username', params.username);
+  const [data, sources] = await Promise.all([
+    api(`messages?${query}`, { signal }),
+    api('sources', { signal }),
+  ]);
+  const options = [['', 'Tất cả nguồn']].concat(list(sources.items)
+    .filter((item) => item.username)
+    .map((item) => [item.username, `@${String(item.username).replace(/^@/, '')}`]));
+  const form = `<form id="classify-filter-form" data-form="classify-filter"><div class="form-grid">
+    ${field('classify-query', 'Tìm trong tin nhắn', textInput('classify-query', 'query', params.query, 'type="search" maxlength="256" placeholder="Nội dung cần rà soát…"'))}
+    ${field('classify-username', 'Lọc theo nguồn', `<select id="classify-username" name="username">${selectOptions(options, params.username)}</select>`)}
+    ${field('classify-limit', 'Số tin phân loại mỗi lần', textInput('classify-limit', 'limit', params.limit, 'type="number" min="1" max="100" required'), 'Mỗi tin có thể tạo một yêu cầu mô hình; có thể phát sinh chi phí.')}
+    ${check('classify-demo', 'include_demo', 'Cho phép phân loại dữ liệu thử', params.include_demo)}
+    ${check('classify-recheck', 'recheck', 'Gửi lại cả tin đã có nhãn', params.recheck)}
+  </div><div class="form-actions"><button type="submit" class="btn btn--secondary">Lọc tin nhắn</button><button type="button" class="btn" data-action="classify-unclassified">Phân loại tin chưa phân loại</button></div></form>`;
+  return `<div class="section-stack">${keyWarning()}${panel('Tìm kiếm & lọc theo nguồn', 'Chỉ gửi tin nhắn đã lưu. Dữ liệu thử bị loại trừ nếu chưa bật cho phép.', form)}${panel('Bảng tin nhắn', `${number(data.total ?? list(data.items).length)} tin chưa phân loại · hiển thị tối đa 50 dòng`, `${classifyTable(data.items)}<div class="quick-actions">${button('Mở kho tin nhắn', 'messages')}</div>`)}</div>`;
 }
 async function renderProfiles(signal) {
   const query = state.params.get('query') || '';
@@ -938,6 +984,16 @@ async function submitForm(event) {
       await bootstrap();
       toast('Đã lưu api_id/api_hash; chưa kiểm chứng với Telegram');
       await loadView();
+    } else if (kind === 'classify-filter') {
+      state.classifyFilters = classifyFiltersParams({
+        query: form.elements.query?.value,
+        username: form.elements.username?.value,
+        limit: form.elements.limit?.value,
+        include_demo: form.elements.include_demo?.checked,
+        recheck: form.elements.recheck?.checked,
+      });
+      await loadView();
+      return;
     } else if (kind === 'collect-search') {
       const job = await postJob('search', searchParams);
       state.searchJobId = String(job.id);
@@ -1067,6 +1123,26 @@ async function handleAction(event) {
     if (action === 'collect-selected') { await startSelectedCollection(); return; }
     if (action === 'retry') { await refresh(); return; }
     if (action === 'message') { await openMessage(target.dataset.id, target); return; }
+    if (action === 'classify-message') {
+      const id = Number(target.dataset.id);
+      if (!window.confirm('Gửi tin này tới Jev để phân loại?\nCó thể phát sinh chi phí; nhãn trả về là tín hiệu cần người duyệt.')) return;
+      await createJob('classify', classifyMessageParams(id));
+      return;
+    }
+    if (action === 'classify-unclassified') {
+      const form = $('form[data-form="classify-filter"]');
+      if (!form) return;
+      const params = classifyFiltersParams({
+        query: form.elements.query?.value,
+        username: form.elements.username?.value,
+        limit: form.elements.limit?.value,
+        include_demo: form.elements.include_demo?.checked,
+        recheck: form.elements.recheck?.checked,
+      });
+      if (!window.confirm(`Phân loại tối đa ${params.limit} tin chưa có nhãn?\nCó thể phát sinh chi phí; nhãn là tín hiệu cần người duyệt, không phải kết luận.`)) return;
+      await createJob('classify', params);
+      return;
+    }
     if (action === 'source-messages') { await navigate('messages', { username: target.dataset.username }); return; }
     if (action === 'source-collect') {
       const handle = target.dataset.handle;

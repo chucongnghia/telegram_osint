@@ -96,6 +96,7 @@ vm.runInContext(source.replace(/^export (?=(?:async )?function)/gm, '') + `
     renderSettings, externalUrl, mediaUrl, safeMediaUrl, labelBadge, messageRows,
     jobDetail, jobParamsShort, jobsMarkup, submitForm, schedulePoll, stopPoll, sourceDisplay,
     syncFormOptions, syncVisionForm, handleAction, sourceCollectHandle, sourceCollectLimit, sourceCollectParams, sourcesRows,
+    needsClassification, classifyMessageParams, classifyFiltersParams, classifyTable,
     addCollectSources, applyCollectLimit, collectLimit, sourceKindLabel, startSelectedCollection,
     telegramApiPanel, telegramApiStatus, loadSourceResults, jobResultTarget, firstChannel,
   };`, context, { filename: 'dashboard/app.js' });
@@ -888,6 +889,24 @@ assert(client.sourceCollectLimit('0') === 0 && client.sourceCollectLimit('1001')
 assert(client.sourceCollectHandle({ kind: 'user', telegram_id: 7 }) === '7');
 assert(client.sourceCollectHandle({}) === '');
 assert(!/data-handle=""/.test(sourceRows), 'no empty handle button');
+
+console.log('PASS classify page filters by source and classifies unlabelled messages');
+assert(client.needsClassification({ classification_status: 'error' }));
+assert(client.needsClassification({ classification_status: 'success', classification_stale: true }));
+assert(!client.needsClassification({ classification_status: 'success' }));
+const unlabelledRow = client.messageRows([{ id: 9, channel: 'kenh', text: 'Tin A', score: 0, level: 'Normal' }]);
+assert(unlabelledRow.includes('data-action="classify-message"'), 'unlabelled message offers classification');
+const labelledRow = client.messageRows([{ id: 10, channel: 'kenh', text: 'Tin B', score: 0, level: 'Normal', classification_status: 'success' }]);
+assert(!labelledRow.includes('data-action="classify-message"'), 'labelled message hides the action');
+const classifyHtml = client.classifyTable([{ id: 11, channel: 'kenh', channel_title: 'Kênh', text: 'Tin C', score: 42, level: 'Suspicious' }]);
+for (const heading of ['Nguồn', 'Nội dung', 'Kết quả Jev', 'Heuristic', 'Thời gian', 'Hành động']) {
+  assert(classifyHtml.includes(`<th>${heading}</th>`), `classify table has ${heading}`);
+}
+assert(classifyHtml.includes('data-action="classify-message"'));
+assert(JSON.stringify(client.classifyMessageParams(11)) === JSON.stringify({ message_ids: [11], limit: 1 }));
+assert(JSON.stringify(client.classifyFiltersParams({ limit: '500', query: ' x ', username: '@kenh' })) === JSON.stringify({ limit: 100, query: ' x ', username: '@kenh', include_demo: false, recheck: false }));
+assert(client.classifyFiltersParams({ limit: '0' }).limit === 10);
+assert(client.classifyFiltersParams({}).username === '');
 
 console.log('PASS visible-only 2-second job polling lifecycle');
 console.log('All dashboard client contract tests passed.');
