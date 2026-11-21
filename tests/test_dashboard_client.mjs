@@ -95,7 +95,7 @@ vm.runInContext(source.replace(/^export (?=(?:async )?function)/gm, '') + `
     renderCollection, renderClassify, renderProfiles, renderVideo, renderImage, ocrDetails, confirmJob, renderJobs,
     renderSettings, externalUrl, mediaUrl, safeMediaUrl, labelBadge, messageRows,
     jobDetail, jobParamsShort, jobsMarkup, submitForm, schedulePoll, stopPoll, sourceDisplay,
-    syncFormOptions, syncVisionForm, handleAction, sourceCollectHandle, sourceCollectParams, sourcesRows,
+    syncFormOptions, syncVisionForm, handleAction, sourceCollectHandle, sourceCollectLimit, sourceCollectParams, sourcesRows,
     addCollectSources, applyCollectLimit, collectLimit, sourceKindLabel, startSelectedCollection,
     telegramApiPanel, telegramApiStatus, loadSourceResults, jobResultTarget, firstChannel,
   };`, context, { filename: 'dashboard/app.js' });
@@ -882,6 +882,9 @@ assert(sourceRows.includes('Thu thập thêm'));
 assert(sourceRows.includes('data-handle="@kenh_a"'));
 assert(sourceRows.includes('data-handle="-1000000000042"'), 'channel without username uses a marked id');
 assert(JSON.stringify(client.sourceCollectParams('@kenh_a')) === JSON.stringify({ channels: '@kenh_a', backend: 'api', limit: 20, jev: true, jev_limit: 20 }));
+assert(JSON.stringify(client.sourceCollectParams('@kenh_a', 150)) === JSON.stringify({ channels: '@kenh_a', backend: 'api', limit: 150, jev: true, jev_limit: 150 }), 'custom limit is honoured');
+assert(client.sourceCollectLimit('7') === 7 && client.sourceCollectLimit('1000') === 1000);
+assert(client.sourceCollectLimit('0') === 0 && client.sourceCollectLimit('1001') === 0 && client.sourceCollectLimit('abc') === 0, 'invalid limits are rejected');
 assert(client.sourceCollectHandle({ kind: 'user', telegram_id: 7 }) === '7');
 assert(client.sourceCollectHandle({}) === '');
 assert(!/data-handle=""/.test(sourceRows), 'no empty handle button');

@@ -323,8 +323,14 @@ function sourceCollectHandle(item) {
   if (item.kind === 'channel' || item.kind === 'group') return `-${1000000000000 + id}`;
   return String(id);
 }
-function sourceCollectParams(handle) {
-  return { channels: handle, backend: 'api', limit: 20, jev: true, jev_limit: 20 };
+function sourceCollectLimit(raw) {
+  const value = Number(String(raw ?? '').trim());
+  if (!Number.isInteger(value) || value < 1 || value > 1000) return 0;
+  return value;
+}
+function sourceCollectParams(handle, limit = 20) {
+  const value = sourceCollectLimit(limit) || 20;
+  return { channels: handle, backend: 'api', limit: value, jev: true, jev_limit: value };
 }
 function sourcesRows(items) {
   return list(items).map((item) => {
@@ -1065,8 +1071,12 @@ async function handleAction(event) {
     if (action === 'source-collect') {
       const handle = target.dataset.handle;
       const label = target.dataset.label || handle;
-      const params = sourceCollectParams(handle);
-      if (!window.confirm(`Thu thập thêm 20 tin mới nhất từ ${label}?\nTác vụ dùng Telegram API, bật Jev (tối đa 20 yêu cầu) và có thể phát sinh chi phí.`)) return;
+      const raw = window.prompt(`Số tin tối đa cần thu thập thêm từ ${label} (1–1000):`, '20');
+      if (raw === null) return;
+      const limit = sourceCollectLimit(raw);
+      if (!limit) { toast('Số tin phải là số nguyên từ 1 đến 1000.', true); return; }
+      const params = sourceCollectParams(handle, limit);
+      if (!window.confirm(`Thu thập thêm tối đa ${limit} tin mới nhất từ ${label}?\nTác vụ dùng Telegram API, bật Jev (tối đa ${params.jev_limit} yêu cầu) và có thể phát sinh chi phí.`)) return;
       await createJob('collect', params);
       return;
     }
