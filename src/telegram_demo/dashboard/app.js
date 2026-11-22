@@ -561,7 +561,7 @@ function mediaClassifications(kind, analysis, classifications) {
 function mediaClassificationForm(kind, analyses) {
   const idField = kind === 'image' ? 'image_id' : 'analysis_id';
   const label = kind === 'image' ? 'ảnh' : 'video';
-  return `<form data-form="${kind}_classify"><div class="form-grid">${field(`${kind}-classify-id`, 'Bản phân tích đã lưu', `<select id="${kind}-classify-id" name="${idField}" required>${selectOptions(analyses.length ? analyses.map((a) => [a.id, `#${a.id} · ${STATUS_NAMES[a.status] || a.status}`]) : [['', 'Chưa có phân tích']], state.params.get('analysis') || analyses[0]?.id)}</select>`)}${check(`${kind}-allow-partial`, 'allow_partial', 'Tôi chấp nhận phân loại bằng chứng thiếu một phần')}${check(`${kind}-recheck`, 'recheck', 'Gửi lại dù đã có kết quả Jev')}</div>${formEnd(`Phân loại ${label} với Jev`, 'Một yêu cầu Jev cho bản phân tích được chọn; cần khóa và xác nhận riêng.')}</form>`;
+  return `<form data-form="${kind}_classify"><div class="form-grid">${field(`${kind}-classify-id`, 'Bản phân tích đã lưu', `<select id="${kind}-classify-id" name="${idField}" required>${selectOptions(analyses.length ? analyses.map((a) => [a.id, `#${a.id} · ${STATUS_NAMES[a.status] || a.status}`]) : [['', 'Chưa có phân tích']], state.params.get('analysis') || analyses[0]?.id)}</select>`)}</div>${formEnd(`Phân loại ${label} với Jev`, 'Một yêu cầu Jev cho bản phân tích được chọn; bản ghi thiếu một phần sẽ được đánh dấu khi gửi.')}</form>`;
 }
 async function renderImage(signal) {
   const data = await api('images', { signal });
@@ -968,7 +968,10 @@ async function submitForm(event) {
       if (!state.bootstrap?.config?.jev_configured) { formError(form, 'Cần đặt khóa Jev trong cài đặt trước khi phân loại. Khóa chỉ được kiểm tra hiệu lực khi gọi nhà cung cấp.'); return; }
       const analysis = list((image ? state.images : state.videos)?.analyses).find((item) => Number(item.id) === params[key]);
       if (!analysis) { formError(form, 'Chọn một bản phân tích đã lưu.'); return; }
-      if (!['ready', 'success'].includes(analysis.status) && !params.allow_partial) { formError(form, 'Bằng chứng chưa đầy đủ. Cần chủ động chấp nhận phân loại thiếu một phần.'); return; }
+      // The analysis list is the explicit choice; partial evidence is flagged automatically.
+      if (!['ready', 'success'].includes(analysis.status)) params.allow_partial = true;
+      else delete params.allow_partial;
+      delete params.recheck;
     }
     if (kind === 'image_analyze') {
       params.vision = params.vision === true;
