@@ -836,6 +836,8 @@ class DashboardTest(unittest.TestCase):
             self.assertIn("--allow-remote", argv)
             self.assertEqual(argv[argv.index("--interval") + 1], "2.5")
             self.assertTrue(params["vision"])
+            self.assertNotIn("--vision", argv, "video analyze must not receive the ambiguous --vision flag")
+            self.assertIn("--vision-provider", argv)
             argv, _, _ = self.app.build_job("video_analyze", None, {"path": "clip.mp4", "vision": False}, "fixture")
             self.assertIn("--skip-vision", argv)
             self.assertNotIn("--allow-remote", argv)

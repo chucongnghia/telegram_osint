@@ -790,8 +790,13 @@ class DashboardApp:
             ready = bool(model and url) and (bool(key) or not remote)
         return {"provider": provider, "model": model, "url": url, "key": key, "remote": remote, "ready": ready}
 
-    def _vision_argv(self, consent):
-        """Vision flags for a child job, or a clear refusal; never a silent downgrade."""
+    def _vision_argv(self, consent, *, needs_flag=True):
+        """Vision flags for a child job, or a clear refusal; never a silent downgrade.
+
+        `image analyze` cần cờ `--vision` để bật bước thị giác; `video analyze` bật sẵn
+        (chỉ tắt bằng `--skip-vision`), nên không truyền `--vision` vì argparse sẽ coi
+        đó là tiền tố mơ hồ của `--vision-provider`/`--vision-model`/`--vision-url`.
+        """
         state = self._vision()
         if not state["ready"]:
             raise DashboardError(
@@ -801,7 +806,7 @@ class DashboardApp:
             raise DashboardError(
                 "Mô hình thị giác từ xa sẽ gửi ảnh/khung hình ra ngoài và có thể tính phí. "
                 "Cần tự xác nhận đồng ý trước khi chạy.", "consent_required", 409)
-        args = ["--vision", "--vision-provider", state["provider"], "--vision-model", state["model"]]
+        args = (["--vision"] if needs_flag else []) + ["--vision-provider", state["provider"], "--vision-model", state["model"]]
         if state["url"]:
             args += ["--vision-url", state["url"]]
         if state["remote"]:
@@ -1118,7 +1123,7 @@ class DashboardApp:
             interpreter = str(candidate)
             argv = ["video", *dbflag, "analyze", str(path), "--whisper-model", p["model"], "--language", p["language"], "--interval", _number_text(interval)]
             if p["vision"]:
-                argv += self._vision_argv(True)
+                argv += self._vision_argv(True, needs_flag=False)
             else:
                 argv += ["--skip-vision"]
             p["ocr"] = _boolean(p.get("ocr", True), "ocr")
