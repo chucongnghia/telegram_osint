@@ -856,6 +856,14 @@ assert.equal(scrollArgs, null, 'closing the detail does not scroll');
 client.state.expandedJobs.clear();
 client.state.jobs = [];
 client.state.view = 'overview';
+const photoRow = client.messageRows([{ id: 77, channel: 'x', text: '', has_photo: 1, url: 'https://t.me/x/77' }]);
+assert(photoRow.includes('data-media-id="77"') && photoRow.includes('Đang tải ảnh'), 'photo messages render a media placeholder');
+assert(!photoRow.includes('(Tin không có nội dung chữ)'), 'media-only rows do not claim there is no text');
+const videoRow = client.messageRows([{ id: 78, channel: 'x', text: 'mô tả ngắn', has_video: 1, url: 'https://t.me/x/78' }]);
+assert(videoRow.includes('Đang tải video') && videoRow.includes('mô tả ngắn'), 'video rows keep their caption');
+assert(client.messageRows([{ id: 79, channel: 'x', text: 'chữ thôi' }]).includes('chữ thôi'));
+console.log('PASS message rows show media placeholders with fallbacks');
+
 console.log('PASS jobs table lists tasks with result navigation and a raw detail log');
 client.state.jobs = [{ id: 'job-abc12345', kind: 'collect', status: 'failed', created_at: '2026-11-20T14:05:00Z',
   started_at: '2026-11-20T14:05:01Z', ended_at: '2026-11-20T14:05:19Z', exit_code: 1,

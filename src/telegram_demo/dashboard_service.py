@@ -28,6 +28,9 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, unquote, urlencode, urlsplit
 import uuid
@@ -42,6 +45,15 @@ IMAGE_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
 VIDEO_TYPES = {".mp4": "video/mp4", ".m4v": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime", ".mkv": "video/x-matroska", ".avi": "video/x-msvideo", ".mpeg": "video/mpeg", ".mpg": "video/mpeg", ".3gp": "video/3gpp", ".ts": "video/mp2t"}
 IMAGE_OCR_TYPES = {ext: IMAGE_TYPES[ext] for ext in (".jpg", ".jpeg", ".png", ".webp")}
 MEDIA_TYPES = {**IMAGE_TYPES, **VIDEO_TYPES}
+
+def preview_dir() -> Path:
+    return MEDIA_DIR / "previews"
+_CDN_VIDEO = re.compile(r'<video[^>]+src="(https://cdn\d?\.telesco\.pe/[^"]+\.mp4[^"]*)"')
+_CDN_IMAGE = re.compile(r'(https://cdn\d?\.telesco\.pe/file/[^"\'\s]+\.(?:jpg|jpeg|png)[^"\'\s]*)')
+
+
+def _preview_name(url: str, suffix: str) -> str:
+    return hashlib.sha256(url.encode("utf-8")).hexdigest()[:32] + suffix
 TERMINAL = {"succeeded", "failed", "cancelled"}
 CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; media-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
 
@@ -505,6 +517,8 @@ class DashboardApp:
         return """SELECT m.id,COALESCE(NULLIF(e.title,''),e.username,'') AS channel,e.username,
             substr(m.text,1,16000) AS text,m.message_id,m.posted_at,m.collected_at,
             a.score,a.level,a.category AS heuristic_category,""" + classification + """,
+            CASE WHEN instr(m.record_json,'"video"')>0 THEN 1 ELSE 0 END AS has_video,
+            CASE WHEN instr(m.record_json,'"photo"')>0 OR instr(m.record_json,'"image"')>0 THEN 1 ELSE 0 END AS has_photo,
             m.url,e.namespace FROM messages m JOIN entities e ON e.id=m.entity_id
             LEFT JOIN analyses a ON a.message_id=m.id AND a.run_id=(SELECT MAX(a2.run_id) FROM analyses a2 WHERE a2.message_id=m.id)""" + join
 
@@ -554,6 +568,86 @@ class DashboardApp:
             row["url"] = _safe_url(row["url"])
             row["classification_stale"] = bool(row["classification_stale"])
         return {"items": rows, "total": total, "limit": limit, "offset": offset}
+
+    def message_media(self, conn, message_id: int):
+        """Ảnh/video công khai của một tin: tải qua trang embed t.me và cache lại.
+
+        Chỉ nhận URL CDN của Telegram (telesco.pe). Không có file cục bộ thì trả
+        404 để giao diện hiện nhãn thay vì bịa nội dung.
+        """
+        row = conn.execute("SELECT url, record_json FROM messages WHERE id=?", (message_id,)).fetchone()
+        if row is None:
+            raise DashboardError("Không tìm thấy tin nhắn.", "not_found", 404)
+        record = _json(row["record_json"], {})
+        kinds = [str(item) for item in (record.get("media_types") or []) if isinstance(item, str)]
+        page = _safe_url(row["url"])
+        if not page or not kinds:
+            raise DashboardError("Tin nhắn này không có ảnh hoặc video.", "no_media", 404)
+        kind = "video" if "video" in kinds else "photo" if {"photo", "image"} & set(kinds) else None
+        if kind is None:
+            raise DashboardError("Tin nhắn này không có ảnh hoặc video.", "no_media", 404)
+        suffix = ".mp4" if kind == "video" else ".jpg"
+        target = preview_dir() / _preview_name(page, suffix)
+        ref = self._media_ref(target.relative_to(MEDIA_DIR).as_posix(), VIDEO_TYPES if kind == "video" else IMAGE_TYPES)
+        if target.is_file() and ref:
+            return {"kind": kind, "url": ref, "cached": True}
+        try:
+            html = self._fetch_text(page + "?embed=1", limit=2 * 1024 * 1024, timeout=15)
+            source = None
+            if kind == "video":
+                match = _CDN_VIDEO.search(html)
+                source = match.group(1) if match else None
+            else:
+                match = _CDN_IMAGE.search(html)
+                source = match.group(1) if match else None
+            if not source:
+                raise DashboardError("Không thấy ảnh/video công khai trong bài viết.", "media_unavailable", 404)
+            self._download_preview(source, target)
+        except DashboardError:
+            raise
+        except (urllib.error.URLError, OSError, ValueError):
+            raise DashboardError("Không tải được ảnh/video từ Telegram.", "media_unavailable", 404) from None
+        ref = self._media_ref(target.relative_to(MEDIA_DIR).as_posix(), VIDEO_TYPES if kind == "video" else IMAGE_TYPES)
+        if not ref:
+            raise DashboardError("Không tải được ảnh/video từ Telegram.", "media_unavailable", 404)
+        return {"kind": kind, "url": ref, "cached": False}
+
+    @staticmethod
+    def _fetch_text(url: str, *, limit: int, timeout: int) -> str:
+        request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 Telegram OSINT dashboard"})
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return response.read(limit).decode("utf-8", "replace")
+
+    @staticmethod
+    def _download_preview(source: str, target: Path) -> None:
+        parsed = urllib.parse.urlparse(source)
+        if parsed.scheme != "https" or not parsed.hostname or not parsed.hostname.endswith(".telesco.pe"):
+            raise ValueError("unexpected media host")
+        suffix = target.suffix.lower()
+        limit = 40 * 1024 * 1024 if suffix == ".mp4" else 12 * 1024 * 1024
+        preview_dir().mkdir(parents=True, exist_ok=True, mode=0o700)
+        request = urllib.request.Request(source, headers={"User-Agent": "Mozilla/5.0 Telegram OSINT dashboard"})
+        with urllib.request.urlopen(request, timeout=20) as response:
+            data = response.read(limit + 1)
+        if not data or len(data) > limit:
+            raise ValueError("media too large")
+        if suffix == ".mp4":
+            if b"ftyp" not in data[:64]:
+                raise ValueError("not an mp4")
+        elif not (data.startswith(b"\xff\xd8") or data.startswith(b"\x89PNG")):
+            raise ValueError("not an image")
+        temporary = target.with_name(target.name + ".part")
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            with os.fdopen(descriptor, "wb") as stream:
+                stream.write(data)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, target)
+        except BaseException:
+            with contextlib.suppress(OSError):
+                os.unlink(temporary)
+            raise
 
     def message_detail(self, conn, message_id):
         row = conn.execute(self._message_select(conn) + " WHERE m.id=?", (message_id,)).fetchone()
@@ -1527,6 +1621,10 @@ class DashboardApp:
                     self._reply(app.job(route.rsplit("/", 1)[1]))
                 elif route == "/api/media":
                     self._media(q)
+                elif route == "/api/message-media":
+                    with app.read_db(q.get("db")) as conn:
+                        result = app.message_media(conn, int(q.get("id", "0")))
+                    self._reply(result)
                 elif route.startswith("/api/"):
                     with app.read_db(q.pop("db", None)) as conn:
                         if route == "/api/overview":

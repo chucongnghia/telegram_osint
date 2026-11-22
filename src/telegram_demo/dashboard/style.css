@@ -340,3 +340,7 @@ p.hint,
 .row-highlight > td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 
 .card-highlight { border-radius: 10px; box-shadow: 0 0 0 2px var(--accent); padding: 12px; margin: -12px; background: #fff; }
+
+.msg-media { margin-bottom: 8px; color: var(--muted); font-size: 12px; }
+.msg-media img, .msg-media video { display: block; max-width: 280px; max-height: 200px; border-radius: 8px; background: #0f1b2a; border: 1px solid var(--line); }
+.msg-media.is-error a { color: var(--muted); text-decoration: underline; }

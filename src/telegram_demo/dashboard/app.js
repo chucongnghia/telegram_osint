@@ -238,6 +238,7 @@ async function loadView({ quiet = false } = {}) {
     if (revision !== state.revision) return;
     root.innerHTML = html;
     root.dataset.view = state.view;
+    if (state.view === 'messages') hydrateMessageMedia();
     if (state.highlightIds?.size) root.querySelector('.row-highlight, .card-highlight')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     syncFormOptions();
     syncVisionForm();
@@ -245,10 +246,43 @@ async function loadView({ quiet = false } = {}) {
   } catch (error) { if (revision === state.revision) showPageError(error); }
   finally { if (revision === state.revision) root.removeAttribute('aria-busy'); }
 }
+function mediaPlaceholder(message) {
+  const kind = message.has_video ? 'video' : message.has_photo ? 'photo' : '';
+  if (!kind) return '';
+  return `<div class="msg-media" data-media-id="${esc(message.id)}" data-media-kind="${kind}" data-media-url="${esc(message.url || '')}">Đang tải ${kind === 'video' ? 'video' : 'ảnh'}…</div>`;
+}
+async function hydrateMessageMedia() {
+  const nodes = $$('.msg-media[data-media-id]').slice(0, 12);
+  const load = async (node) => {
+    if (node.dataset.loaded) return;
+    node.dataset.loaded = '1';
+    try {
+      const media = await api(`message-media?id=${encodeURIComponent(node.dataset.mediaId)}`);
+      if (media.kind === 'video') {
+        const video = document.createElement('video');
+        video.src = media.url; video.controls = true; video.muted = true; video.playsInline = true; video.preload = 'metadata';
+        node.replaceChildren(video);
+      } else {
+        const link = document.createElement('a');
+        link.href = media.url; link.target = '_blank'; link.rel = 'noopener';
+        const image = document.createElement('img');
+        image.src = media.url; image.loading = 'lazy'; image.alt = 'Ảnh trong tin nhắn';
+        link.append(image); node.replaceChildren(link);
+      }
+      node.classList.add('is-media');
+    } catch (error) {
+      const link = document.createElement('a');
+      link.href = node.dataset.mediaUrl || '#'; link.target = '_blank'; link.rel = 'noopener';
+      link.textContent = 'Không tải được ảnh/video · mở bài viết';
+      node.replaceChildren(link); node.classList.add('is-error');
+    }
+  };
+  await Promise.all(nodes.map(load));
+}
 function messageRows(items) {
   return list(items).map((message) => `<tr${state.highlightAll || state.highlightIds?.has(Number(message.id)) ? ' class="row-highlight"' : ''}>
     <td data-label="Nguồn"><div class="source-name">${esc(message.channel || message.username || 'Không rõ nguồn')}</div><div class="source-meta">${esc(message.username ? `@${String(message.username).replace(/^@/, '')}` : '')} ${demoBadge(message.namespace)}</div></td>
-    <td data-label="Nội dung" class="text-cell"><button type="button" class="row-button" data-action="message" data-id="${esc(message.id)}">${esc(String(message.text || '(Tin không có nội dung chữ)').slice(0, 150))}${String(message.text || '').length > 150 ? '…' : ''}</button></td>
+    <td data-label="Nội dung" class="text-cell">${mediaPlaceholder(message)}<button type="button" class="row-button" data-action="message" data-id="${esc(message.id)}">${esc(String(message.text || (message.has_photo || message.has_video ? '' : '(Tin không có nội dung chữ)')).slice(0, 150))}${String(message.text || '').length > 150 ? '…' : ''}</button></td>
     <td data-label="Jev">${labelBadge(message.label, message.classification_stale ? 'stale' : message.classification_status)}${message.classification_model ? `<div class="source-meta">${esc(message.classification_model)}</div>` : ''}</td>
     <td data-label="Heuristic"><span class="risk-score">${number(message.score)}</span><div class="source-meta">${esc(levelLabel(message.level))}</div></td>
     <td data-label="Thời gian" class="source-meta">${esc(date(message.posted_at || message.collected_at))}</td>

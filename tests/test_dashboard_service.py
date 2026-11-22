@@ -713,6 +713,29 @@ class DashboardTest(unittest.TestCase):
                 {"channels": "one", "backend": "api", "limit": 50, "session": "tg_session",
                  "jev": True, "jev_limit": 1001}, "id")
 
+    def test_message_media_uses_cached_preview_and_rejects_text_only(self):
+        import hashlib
+        url = "https://t.me/example/42"
+        with Database(self.root / "data" / "media.sqlite3") as db:
+            db.save_payload({"posts": [{"channel": "example", "message_id": "42", "text": "ảnh",
+                                        "url": url, "has_media": True, "media_types": ["photo"]},
+                                       {"channel": "example", "message_id": "43", "text": "chữ thôi",
+                                        "url": "https://t.me/example/43"}]}, tool="web", source="demo")
+        preview = ds.preview_dir() / (hashlib.sha256(url.encode()).hexdigest()[:32] + ".jpg")
+        preview.parent.mkdir(parents=True, exist_ok=True)
+        preview.write_bytes(b"\xff\xd8\xff\xdb")
+        with self.app.read_db("media.sqlite3") as conn:
+            photo = conn.execute("SELECT id FROM messages WHERE message_id='42'").fetchone()[0]
+            text_only = conn.execute("SELECT id FROM messages WHERE message_id='43'").fetchone()[0]
+            result = self.app.message_media(conn, photo)
+            self.assertEqual(result["kind"], "photo")
+            self.assertTrue(result["cached"])
+            self.assertTrue(result["url"].startswith("/api/media?path=previews%2F"))
+            self.assertIn("has_photo", dict(conn.execute(self.app._message_select(conn) + " WHERE m.id=?", (photo,)).fetchone()))
+            with self.assertRaises(ds.DashboardError) as missing:
+                self.app.message_media(conn, text_only)
+            self.assertEqual(missing.exception.code, "no_media")
+
     def test_search_results_lists_saved_sources(self):
         with Database(self.dbpath) as db:
             db.save_payload({"backend": "api", "keywords": ["đầu tư"], "usernames": [
