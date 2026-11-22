@@ -196,6 +196,11 @@ def _text(value, name, maximum=256, required=False):
     return value
 
 
+def _number_text(value: float) -> str:
+    """Số thực gọn cho argv: 5 thay vì 5.0, 2.5 giữ nguyên."""
+    return str(int(value)) if float(value).is_integer() else str(value)
+
+
 def _integer(value, name, low, high):
     if type(value) is not int or not low <= value <= high:
         raise DashboardError(f"{name} phải là số nguyên từ {low} đến {high}.")
@@ -953,7 +958,7 @@ class DashboardApp:
             "lookup": {"username", "limit", "backend", "session"},
             "search": {"keyword", "limit", "backend", "session"},
             "download": {"url", "session"},
-            "video_analyze": {"path", "skip_vision", "language", "model", "max_frames", "ocr", "ocr_language", "allow_remote"},
+            "video_analyze": {"path", "vision", "language", "model", "interval", "ocr", "ocr_language"},
             "image_analyze": {"path", "ocr_language", "vision", "allow_remote"},
             "image_classify": {"image_id", "allow_partial", "recheck"},
             "video_classify": {"analysis_id", "allow_partial", "recheck"},
@@ -1099,18 +1104,23 @@ class DashboardApp:
             p["model"] = p.get("model", "tiny")
             if p["language"] not in ("vi", "en", "auto") or p["model"] not in ("tiny", "base"):
                 raise DashboardError("Chỉ hỗ trợ ngôn ngữ vi/en/auto và Whisper tiny/base.")
-            p["max_frames"] = _integer(p.get("max_frames", 6), "max_frames", 1, 12)
-            p["allow_remote"] = _boolean(p.get("allow_remote", False), "allow_remote")
-            p["skip_vision"] = _boolean(p.get("skip_vision", not self.config()["vision_configured"]), "skip_vision")
+            try:
+                interval = float(p.get("interval", 5))
+            except (TypeError, ValueError):
+                raise DashboardError("interval phải là số giây.") from None
+            if not 0.5 <= interval <= 60:
+                raise DashboardError("interval phải trong khoảng 0.5–60 giây.")
+            p["interval"] = interval
+            p["vision"] = _boolean(p.get("vision", self.config()["vision_configured"]), "vision")
             candidate = PROJECT_ROOT / ".venv-video" / "bin" / "python"
             if not candidate.is_file():
                 raise DashboardError("Thiếu Python .venv-video.", "dependency", 409)
             interpreter = str(candidate)
-            argv = ["video", *dbflag, "analyze", str(path), "--whisper-model", p["model"], "--language", p["language"], "--max-frames", str(p["max_frames"])]
-            if p["skip_vision"]:
-                argv += ["--skip-vision"]
+            argv = ["video", *dbflag, "analyze", str(path), "--whisper-model", p["model"], "--language", p["language"], "--interval", _number_text(interval)]
+            if p["vision"]:
+                argv += self._vision_argv(True)
             else:
-                argv += self._vision_argv(p["allow_remote"])
+                argv += ["--skip-vision"]
             p["ocr"] = _boolean(p.get("ocr", True), "ocr")
             p["ocr_language"] = self._ocr_language(p.get("ocr_language", "vie+eng"))
             if p["ocr"]:

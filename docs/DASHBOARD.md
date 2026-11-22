@@ -63,7 +63,7 @@ Cách khác: bật `networkingMode=mirrored` trong `%UserProfile%\.wslconfig` r�
 | Nguồn thu thập | Nguồn và số tin thực tế; mở danh sách tin của nguồn. |
 | Thu thập dữ liệu | Tìm nguồn theo từ khoá qua Telegram API, chọn nhiều nguồn, đặt số tin tối đa chung hoặc riêng từng nguồn; mỗi nguồn chạy một tác vụ có Jev bật sẵn. Watch chạy được vô hạn hoặc giới hạn theo phút. |
 | Phân loại Jev | **Tìm kiếm & lọc theo nguồn** (từ khoá, nguồn, số tin mỗi lần), **Bảng tin nhắn** chỉ hiện tin chưa phân loại, **phân trang 20/50/100 dòng**, nút **Phân loại tin chưa phân loại** cho cả bộ lọc và nút **Phân loại** trên từng dòng. Nhãn thuộc bộ bảy nhãn kêu gọi/kích động hành vi phạm pháp; kết quả kèm mức và yêu cầu rà soát. Không tự gọi mô hình khi mở trang. |
-| Phân tích video | Xem/phát video trong `media/`, tải theo link, Whisper + OCR frame (mặc định bật), chọn ngôn ngữ auto; gọi Jev riêng. |
+| Phân tích video | Xem/phát video trong `media/`, tải theo link, Whisper + OCR + **số giây mỗi khung hình**, một tùy chọn **Sử dụng mô hình thị giác**; gọi Jev riêng. |
 | Phân tích ảnh | Chọn PNG/JPEG/WebP trong `media/`, OCR Việt/Anh cục bộ, xem original/evidence, Jev riêng với đồng ý partial/key. |
 | Tra cứu hồ sơ | Xem hồ sơ đã lưu, lookup hoặc tìm username bằng các CLI hiện có. |
 | Nhật ký tác vụ | Trạng thái thật, log có giới hạn, xem lỗi và dừng tác vụ. Một worker chạy tuần tự. |

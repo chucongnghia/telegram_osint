@@ -166,7 +166,7 @@ const allowedJobFields = {
   search: ['keyword', 'limit', 'backend', 'session'],
   'collect-search': ['keyword', 'limit', 'backend', 'session'],
   download: ['url', 'session'],
-  video_analyze: ['path', 'skip_vision', 'language', 'model', 'max_frames', 'ocr', 'ocr_language', 'allow_remote'],
+  video_analyze: ['path', 'vision', 'language', 'model', 'interval', 'ocr', 'ocr_language'],
   image_analyze: ['path', 'ocr_language', 'vision', 'allow_remote'],
   image_classify: ['image_id', 'allow_partial', 'recheck'],
   video_classify: ['analysis_id', 'allow_partial', 'recheck'],
@@ -193,8 +193,11 @@ assert(control(rendered.Collection, 'watch-cycles').includes('min="0"'));
 assert(control(rendered.Collection, 'watch-infinite').includes('name="infinite"'));
 assert(!control(rendered.Collection, 'watch-budget').includes('max="100"'), 'watch Jev budget allows 1000');
 assert(control(rendered.Collection, 'collect-global-limit').includes('max="1000"'));
-assert(control(rendered.Video, 'video-max-frames').includes('max="12"'));
-assert(rendered.Video.includes('Tối đa 12 khung hình'));
+assert(control(rendered.Video, 'video-interval').includes('max="60"'));
+assert(control(rendered.Video, 'video-interval').includes('min="0.5"'));
+assert(rendered.Video.includes('Số giây mỗi khung hình'));
+assert(rendered.Video.includes('Sử dụng mô hình thị giác'));
+assert(!rendered.Video.includes('video-skip-vision'), 'the skip-vision checkbox is gone');
 assert(!rendered.Collection.includes('https://t.me/kenh_khac'));
 for (const [view, id] of [['Messages', 'messages-query'], ['Classify', 'classify-query'], ['Profiles', 'profiles-filter-query']]) {
   assert(control(rendered[view], id).includes('maxlength="256"'), `${id} respects backend text cap`);
@@ -336,10 +339,11 @@ confirmed = true;
 await submit(form('image_classify', [['image_id', '1'], ['allow_partial', true], ['recheck', false]]));
 assert.equal(mediaPosts().length, ++mediaCount);
 assert.deepEqual(JSON.parse(mediaPosts().at(-1).options.body).params, { image_id: 1, allow_partial: true, recheck: false });
-await submit(form('video_analyze', [['path', 'clip.mp4'], ['language', 'auto'], ['model', 'tiny'], ['max_frames', 6], ['skip_vision', true], ['ocr', true], ['ocr_language', 'eng']]));
+await submit(form('video_analyze', [['path', 'clip.mp4'], ['language', 'auto'], ['model', 'tiny'], ['interval', 2], ['vision', false], ['ocr', true], ['ocr_language', 'eng']]));
 assert.equal(mediaPosts().length, ++mediaCount);
 assert.equal(JSON.parse(mediaPosts().at(-1).options.body).params.ocr, true);
 assert.equal(JSON.parse(mediaPosts().at(-1).options.body).params.language, 'auto');
+assert.equal(JSON.parse(mediaPosts().at(-1).options.body).params.interval, 2);
 fixtures.images.analyses[0].status = 'ready';
 await submit(form('image_classify', [['image_id', '1'], ['allow_partial', false], ['recheck', false]]));
 assert.equal(mediaPosts().length, ++mediaCount, 'complete ready evidence does not require partial consent');
@@ -422,14 +426,7 @@ imageVisionNode.checked = true;
 client.syncFormOptions();
 assert.equal(imageConsentNode.disabled, false, 'image consent enables with the vision checkbox');
 const videoFormNode = document.querySelector('form[data-form="video_analyze"]');
-const videoConsentNode = element();
-const videoSkipNode = { checked: true };
-videoFormNode.querySelector = (selector) => selector === '[name="skip_vision"]' ? videoSkipNode : selector === '[name="allow_remote"]' ? videoConsentNode : null;
-client.syncFormOptions();
-assert.equal(videoConsentNode.disabled, true, 'video consent is disabled while vision is skipped');
-videoSkipNode.checked = false;
-client.syncFormOptions();
-assert.equal(videoConsentNode.disabled, false, 'video consent enables when vision will run');
+assert(videoFormNode, 'video analysis form exists');
 imageFormNode.querySelector = () => null;
 videoFormNode.querySelector = () => null;
 console.log('PASS vision settings fields, labels, provider behavior, and status rows');
@@ -501,8 +498,9 @@ assert(remoteImageHtml.includes('name="allow_remote"'), 'remote image form rende
 assert(remoteImageHtml.includes('Tôi đồng ý gửi ảnh tới model từ xa (có thể tính phí)'));
 assert(control(remoteImageHtml, 'image-allow-remote').includes('disabled'), 'image consent starts disabled');
 const remoteVideoHtml = await client.renderVideo();
-assert(remoteVideoHtml.includes('Tôi đồng ý gửi khung hình tới model từ xa (có thể tính phí)'));
-assert(!control(remoteVideoHtml, 'video-allow-remote').includes('disabled'), 'video consent is enabled when vision runs by default');
+assert(remoteVideoHtml.includes('name="vision"'), 'video form exposes the vision toggle');
+assert(!control(remoteVideoHtml, 'video-vision').includes('disabled'), 'vision toggle is enabled when configured');
+assert(!remoteVideoHtml.includes('video-allow-remote'), 'video form no longer asks for separate remote consent');
 assert(!remoteImageHtml.includes(geminiKeyValue));
 console.log('PASS vision key never rendered and consent controls render for remote models');
 
@@ -521,16 +519,16 @@ assert.equal(mediaPosts().length, ++mediaCount);
 const localImageParams = JSON.parse(mediaPosts().at(-1).options.body).params;
 assert.equal(localImageParams.vision, false);
 assert(!Object.hasOwn(localImageParams, 'allow_remote'), 'consent is dropped when image vision is off');
-const videoNeedsConsent = form('video_analyze', [['path', 'clip.mp4'], ['skip_vision', false], ['language', 'auto'], ['model', 'tiny'], ['max_frames', 6], ['ocr', true], ['ocr_language', 'eng']]);
-await submit(videoNeedsConsent);
-assert.equal(mediaPosts().length, mediaCount, 'remote video vision requires consent');
-assert(videoNeedsConsent.querySelector('[data-form-error]').textContent.includes('xác nhận'));
-await submit(form('video_analyze', [['path', 'clip.mp4'], ['skip_vision', false], ['language', 'auto'], ['model', 'tiny'], ['max_frames', 6], ['ocr', true], ['ocr_language', 'eng'], ['allow_remote', true]]));
+await submit(form('video_analyze', [['path', 'clip.mp4'], ['vision', true], ['interval', 2.5], ['language', 'auto'], ['model', 'tiny'], ['ocr', true], ['ocr_language', 'eng']]));
 assert.equal(mediaPosts().length, ++mediaCount);
-assert.deepEqual(JSON.parse(mediaPosts().at(-1).options.body).params, { path: 'clip.mp4', skip_vision: false, language: 'auto', model: 'tiny', max_frames: 6, ocr: true, ocr_language: 'eng', allow_remote: true });
-await submit(form('video_analyze', [['path', 'clip.mp4'], ['skip_vision', true], ['language', 'vi'], ['model', 'tiny'], ['max_frames', 6], ['ocr', true], ['ocr_language', 'vie+eng'], ['allow_remote', true]]));
+assert.deepEqual(JSON.parse(mediaPosts().at(-1).options.body).params,
+  { path: 'clip.mp4', vision: true, interval: 2.5, language: 'auto', model: 'tiny', ocr: true, ocr_language: 'eng' });
+await submit(form('video_analyze', [['path', 'clip.mp4'], ['vision', false], ['interval', 5], ['language', 'vi'], ['model', 'tiny'], ['ocr', true], ['ocr_language', 'vie+eng']]));
 assert.equal(mediaPosts().length, ++mediaCount);
-assert(!Object.hasOwn(JSON.parse(mediaPosts().at(-1).options.body).params, 'allow_remote'), 'consent is dropped when video skips vision');
+const skippedVisionParams = JSON.parse(mediaPosts().at(-1).options.body).params;
+assert.equal(skippedVisionParams.vision, false);
+assert(!Object.hasOwn(skippedVisionParams, 'allow_remote'), 'no remote consent parameter is sent any more');
+assert(!Object.hasOwn(skippedVisionParams, 'max_frames'), 'frame budget is replaced by interval');
 console.log('PASS remote consent gating for image and video jobs');
 
 client.state.view = 'settings';

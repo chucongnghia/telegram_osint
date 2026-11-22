@@ -829,16 +829,20 @@ class DashboardTest(unittest.TestCase):
             self.assertTrue(params["allow_remote"])
             with self.assertRaises(ds.DashboardError):  # consent is a real boolean, not truthy text
                 self.app.build_job("image_analyze", None, {"path": "poster.png", "vision": True, "allow_remote": "yes"}, "fixture")
-            with self.assertRaises(ds.DashboardError) as video_consent:
-                self.app.build_job("video_analyze", None, {"path": "clip.mp4", "skip_vision": False}, "fixture")
-            self.assertEqual(video_consent.exception.code, "consent_required")
-            argv, _, _ = self.app.build_job("video_analyze", None,
-                                            {"path": "clip.mp4", "skip_vision": False, "allow_remote": True, "ocr": False}, "fixture")
+            # Video: the single "use vision model" toggle is the per-job consent.
+            argv, params, _ = self.app.build_job("video_analyze", None,
+                                                 {"path": "clip.mp4", "vision": True, "interval": 2.5, "ocr": False}, "fixture")
             self.assertNotIn("--skip-vision", argv)
             self.assertIn("--allow-remote", argv)
-            argv, _, _ = self.app.build_job("video_analyze", None, {"path": "clip.mp4", "skip_vision": True}, "fixture")
+            self.assertEqual(argv[argv.index("--interval") + 1], "2.5")
+            self.assertTrue(params["vision"])
+            argv, _, _ = self.app.build_job("video_analyze", None, {"path": "clip.mp4", "vision": False}, "fixture")
             self.assertIn("--skip-vision", argv)
             self.assertNotIn("--allow-remote", argv)
+            self.assertEqual(argv[argv.index("--interval") + 1], "5")
+            for bad in ("0", "61", "abc"):
+                with self.assertRaises(ds.DashboardError):
+                    self.app.build_job("video_analyze", None, {"path": "clip.mp4", "interval": bad}, "fixture")
 
             # Local OpenAI-compatible endpoint: loopback HTTP is allowed without a key or consent.
             self.app.settings({"clear_vision": True})
