@@ -443,3 +443,23 @@ h3 { font-size: 14px; line-height: 20px; letter-spacing: 0; font-weight: 500; }
 .source-meta, .panel-subtitle, .stat-label, .stat-meta, .hint, .pagination, .chart-legend { color: #5c6970; }
 .topbar { min-height: 64px; padding: 10px 20px; }
 .search-control label, .database-field label { padding-top: 0; }
+
+/* Thu gọn / mở rộng thanh bên (chỉ desktop; mobile dùng nút menu riêng) */
+.sidebar { transition: width 160ms var(--ease); }
+.sidebar-toggle { display: inline-flex; }
+@media (min-width: 768px) {
+  body.sidebar-collapsed { --sidebar: 64px; }
+  body.sidebar-collapsed .sidebar { padding-left: 10px; padding-right: 10px; }
+  body.sidebar-collapsed .brand { justify-content: center; padding: 4px 0 20px; }
+  body.sidebar-collapsed .brand-word,
+  body.sidebar-collapsed .nav-section-label,
+  body.sidebar-collapsed .nav-link > span,
+  body.sidebar-collapsed .nav-tag,
+  body.sidebar-collapsed .nav-job-count { display: none; }
+  body.sidebar-collapsed .nav-link { justify-content: center; padding: 0; }
+  body.sidebar-collapsed .side-nav { gap: 2px; }
+  body.sidebar-collapsed .sidebar-bottom { display: flex; flex-direction: column; }
+}
+@media (max-width: 767px) {
+  .sidebar-toggle { display: none; }
+}
