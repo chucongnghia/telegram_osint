@@ -39,3 +39,13 @@ A separate project dashboard listens only on http://127.0.0.1:8765. It is not a 
 # Scope (Phạm vi và giới hạn)
 
 Public data only; the dashboard never reports or concludes automatically. Call/incitement findings are review signals (`requires_review`) that need an authorized human decision; lawful criticism (`criticism`) stays distinct from calls to action, and narrative/warning content is score-reduced. Classification and audit history are retained so a reviewer can override a result.
+
+
+## Giao diện theo kafka-ui (2026-11-27)
+
+Giao diện bám ngôn ngữ thiết kế của [provectus/kafka-ui](https://github.com/provectus/kafka-ui):
+thang neutral `#f9fafa → #171a1c`, viền `#e3e6e8`, accent chàm `#4c4cff`, trạng thái
+xanh `#29a352` / đỏ `#b81414` / vàng `#ffdd57`, font **Inter** (tự host, có subset tiếng Việt),
+control cao **32px**, card phẳng bán kính **4px**, menu trái 32px với vạch accent khi active,
+tab gạch chân, bảng 13px. Màu/typography gom trong khối "Kafka UI skin" ở cuối `style.css`;
+giữ nguyên bố cục sidebar + topbar và toàn bộ ID/hành vi hiện có.
